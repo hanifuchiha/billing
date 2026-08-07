@@ -1,0 +1,12 @@
+/vendor/
+/backups/
+/cache/
+/logs/
+/uploads/
+
+*.sql
+*.zip
+*.log
+
+.DS_Store
+Thumbs.db
