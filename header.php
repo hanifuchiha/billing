@@ -705,7 +705,7 @@ echo '<input type="hidden" id="extracted_secondary_color" value="'.htmlspecialch
   <!-- Font Awesome Icons -->
   <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
   <!-- CSS Files -->
-  <link id="pagestyle" href="../assets/css/soft-ui-dashboard.css?v=1.1.0" rel="stylesheet" />
+  <link id="pagestyle" href="/keuangan/billing/assets/css/soft-ui-dashboard.css?v=1.1.0" rel="stylesheet" />
 
 </head>
 
