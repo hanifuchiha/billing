@@ -1,0 +1,99 @@
+{
+    "radius": "yes",
+    "packages": "10.10.10.1:28|FIBERQ|FIBERQ@QTS|RAJEG|10000 1HP 24JAM|10000",
+    "uptime": "1d",
+    "ratelimit": "4m\/4m",
+    "mode": "mixedbesar",
+    "length": "8",
+    "prefix": "ss",
+    "area": "RAJEG",
+    "ip": "10.10.10.1:28",
+    "us": "FIBERQ",
+    "ps": "FIBERQ@QTS",
+    "login": "FIBERQ",
+    "nocs": "6287838767626",
+    "jumlah": "20",
+    "timestamp": "2025-10-05 02:16:24",
+    "vouchers": [
+        {
+            "user": "ssQG4KMA8N",
+            "pass": "ssQG4KMA8N"
+        },
+        {
+            "user": "ssURTBXU5Y",
+            "pass": "ssURTBXU5Y"
+        },
+        {
+            "user": "ss0FXYOPS9",
+            "pass": "ss0FXYOPS9"
+        },
+        {
+            "user": "ssCH1J2VD1",
+            "pass": "ssCH1J2VD1"
+        },
+        {
+            "user": "ssUZNR7UVI",
+            "pass": "ssUZNR7UVI"
+        },
+        {
+            "user": "ssWJFG23ZW",
+            "pass": "ssWJFG23ZW"
+        },
+        {
+            "user": "ss6Z8EBUEH",
+            "pass": "ss6Z8EBUEH"
+        },
+        {
+            "user": "ss5EHED1FV",
+            "pass": "ss5EHED1FV"
+        },
+        {
+            "user": "ssE1NMFC0F",
+            "pass": "ssE1NMFC0F"
+        },
+        {
+            "user": "ssDLR66OGG",
+            "pass": "ssDLR66OGG"
+        },
+        {
+            "user": "ssHTHK6EGU",
+            "pass": "ssHTHK6EGU"
+        },
+        {
+            "user": "ss0EITIL1P",
+            "pass": "ss0EITIL1P"
+        },
+        {
+            "user": "ss4Q5I3LN4",
+            "pass": "ss4Q5I3LN4"
+        },
+        {
+            "user": "ssR5DLFBZ1",
+            "pass": "ssR5DLFBZ1"
+        },
+        {
+            "user": "ssX5XU4AQO",
+            "pass": "ssX5XU4AQO"
+        },
+        {
+            "user": "ssVPJQDNBR",
+            "pass": "ssVPJQDNBR"
+        },
+        {
+            "user": "ss9M07P3SN",
+            "pass": "ss9M07P3SN"
+        },
+        {
+            "user": "ss3B41D9BE",
+            "pass": "ss3B41D9BE"
+        },
+        {
+            "user": "ssYY5LXSJ8",
+            "pass": "ssYY5LXSJ8"
+        },
+        {
+            "user": "ssQ5DDGOUB",
+            "pass": "ssQ5DDGOUB"
+        }
+    ]
+}

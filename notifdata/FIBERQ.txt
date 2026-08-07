@@ -1,0 +1,58 @@
+REGISTRASI:
+🎉 *Pelanggan Baru Terdaftar!*
+
+🔹 *ID Pelanggan*   : $customerID
+🔹 *Nama*           : $customerName
+🔹 *Paket Layanan*  : $packages
+🔹 *Tanggal Pasang* : $tanggalpasang
+🔹 *Password PPPoE* : $passwordPPPOE
+
+📞 *WhatsApp*       : $whatsappedit
+📧 *Email*          : $email
+🏠 *Alamat*         : $address
+
+🖥 *Server*         : $BRAND
+🧭 *ODP*            : $odp
+📍 *Area*           : $area
+🗺️ *Koordinat*      : $coordinates
+
+💳 *Link Pembayaran:* [Klik untuk Bayar]( $URL/crm/billing/broadband/portal.php?cari=$customerID )
+✅ Registrasi berhasil dan siap digunakan!
+
+👨‍💼 *Sales*         : $sales
+
+EXPIRED:
+⏰ *Pengingat Pembayaran Layanan*
+
+🔹 *ID Pelanggan*   : $IDPEL
+🔹 *Nama Pelanggan* : $NAMA
+🔹 *Paket Layanan*  : $PAKET
+
+📞 *WhatsApp*       : $NOWA
+📧 *Email*          : $EMAIL
+🏠 *Alamat*         : $ALAMAT
+
+🖥 *Server*         : $BRAND
+
+💡 Layanan sudah *expired*. Silakan perbarui paket Anda segera agar layanan tetap aktif.
+
+🔗 *Link Pembayaran:* $URL/crm/billing/broadband/portal.php?cari=$IDPEL
+
+REMAINDER:
+⏰ *Pengingat Pembayaran Layanan*
+
+🔹 *ID Pelanggan*   : $IDPEL
+🔹 *Nama Pelanggan* : $NAMA
+🔹 *Paket Layanan*  : $PAKET
+🔹 *Jatuh Tempo*    : $jatuh_tempo
+
+📞 *WhatsApp*       : $NOWA
+📧 *Email*          : $EMAIL
+🏠 *Alamat*         : $ALAMAT
+🖥 *Server*         : $BRAND
+
+💡 Mohon lakukan pembayaran sebelum tanggal jatuh tempo agar layanan tetap aktif.
+
+🔗 *Link Pembayaran:* $URL/crm/billing/broadband/portal.php?cari=$IDPEL
+
+✅ Terima kasih atas perhatian Anda!

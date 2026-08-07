@@ -1,0 +1,139 @@
+/* QTS Simple Dashboard CSS - Responsive, Minimal, Fast */
+
+body {
+  font-family: 'Inter', Arial, sans-serif;
+  background: #f8fafc;
+  color: #222;
+  margin: 0;
+  padding: 0;
+}
+
+.container, .container-fluid {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px;
+  box-sizing: border-box;
+}
+
+.card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+  border: 1px solid #e5e7eb;
+  margin-bottom: 18px;
+}
+
+.card-body {
+  padding: 18px 20px;
+}
+
+.btn, button, input[type="submit"], input[type="button"] {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 18px;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.btn:hover, button:hover, input[type="submit"]:hover, input[type="button"]:hover {
+  background: #1d4ed8;
+}
+
+input, select, textarea {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 15px;
+  margin-bottom: 10px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+label {
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: -8px;
+  margin-right: -8px;
+}
+[class^="col-"], [class*=" col-"] {
+  padding-left: 8px;
+  padding-right: 8px;
+  box-sizing: border-box;
+}
+.col-12 { width: 100%; }
+@media (min-width: 600px) {
+  .col-md-4 { width: 33.3333%; }
+  .col-md-6 { width: 50%; }
+  .col-md-8 { width: 66.6666%; }
+  .col-md-12 { width: 100%; }
+}
+
+.mt-4 { margin-top: 24px; }
+.mb-2 { margin-bottom: 12px; }
+.py-4 { padding-top: 24px; padding-bottom: 24px; }
+
+/* Modal */
+.modal {
+  display: none;
+  position: fixed;
+  z-index: 1050;
+  left: 0; top: 0; width: 100%; height: 100%;
+  overflow: auto;
+  background: rgba(0,0,0,0.2);
+  align-items: center;
+  justify-content: center;
+}
+.modal.show { display: flex; }
+.modal-dialog {
+  background: #fff;
+  border-radius: 10px;
+  max-width: 600px;
+  width: 95%;
+  margin: 0 auto;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.08);
+}
+
+/* Table */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 18px;
+  background: #fff;
+}
+th, td {
+  padding: 10px 8px;
+  border: 1px solid #e5e7eb;
+  text-align: left;
+  font-size: 14px;
+}
+th {
+  background: #f1f5f9;
+  font-weight: 600;
+}
+
+/* Utility */
+.text-center { text-align: center; }
+.text-right { text-align: right; }
+.text-muted { color: #888; }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .container, .container-fluid { padding: 8px; }
+  .card-body { padding: 10px 8px; }
+  th, td { padding: 7px 4px; }
+}
+
+/* Hide scrollbars for modern look */
+::-webkit-scrollbar { width: 8px; background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #e5e7eb; border-radius: 8px; }

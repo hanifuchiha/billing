@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Internet Terisolir</title>
+
+  <style>
+    *{
+      margin:0;
+      padding:0;
+      box-sizing:border-box;
+      font-family:'Segoe UI',sans-serif;
+    }
+
+    body{
+      height:100vh;
+      display:flex;
+      justify-content:center;
+      align-items:center;
+      background:
+      linear-gradient(135deg,#0f172a,#1e1b4b,#312e81,#2563eb);
+      overflow:hidden;
+      color:white;
+      padding:20px;
+    }
+
+    body::before{
+      content:'';
+      position:absolute;
+      width:500px;
+      height:500px;
+      background:rgba(59,130,246,0.25);
+      border-radius:50%;
+      top:-150px;
+      right:-150px;
+      filter:blur(80px);
+    }
+
+    body::after{
+      content:'';
+      position:absolute;
+      width:400px;
+      height:400px;
+      background:rgba(139,92,246,0.25);
+      border-radius:50%;
+      bottom:-120px;
+      left:-120px;
+      filter:blur(80px);
+    }
+
+    .card{
+      position:relative;
+      z-index:2;
+      width:100%;
+      max-width:460px;
+      background:rgba(255,255,255,0.08);
+      border:1px solid rgba(255,255,255,0.15);
+      backdrop-filter:blur(15px);
+      border-radius:25px;
+      padding:40px 35px;
+      text-align:center;
+      box-shadow:0 10px 40px rgba(0,0,0,0.35);
+    }
+
+    .logo{
+      width:90px;
+      margin-bottom:20px;
+    }
+
+    .icon{
+      font-size:75px;
+      margin-bottom:15px;
+    }
+
+    h1{
+      font-size:32px;
+      margin-bottom:15px;
+      font-weight:700;
+    }
+
+    p{
+      font-size:16px;
+      line-height:1.7;
+      color:rgba(255,255,255,0.88);
+      margin-bottom:30px;
+    }
+
+    .btn{
+      display:inline-block;
+      width:100%;
+      padding:16px;
+      border-radius:15px;
+      background:linear-gradient(135deg,#06b6d4,#3b82f6);
+      color:white;
+      text-decoration:none;
+      font-size:18px;
+      font-weight:bold;
+      letter-spacing:1px;
+      transition:0.3s;
+      box-shadow:0 5px 20px rgba(59,130,246,0.4);
+    }
+
+    .btn:hover{
+      transform:translateY(-3px);
+      box-shadow:0 10px 25px rgba(59,130,246,0.6);
+    }
+
+    .info{
+      margin-top:25px;
+      font-size:14px;
+      color:rgba(255,255,255,0.7);
+    }
+
+    @media(max-width:500px){
+      .card{
+        padding:30px 25px;
+      }
+
+      h1{
+        font-size:26px;
+      }
+
+      p{
+        font-size:15px;
+      }
+    }
+
+  </style>
+</head>
+<body>
+
+  <div class="card">
+
+    <!-- Ganti logo sesuai kebutuhan -->
+    <!-- <img src="logo.png" class="logo"> -->
+
+    <div class="icon">??</div>
+
+    <h1>Koneksi Internet Terisolir</h1>
+
+    <p>
+      Layanan internet Anda saat ini sedang dibatasi karena terdapat tagihan yang belum diselesaikan.
+      Silakan lakukan pembayaran agar layanan kembali aktif secara otomatis.
+    </p>
+
+    <a href="https://quenbytekniksejahtera.com/crm/billing/broadband/portallogin.php" class="btn">
+      BAYAR SEKARANG
+    </a>
+
+    <div class="info">
+      QUENBY TECHNICAL • INTERNET SERVICE
+    </div>
+
+  </div>
+
+</body>
+</html>

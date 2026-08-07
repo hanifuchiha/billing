@@ -1,0 +1,108 @@
+
+
+
+
+===================================================================================================
+hapus semua freeradus lama
+
+sudo apt-get remove --purge freeradius freeradius-utils
+sudo apt-get autoremove
+sudo apt-get clean
+sudo rm -rf /etc/freeradius
+sudo rm -rf /var/log/freeradius
+sudo rm -rf /var/lib/freeradius
+sudo rm -rf /usr/share/freeradius
+sudo rm -rf /run/freeradius
+sudo deluser --remove-home freerad
+sudo delgroup freerad
+===================================================================================================
+
+instal
+
+sudo apt update
+sudo apt install freeradius-utils
+
+===================================================================================================
+php permision freeradius
+
+sudo usermod -aG freerad $(whoami)
+sudo usermod -aG freerad www-data
+
+sudo chown root:freerad /etc/freeradius/3.0/clients.conf
+sudo chown root:freerad /etc/freeradius/3.0/users
+
+sudo chmod 664 /etc/freeradius/3.0/clients.conf
+sudo chmod 664 /etc/freeradius/3.0/users
+
+sudo chown -R root:freerad /etc/freeradius/3.0/
+sudo chmod g+s /etc/freeradius/3.0/
+
+-rw-rw-r-- 1 root freerad  xxxx Oct  8  clients.conf
+-rw-rw-r-- 1 root freerad  xxxx Oct  8  users
+
+
+===================================================================================================
+sudo visudo 
+
+www-data ALL=(ALL) NOPASSWD: /bin/cat, /bin/grep, /usr/bin/pm2
+www-data ALL=(qts) NOPASSWD: /usr/bin/pm2
+www-data ALL=(ALL) NOPASSWD: /usr/bin/nano, /usr/bin/tee, /bin/echo, /usr/bin/bash
+www-data ALL=(ALL) NOPASSWD: /usr/bin/tee, /bin/echo, /usr/bin/bash, /usr/bin/systemctl
+www-data ALL=(ALL) NOPASSWD: /bin/cat /etc/freeradius/3.0/clients.conf
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart freeradius
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl stop freeradius
+www-data ALL=(ALL) NOPASSWD: /bin/netstat
+www-data ALL=(ALL) NOPASSWD: /bin/ss
+www-data ALL=(ALL) NOPASSWD: /usr/bin/pkill
+www-data ALL=(qts) NOPASSWD: /usr/bin/tail
+www-data ALL=(ALL) NOPASSWD: /bin/cat /etc/freeradius/3.0/clients.conf
+www-data ALL=(ALL) NOPASSWD: /bin/cat, /bin/cp, /usr/bin/systemctl
+www-data ALL=(ALL) NOPASSWD: /bin/cat, /usr/bin/systemctl, /bin/cp
+www-data ALL=(ALL) NOPASSWD: /bin/cat
+www-data ALL=(ALL) NOPASSWD: /bin/cat, /bin/cp, /bin/mv, /usr/bin/systemctl
+www-data ALL=(ALL) NOPASSWD: /usr/bin/tee, /bin/cat, /usr/bin/systemctl restart freeradius
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/radwho
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/radwho
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/radwho -f /var/log/freeradius/radutmp
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/radwho *
+www-data ALL=(ALL) NOPASSWD: /usr/bin/crontab
+www-data ALL=(ALL) NOPASSWD: /usr/bin/radwho, /usr/bin/radwho -f /var/log/freeradius/radutmp
+www-data ALL=(ALL) NOPASSWD: /usr/bin/docker
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart freeradius, /usr/bin/tee /etc/freeradius/3.0/users, /bin/cat /etc/freeradius/3.0/users
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/freeradius
+www-data ALL=(ALL) NOPASSWD: /usr/bin/pkill
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl, /bin/mv
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/freeradius, /bin/kill, /bin/ps
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/freeradius, /bin/kill
+www-data ALL=NOPASSWD: /bin/systemctl restart freeradius, /bin/systemctl status freeradius, /bin/systemctl stop freeradius, /bin/systemctl start freeradius
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/freeradius
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/freeradius
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/freeradius, /usr/bin/pkill
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/freeradius, /bin/kill, /usr/bin/kill
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl restart freeradius
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/freeradius, /bin/kill
+www-data ALL=(ALL) NOPASSWD: /bin/systemctl start freeradius, /bin/systemctl stop freeradius, /bin/kill, /bin/touch, /bin/chmod, /bin/rm, /usr/sbin/freeradi>
+www-data ALL=(ALL) NOPASSWD: /usr/sbin/freeradius
+www-data ALL=(ALL) NOPASSWD: /usr/bin/pkill
+www-data ALL=(ALL) NOPASSWD: /bin/mkdir, /bin/chmod, /bin/touch, /bin/chown, /bin/tee, /usr/sbin/usermod, /bin/cp, /usr/sbin/groupadd, /bin/echo
+
+===================================================================================================
+
+
+CRON
+/var/www/html/freeradius/update_timer.php
+curl quenbytekniksejahtera.com/crm/realtime/pages/update_timer.php
+
+===================================================================================================
+tripay full speed
+
+/ip firewall mangle add chain=forward dst-address=IP_TRIPAY action=mark-connection new-connection-mark=tripay-conn passthrough=yes
+/ip firewall mangle add chain=forward connection-mark=tripay-conn action=mark-packet new-packet-mark=tripay-pkt passthrough=yes
+
+/queue simple add name="Tripay Full Speed" packet-marks=tripay-pkt max-limit=0/0 target=0.0.0.0/0
+
+======================================================================================================
+RESTOR COMMENT
+sudo restore-perms.sh  

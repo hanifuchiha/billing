@@ -1,0 +1,20 @@
+{
+    "otp_mode": "bypass",
+    "otp_length": 6,
+    "otp_expiry_seconds": 120,
+    "otp_message_template": "*[INI ADALAH PESAN OTOMATIS]*\r\nKode OTP Anda: *{otp}*\r\nBerlaku {expired_minutes} menit",
+    "otp_random_greeting_enabled": true,
+    "otp_random_greetings": [
+        "Halo",
+        "Hai",
+        "Assalamualaikum"
+    ],
+    "forgot_message_template": "Halo {name}, permintaan reset kata sandi diterima. Klik link berikut untuk reset password:\r\n{reset_link}\r\nToken berlaku 1 jam.",
+    "forgot_random_greeting_enabled": true,
+    "forgot_random_greetings": [
+        "Halo",
+        "Hai",
+        "Assalamualaikum"
+    ],
+    "updated_at": "2026-04-16 03:41:17"
+}

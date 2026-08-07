@@ -1,0 +1,73 @@
+Panduan Penggunaan Pengaturan Notifikasi & Cron Job
+
+Halaman ini digunakan untuk mengelola notifikasi otomatis, pesan manual, dan jadwal cron job untuk sistem billing dan monitoring. Berikut penjelasan lengkap setiap pengaturan:
+
+1. Notifikasi Registrasi Pelanggan Baru
+Atur pesan WhatsApp yang dikirim otomatis saat pelanggan baru mendaftar. Pesan ini akan menggunakan variabel seperti $customerID, $customerName, dll. Klik "Edit" untuk mengubah pesan, lalu simpan. Preview akan ditampilkan di bawah untuk memastikan format benar.
+
+2. Notifikasi Expired
+Pesan yang dikirim saat layanan pelanggan sudah expired (melewati jatuh tempo). Gunakan variabel seperti $IDPEL, $NAMA, dll. Edit dan simpan perubahan, lalu lihat preview.
+
+3. Notifikasi Reminder
+Pesan pengingat pembayaran sebelum jatuh tempo. Variabel seperti $jatuh_tempo akan otomatis diganti saat pesan dikirim. Edit pesan dan simpan untuk mengaktifkan notifikasi reminder.
+
+4. Pesan Ketentuan Berlangganan
+Pesan yang dikirim saat pelanggan mendaftar, berisi syarat dan ketentuan. Simpan pesan ini untuk dikirim otomatis pada proses registrasi.
+
+5. Pesan Disable Manual
+Pesan yang dikirim saat Anda menonaktifkan pelanggan secara manual (misalnya via isolir). Simpan pesan untuk notifikasi otomatis.
+
+6. Pesan Aktif Manual
+Pesan yang dikirim saat Anda mengaktifkan pelanggan secara manual. Simpan untuk notifikasi saat aktivasi.
+
+7. Pesan Remainder Manual
+Pesan pengingat manual yang bisa dikirim kapan saja. Simpan template untuk digunakan saat reminder manual.
+
+8. Pesan Dismantle Manual
+Pesan yang dikirim saat pelanggan dibongkar/dismantle secara manual. Simpan untuk notifikasi saat proses dismantle.
+
+9. Input Nomor Penerima Pesan (Pendaftaran)
+Masukkan nomor WhatsApp penerima notifikasi saat ada pendaftaran baru. Pilih "Pribadi" untuk nomor individu atau "Grup" untuk ID grup WhatsApp.
+
+10. Input Nomor Penerima Notif Server
+Nomor WhatsApp yang menerima notifikasi jika server tidak terkoneksi. Pastikan nomor valid untuk monitoring jaringan.
+
+11. Input Nomor Penerima Notif Live Chat
+Nomor untuk notifikasi live chat. Gunakan untuk alert interaksi pelanggan secara real-time.
+
+12. Input Nomor Penerima Notif System
+Nomor untuk notifikasi sistem umum, seperti error atau update. Pilih tipe penerima (Pribadi/Grup).
+
+13. Pengaturan Cron Job (Jadwal Otomatis)
+Cron job adalah tugas otomatis yang berjalan berdasarkan jadwal. Toggle (on/off) untuk mengaktifkan/nonaktifkan:
+- Notifikasi BOT WHATSAPP jatuh tempo ke semua pelanggan: Kirim reminder jatuh tempo harian pada jam tertentu (sesuai pengaturan reminder JSON).
+- Notifikasi BOT WHATSAPP pembayaran remainder dan isolir pelanggan: Reminder dan isolir otomatis berdasarkan tanggal aktivasi.
+- Notifikasi BOT WHATSAPP status server: Cek status server setiap malam jam 23:00.
+- Notifikasi BOT WHATSAPP tagihan pelanggan baru: Tagihan untuk pelanggan prabayar setelah 2 hari pasang.
+- AUTO Isolir pelanggan jatuh tempo: Isolir otomatis jika melewati jatuh tempo.
+- AUTO hapus kode pembayaran expired: Hapus kode bayar expired setiap jam 08:00.
+- Notifikasi Server Tidak Konek: Alert jika router tidak bisa dihubungi, setiap jam.
+- Update Grafik Trafik dan PPPoE/Hotspot: Update data monitoring setiap menit.
+- Update Otomatis Paket Promo Berakhir (Super Admin): Aktifkan update paket saat promo habis, jam 02:00.
+- Log PPPoE/Hotspot, Read User Aktif, Read Data ODP, Read Data OLT (Super Admin): Tugas monitoring lanjutan untuk admin.
+
+14. Pengaturan Jatuh Tempo
+Pengaturan jatuh tempo pembayaran diatur melalui file JSON bernama reminder-$username.json (di folder notifbot/data/). File ini berisi parameter penting seperti:
+- jatuh_tempo: Tanggal jatuh tempo bulanan (misalnya, 25 untuk tanggal 25 setiap bulan).
+- hari_sebelum: Jumlah hari sebelum jatuh tempo untuk mengirim reminder (misalnya, 3 hari sebelumnya).
+- tanggal_reminder: Tanggal spesifik untuk reminder.
+- tanggal_awal_tutup_buku dan tanggal_akhir_tutup_buku: Periode tutup buku untuk billing.
+- jam_reminder dan menit_reminder: Waktu pengiriman notifikasi reminder (misalnya, jam 07:00).
+- botname: Nama bot WhatsApp yang digunakan untuk notifikasi.
+File ini biasanya diedit manual melalui file manager atau halaman admin khusus. Pastikan nilai jatuh_tempo sesuai dengan kebijakan perusahaan (misalnya, akhir bulan atau tanggal tetap). Jika perlu perubahan, edit file JSON dengan hati-hati untuk menghindari error pada cron job.
+
+Catatan: Pastikan server mendukung cron job. Jika toggle tidak berfungsi, periksa konfigurasi server. Untuk Super Admin, ada fitur tambahan seperti toggle promo update.
+
+Tips Penggunaan:
+- Selalu simpan perubahan setelah edit pesan.
+- Gunakan preview untuk memastikan pesan terlihat benar di WhatsApp.
+- Variabel seperti $IDPEL akan diganti otomatis saat pesan dikirim.
+- Aktifkan cron job hanya jika diperlukan untuk menghindari spam notifikasi.
+- Jika ada error, periksa log server atau hubungi admin.
+
+Jika Anda membutuhkan bantuan lebih lanjut, hubungi tim support atau lihat dokumentasi teknis.

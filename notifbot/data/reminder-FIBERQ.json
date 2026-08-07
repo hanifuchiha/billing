@@ -1,0 +1,16 @@
+[
+    {
+        "jatuh_tempo": 28,
+        "hari_sebelum": 2,
+        "tanggal_reminder": 26,
+        "jam_reminder": 7,
+        "menit_reminder": 0,
+        "botname": "CS",
+        "tanggal_awal_tutup_buku": 26,
+        "tanggal_akhir_tutup_buku": 28,
+        "prorate_untuk_telat": true,
+        "periode_tercatat": "berikutnya",
+        "filter_sudah_bayar_reminder": true,
+        "filter_skip_notif_hari_ini": true
+    }
+]

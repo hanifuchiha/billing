@@ -1,0 +1,20 @@
+{
+    "cron_dismantle_ticket": {
+        "enabled_by": [
+            "MEDIAQ",
+            "VISMED",
+            "FIBERQ"
+        ],
+        "interval_hours": 1,
+        "_comment": "enabled_by = array of PEMILIK yang mengaktifkan. Kosong = disabled untuk semua."
+    },
+    "cron_maintenance_ticket": {
+        "enabled_by": [
+            "MEDIAQ",
+            "VISMED",
+            "FIBERQ"
+        ],
+        "interval_hours": 1,
+        "_comment": "enabled_by = array of PEMILIK yang mengaktifkan. Kosong = disabled untuk semua."
+    }
+}

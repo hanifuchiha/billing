@@ -1,0 +1,21 @@
+{
+    "desain": "default",
+    "packages": "10000 1HP 1hari",
+    "radius": "",
+    "logo_path": null,
+    "bg_path": "default",
+    "ip": "127.0.0.1",
+    "us": "6O5YAP12",
+    "ps": "6O5YAP12",
+    "login": "6O5YAP12",
+    "jumlah": 1,
+    "uptime": "86400",
+    "ratelimit": "4m/4m",
+    "vouchers": [
+        {
+            "user": "6O5YAP12",
+            "pass": "6O5YAP12"
+        }
+    ],
+    "timestamp": "2025-10-24 01:06:20"
+}

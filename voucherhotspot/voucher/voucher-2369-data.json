@@ -1,0 +1,21 @@
+{
+    "radius": "yes",
+    "packages": "10.10.10.20:8728|NANONET|123456789|BOGOR|20000 1HP 5HARI|20000",
+    "uptime": "1d",
+    "ratelimit": "10M\/10M",
+    "mode": "mixedbesar",
+    "length": "8",
+    "prefix": "FIBERQ",
+    "area": "BOGOR",
+    "ip": "10.10.10.20:8728",
+    "us": "NANONET",
+    "ps": "123456789",
+    "jumlah": "1",
+    "timestamp": "2025-10-13 03:41:50",
+    "vouchers": [
+        {
+            "user": "FIBERQQMU33DUR",
+            "pass": "FIBERQQMU33DUR"
+        }
+    ]
+}

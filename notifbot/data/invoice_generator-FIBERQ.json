@@ -1,0 +1,9 @@
+{
+    "enabled": 1,
+    "schedule": "daily",
+    "start_day": 25,
+    "hour": 7,
+    "minute": 0,
+    "days_before_due": 2,
+    "updated_at": "2026-08-01 16:43:35"
+}

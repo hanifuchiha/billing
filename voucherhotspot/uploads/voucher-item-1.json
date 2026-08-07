@@ -1,0 +1,21 @@
+{
+    "desain": "modern-gradient",
+    "packages": "50000 1HP 7HARI",
+    "radius": "",
+    "logo_path": "https://quenbytekniksejahtera.com/crm/billing/voucherhotspot/uploads/logo_6a10787254824.png",
+    "bg_path": "default",
+    "ip": "127.0.0.1",
+    "us": "FQ08156313",
+    "ps": "FQ08156313",
+    "login": "FQ08156313",
+    "jumlah": 1,
+    "uptime": "604800",
+    "ratelimit": "4m/4m",
+    "vouchers": [
+        {
+            "user": "FQ08156313",
+            "pass": "FQ08156313"
+        }
+    ],
+    "timestamp": "2026-05-22 22:39:02"
+}

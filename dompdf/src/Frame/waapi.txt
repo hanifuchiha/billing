@@ -1,0 +1,4 @@
+waapi=http://quenbytekniksejahtera.com:3000
+namebot=FIBERQ
+password=Deltaiman@qts92
+grup=120363046084927501@g.us

@@ -1,0 +1,459 @@
+==================================================================
+DOKUMENTASI API - TIKET MANAGER
+(Instalasi / Maintenance / Migrasi / Dismantle)
+==================================================================
+
+File endpoint : crm/billing/api/tiket_manager.php
+Base URL      : https://quenbytekniksejahtera.com/crm/billing/api/tiket_manager.php
+Format        : JSON (request & response)
+Tabel DB      : billing_tiket_manager ATAU joblist (lihat bagian 1b)
+
+------------------------------------------------------------------
+1. TENTANG API INI
+------------------------------------------------------------------
+API ini dipakai untuk mengelola tiket kerja (Instalasi, Maintenance,
+Migrasi, Dismantle) yang terhubung ke server billing milik akun yang
+login. Mendukung CRUD penuh:
+
+  - GET     : baca data tiket (status/tipe apa saja)
+  - POST    : tambah tiket baru
+  - PUT     : ubah tiket (status, teknisi, laporan, dll)
+  - DELETE  : hapus tiket
+
+Data selalu dibatasi hanya untuk server yang DIMILIKI akun yang
+login. Kalau akun tipe ASSISTANT, hanya server yang di-assign ke
+akun tersebut yang bisa diakses/diubah. Tidak mungkin membaca atau
+mengubah tiket milik akun/server orang lain.
+
+------------------------------------------------------------------
+1b. DUA BACKEND TIKET - MENYESUAIKAN OTOMATIS SEPERTI CRON
+------------------------------------------------------------------
+Sistem ini punya 2 tempat penyimpanan tiket yang sudah lama berjalan
+berdampingan:
+
+  - "tiket_manager" -> tabel billing_tiket_manager (default)
+  - "joblist"        -> tabel joblist (dipakai app teknisi mobile,
+                         DB terpisah)
+
+Setiap akun owner billing punya setting `ticket_management_source`
+(BUKAN dikirim di request, otomatis dibaca API dari kolom user di
+database - sama persis seperti yang dipakai cek-sesi.php dan cron
+cron_maintenance_ticket.php / cron_dismantle_ticket.php). API ini
+OTOMATIS mendeteksi setting itu setiap request dan mengarahkan
+CRUD ke tabel yang benar - kamu tidak perlu ganti URL atau parameter
+apa pun, tinggal panggil endpoint yang sama seperti biasa.
+
+Perbedaan penting saat sebuah akun memakai backend "joblist":
+
+  - Field khas billing (server_id, brand, area, project_name,
+    teknisi_user_id, created_by_user_id, done_at) akan bernilai null,
+    karena tabel joblist memang tidak punya kolom-kolom itu.
+  - Sebagai gantinya muncul field asli joblist: project, tim, nowa,
+    keterangan, tgl, waktu.
+  - Nilai status yang valid lebih banyak: BARU, PENDING, OPEN, DONE,
+    CANCEL, PRIORITAS (bukan cuma 4 seperti tiket_manager).
+  - server_id TIDAK dipakai/tidak wajib. Tiket dikaitkan ke akun lewat
+    field `project` (harus sama dengan username akun ATAU salah satu
+    BRAND server yang dimiliki akun tsb).
+  - judul disintesis otomatis dari baris pertama isi tiket kalau tidak
+    dikirim eksplisit.
+
+Setiap baris tiket di response SELALU punya field "source" supaya
+kamu tahu datanya berasal dari backend mana:
+
+  "source": "tiket_manager"   -> dari billing_tiket_manager
+  "source": "joblist"         -> dari joblist
+
+Kamu tidak perlu memilih backend secara manual - API menyesuaikan
+sendiri berdasarkan akun yang login/dipakai di request.
+
+------------------------------------------------------------------
+2. AUTENTIKASI
+------------------------------------------------------------------
+Pilih salah satu:
+
+  A) Session login
+     - Login dulu ke crm/billing (index.php) di browser/HTTP client
+       yang sama supaya cookie session aktif.
+     - Setelah itu semua request ke tiket_manager.php otomatis
+       dianggap login, tidak perlu kirim username/password lagi.
+
+  B) Username & password langsung di setiap request
+     - GET          : lewat query string  -> ?username=xxx&password=xxx
+     - POST/PUT/DELETE : lewat body JSON  -> {"username":"xxx","password":"xxx", ...}
+
+Kalau autentikasi gagal, response-nya:
+
+  HTTP 401
+  {
+    "success": false,
+    "error": "Autentikasi gagal, login dulu atau sertakan username & password"
+  }
+
+------------------------------------------------------------------
+3. KOLOM TIKET (semua bisa dibaca lewat GET)
+------------------------------------------------------------------
+  id                   int      ID unik tiket
+  judul                string   Judul/ringkasan tiket
+  detail               string   Detail/isi tiket (bebas)
+  server_id            int      ID server billing terkait
+  pemilik              string   Username pemilik server (otomatis dari server)
+  brand                string   Brand server (otomatis dari server)
+  area                 string   Area server (otomatis dari server)
+  project_name         string   Nama project (otomatis brand - area, atau custom)
+  tipe                 string   INSTALLASI | MAINTENANCE | MIGRASI | DISMANTLE
+  report               string   Laporan hasil pekerjaan teknisi
+  status               string   BARU | PENDING | DONE | CANCEL
+  teknisi_user_id      int/null ID user teknisi yang ditugaskan
+  created_by_user_id   int      ID user yang membuat tiket
+  done_at              date/null Waktu tiket diselesaikan (terisi otomatis saat status=DONE)
+  created_at           datetime Waktu tiket dibuat
+  updated_at           datetime Waktu tiket terakhir diubah
+
+------------------------------------------------------------------
+4. NILAI VALID (ENUM)
+------------------------------------------------------------------
+  tipe   : INSTALLASI, MAINTENANCE, MIGRASI, DISMANTLE
+  status : BARU, PENDING, DONE, CANCEL
+
+==================================================================
+5. GET - AMBIL DATA TIKET
+==================================================================
+
+URL:
+  GET /tiket_manager.php
+
+Query parameter (semua opsional):
+  id               = ambil 1 tiket spesifik berdasarkan ID
+  status           = ALL (default) | BARU | PENDING | DONE | CANCEL
+  tipe             = ALL (default) | INSTALLASI | MAINTENANCE | MIGRASI | DISMANTLE
+  server_id        = filter berdasarkan ID server (harus milik akun)
+  teknisi_user_id  = filter berdasarkan teknisi yang ditugaskan
+  brand            = filter exact match kolom brand
+  area             = filter exact match kolom area
+  project_name     = filter exact match kolom project_name
+  q                = cari teks bebas di kolom judul/detail/report
+  date_from        = filter created_at mulai tanggal (format YYYY-MM-DD)
+  date_to          = filter created_at sampai tanggal (format YYYY-MM-DD)
+  limit            = jumlah data per halaman (default 200, maksimal 500)
+  offset           = mulai dari data ke-berapa (untuk pagination, default 0)
+
+--- Contoh request (browser / curl) ------------------------------
+
+  https://quenbytekniksejahtera.com/crm/billing/api/tiket_manager.php?username=FIBERQ&password=xxx&status=ALL
+
+  curl "https://quenbytekniksejahtera.com/crm/billing/api/tiket_manager.php?username=FIBERQ&password=xxx&status=PENDING&tipe=MAINTENANCE"
+
+--- Contoh response SUKSES ----------------------------------------
+
+  {
+    "success": true,
+    "data": [
+      {
+        "id": "12",
+        "judul": "Maintenance rutin ODP - Blok C",
+        "detail": "Cek redaman & bersihkan ODP",
+        "server_id": "1",
+        "pemilik": "FIBERQ",
+        "brand": "FIBERQ",
+        "area": "Bekasi Timur",
+        "project_name": "FIBERQ - Bekasi Timur",
+        "tipe": "MAINTENANCE",
+        "report": "",
+        "status": "PENDING",
+        "teknisi_user_id": "5",
+        "created_by_user_id": "1",
+        "done_at": null,
+        "created_at": "2026-07-15 09:30:00",
+        "updated_at": "2026-07-15 09:30:00"
+      },
+      {
+        "id": "11",
+        "judul": "Dismantle - IDPEL FQ-001@150726",
+        "detail": "===============\nTiket DISMANTLE dari billing\n===============\nID PELANGGAN :FQ-001\n...",
+        "server_id": "1",
+        "pemilik": "FIBERQ",
+        "brand": "FIBERQ",
+        "area": "Bekasi Timur",
+        "project_name": "FIBERQ - Bekasi Timur",
+        "tipe": "DISMANTLE",
+        "report": "Perangkat sudah dicabut, ODP rapi.",
+        "status": "DONE",
+        "teknisi_user_id": "5",
+        "created_by_user_id": "1",
+        "done_at": "2026-07-14 16:02:11",
+        "created_at": "2026-07-14 10:00:00",
+        "updated_at": "2026-07-14 16:02:11"
+      }
+    ],
+    "total": 2,
+    "limit": 200,
+    "offset": 0
+  }
+
+--- Contoh response kalau akun belum punya server sama sekali ----
+
+  {
+    "success": true,
+    "data": [],
+    "total": 0
+  }
+
+--- Contoh response GAGAL (status/tipe salah ketik) ---------------
+
+  {
+    "success": false,
+    "error": "Status tidak valid. Pilihan: ALL, BARU, PENDING, DONE, CANCEL"
+  }
+
+--- Contoh response SUKSES untuk akun berbackend "joblist" ---------
+(lihat bagian 1b - field billing seperti server_id/brand/area jadi
+null, muncul field asli joblist seperti project/tim/nowa)
+
+  {
+    "success": true,
+    "data": [
+      {
+        "source": "joblist",
+        "id": "58",
+        "judul": "Tiket INSTALLASI dari billing",
+        "detail": "===============\nTiket INSTALLASI dari billing\n===============\nID PELANGGAN :FQ-010\n...",
+        "server_id": null,
+        "pemilik": "FIBERQ",
+        "brand": null,
+        "area": null,
+        "project_name": "FIBERQ",
+        "tipe": "INSTALLASI",
+        "report": "",
+        "status": "BARU",
+        "teknisi_user_id": null,
+        "created_by_user_id": null,
+        "done_at": null,
+        "created_at": "2026-07-16 07:00:00",
+        "updated_at": "2026-07-16 07:00:00",
+        "project": "FIBERQ",
+        "tim": "",
+        "nowa": "",
+        "keterangan": "",
+        "tgl": "2026-07-16",
+        "waktu": "2026-07-16 07:00:00"
+      }
+    ],
+    "total": 1,
+    "limit": 200,
+    "offset": 0
+  }
+
+==================================================================
+6. POST - TAMBAH TIKET BARU
+==================================================================
+
+URL:
+  POST /tiket_manager.php
+  Header: Content-Type: application/json
+
+Body JSON:
+  server_id          wajib   ID server (harus salah satu server milik akun)
+  judul              wajib   Judul tiket
+  detail             opsional
+  tipe               opsional (default INSTALLASI)
+  report             opsional
+  status             opsional (default BARU)
+  teknisi_user_id    opsional (harus ID teknisi/ASSISTANT milik akun ini)
+
+--- Contoh request -------------------------------------------------
+
+  curl -X POST \
+    -H "Content-Type: application/json" \
+    -d '{
+      "username": "FIBERQ",
+      "password": "xxx",
+      "server_id": 1,
+      "judul": "Instalasi baru - Jl. Merdeka No. 10",
+      "tipe": "INSTALLASI",
+      "detail": "ID PELANGGAN: FQ-002\nNAMA: Budi",
+      "teknisi_user_id": 5
+    }' \
+    https://quenbytekniksejahtera.com/crm/billing/api/tiket_manager.php
+
+--- Contoh response SUKSES ------------------------------------------
+
+  {
+    "success": true,
+    "id": 13,
+    "data": {
+      "id": "13",
+      "judul": "Instalasi baru - Jl. Merdeka No. 10",
+      "detail": "ID PELANGGAN: FQ-002\nNAMA: Budi",
+      "server_id": "1",
+      "pemilik": "FIBERQ",
+      "brand": "FIBERQ",
+      "area": "Bekasi Timur",
+      "project_name": "FIBERQ - Bekasi Timur",
+      "tipe": "INSTALLASI",
+      "report": "",
+      "status": "BARU",
+      "teknisi_user_id": "5",
+      "created_by_user_id": "1",
+      "done_at": null,
+      "created_at": "2026-07-16 08:12:45",
+      "updated_at": "2026-07-16 08:12:45"
+    }
+  }
+
+--- Contoh response GAGAL (judul kosong) ----------------------------
+
+  {
+    "success": false,
+    "error": "Judul wajib diisi"
+  }
+
+--- Contoh response GAGAL (server_id bukan milik akun / tidak ada) --
+
+  {
+    "success": false,
+    "error": "server_id wajib diisi dan harus salah satu server milik akun ini"
+  }
+
+--- Contoh response GAGAL (tipe tidak dikenal) ----------------------
+
+  {
+    "success": false,
+    "error": "Tipe tidak valid. Pilihan: INSTALLASI, MAINTENANCE, MIGRASI, DISMANTLE"
+  }
+
+==================================================================
+7. PUT - UBAH TIKET
+==================================================================
+
+URL:
+  PUT /tiket_manager.php
+  Header: Content-Type: application/json
+
+Body JSON:
+  id                 wajib   ID tiket yang mau diubah
+  judul              opsional
+  detail             opsional
+  report             opsional
+  tipe               opsional
+  status             opsional (mengisi done_at otomatis saat DONE, otomatis
+                      dikosongkan lagi kalau status diganti bukan DONE)
+  teknisi_user_id    opsional (kirim null/"" untuk melepas assignment)
+  server_id          opsional (pindah tiket ke server lain milik akun ini)
+
+Catatan: hanya field yang dikirim yang akan diubah. Field yang tidak
+disertakan di body tidak akan disentuh.
+
+--- Contoh request: update status + laporan -------------------------
+
+  curl -X PUT \
+    -H "Content-Type: application/json" \
+    -d '{
+      "username": "FIBERQ",
+      "password": "xxx",
+      "id": 12,
+      "status": "DONE",
+      "report": "ODP sudah dibersihkan, redaman normal -18dBm"
+    }' \
+    https://quenbytekniksejahtera.com/crm/billing/api/tiket_manager.php
+
+--- Contoh response SUKSES --------------------------------------------
+
+  {
+    "success": true,
+    "data": {
+      "id": "12",
+      "judul": "Maintenance rutin ODP - Blok C",
+      "detail": "Cek redaman & bersihkan ODP",
+      "server_id": "1",
+      "pemilik": "FIBERQ",
+      "brand": "FIBERQ",
+      "area": "Bekasi Timur",
+      "project_name": "FIBERQ - Bekasi Timur",
+      "tipe": "MAINTENANCE",
+      "report": "ODP sudah dibersihkan, redaman normal -18dBm",
+      "status": "DONE",
+      "teknisi_user_id": "5",
+      "created_by_user_id": "1",
+      "done_at": "2026-07-16 08:20:03",
+      "created_at": "2026-07-15 09:30:00",
+      "updated_at": "2026-07-16 08:20:03"
+    }
+  }
+
+--- Contoh response GAGAL (tiket tidak ada / bukan milik akun) --------
+
+  {
+    "success": false,
+    "error": "Tiket tidak ditemukan atau tidak diizinkan"
+  }
+
+--- Contoh response GAGAL (tidak ada field yang dikirim selain id) ----
+
+  {
+    "success": false,
+    "error": "Tidak ada data untuk diupdate"
+  }
+
+==================================================================
+8. DELETE - HAPUS TIKET
+==================================================================
+
+URL:
+  DELETE /tiket_manager.php
+  Header: Content-Type: application/json
+
+Body JSON:
+  id   wajib   ID tiket yang mau dihapus
+
+--- Contoh request -------------------------------------------------
+
+  curl -X DELETE \
+    -H "Content-Type: application/json" \
+    -d '{"username":"FIBERQ","password":"xxx","id":12}' \
+    https://quenbytekniksejahtera.com/crm/billing/api/tiket_manager.php
+
+--- Contoh response SUKSES ------------------------------------------
+
+  {
+    "success": true
+  }
+
+--- Contoh response GAGAL (id tidak ditemukan / bukan milik akun) ---
+
+  {
+    "success": false,
+    "error": "Tiket tidak ditemukan atau tidak diizinkan"
+  }
+
+==================================================================
+9. CARA TES DI BROWSER (RINGKASAN)
+==================================================================
+
+GET (langsung di address bar):
+  1. Login dulu ke crm/billing di browser yang sama.
+  2. Buka:
+     https://quenbytekniksejahtera.com/crm/billing/api/tiket_manager.php?status=ALL
+
+POST / PUT / DELETE (lewat DevTools Console, karena address bar cuma
+bisa GET):
+  1. Login dulu di browser.
+  2. Tekan F12 -> tab Console, di halaman domain yang sama.
+  3. Jalankan, contoh untuk update status jadi DONE:
+
+     fetch('/crm/billing/api/tiket_manager.php', {
+       method: 'PUT',
+       credentials: 'same-origin',
+       headers: {'Content-Type': 'application/json'},
+       body: JSON.stringify({ id: 12, status: 'DONE', report: 'Selesai' })
+     }).then(r => r.json()).then(console.log);
+
+==================================================================
+10. KODE STATUS HTTP
+==================================================================
+  200  Berhasil (success: true) atau gagal validasi (success: false,
+       lihat field "error" untuk detail)
+  401  Belum login / username-password salah
+  405  Method HTTP tidak didukung (selain GET/POST/PUT/DELETE)
+
+==================================================================

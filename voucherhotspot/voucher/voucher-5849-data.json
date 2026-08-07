@@ -1,0 +1,37 @@
+{
+    "radius": "yes",
+    "packages": "10.10.10.1:28|FIBERQ|Deltaganteng@92|RAJEG|10000 1HP 24JAM|10000",
+    "uptime": "1d",
+    "ratelimit": "4m\/4m",
+    "mode": "mixedbesar",
+    "length": "8",
+    "prefix": "FIBERQ",
+    "area": "RAJEG",
+    "ip": "10.10.10.1:28",
+    "us": "FIBERQ",
+    "ps": "Deltaganteng@92",
+    "jumlah": "5",
+    "timestamp": "2025-11-18 21:27:34",
+    "vouchers": [
+        {
+            "user": "FIBERQBSC5GEJP",
+            "pass": "FIBERQBSC5GEJP"
+        },
+        {
+            "user": "FIBERQUCJGXQUC",
+            "pass": "FIBERQUCJGXQUC"
+        },
+        {
+            "user": "FIBERQZT682OMX",
+            "pass": "FIBERQZT682OMX"
+        },
+        {
+            "user": "FIBERQN3Z9FIHM",
+            "pass": "FIBERQN3Z9FIHM"
+        },
+        {
+            "user": "FIBERQYZ60Y7F2",
+            "pass": "FIBERQYZ60Y7F2"
+        }
+    ]
+}

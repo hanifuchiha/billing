@@ -1,0 +1,59 @@
+{
+    "radius": "yes",
+    "packages": "10.10.10.1:28|FIBERQ|FIBERQ@QTS|RAJEG|10000 1HP 24JAM|10000",
+    "uptime": "1d",
+    "ratelimit": "4m\/4m",
+    "mode": "mixedbesar",
+    "length": "8",
+    "prefix": "RJ1",
+    "area": "RAJEG",
+    "ip": "10.10.10.1:28",
+    "us": "FIBERQ",
+    "ps": "FIBERQ@QTS",
+    "login": "FIBERQ",
+    "nocs": "6287838767626",
+    "jumlah": "10",
+    "timestamp": "2025-10-05 02:14:57",
+    "vouchers": [
+        {
+            "user": "RJ19Z9MH5AU",
+            "pass": "RJ19Z9MH5AU"
+        },
+        {
+            "user": "RJ1WQB6LFU4",
+            "pass": "RJ1WQB6LFU4"
+        },
+        {
+            "user": "RJ170526MV3",
+            "pass": "RJ170526MV3"
+        },
+        {
+            "user": "RJ1XRIV4K7G",
+            "pass": "RJ1XRIV4K7G"
+        },
+        {
+            "user": "RJ182HT5PI3",
+            "pass": "RJ182HT5PI3"
+        },
+        {
+            "user": "RJ1IMOB26HL",
+            "pass": "RJ1IMOB26HL"
+        },
+        {
+            "user": "RJ1URUVTDQB",
+            "pass": "RJ1URUVTDQB"
+        },
+        {
+            "user": "RJ1J48L30YS",
+            "pass": "RJ1J48L30YS"
+        },
+        {
+            "user": "RJ1VZEC03BO",
+            "pass": "RJ1VZEC03BO"
+        },
+        {
+            "user": "RJ11VY7KUZ2",
+            "pass": "RJ11VY7KUZ2"
+        }
+    ]
+}

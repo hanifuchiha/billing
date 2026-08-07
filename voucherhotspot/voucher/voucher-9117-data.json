@@ -1,0 +1,29 @@
+{
+    "radius": "yes",
+    "packages": "43.252.237.243:8888|fznet|nopan8|Jasinga|PKT-4Jam|2000",
+    "uptime": "4h",
+    "ratelimit": "3M\/3M",
+    "mode": "number",
+    "length": "4",
+    "prefix": "ts",
+    "area": "Jasinga",
+    "ip": "43.252.237.243:8888",
+    "us": "fznet",
+    "ps": "nopan8",
+    "jumlah": "3",
+    "timestamp": "2025-10-09 16:11:13",
+    "vouchers": [
+        {
+            "user": "ts2072",
+            "pass": "ts2072"
+        },
+        {
+            "user": "ts7832",
+            "pass": "ts7832"
+        },
+        {
+            "user": "ts9048",
+            "pass": "ts9048"
+        }
+    ]
+}

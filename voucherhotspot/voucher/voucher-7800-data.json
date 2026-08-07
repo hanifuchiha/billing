@@ -1,0 +1,99 @@
+{
+    "radius": "yes",
+    "packages": "10.10.10.1:28|FIBERQ|FIBERQ@QTS|RAJEG|10000 1HP 24JAM|10000",
+    "uptime": "1d",
+    "ratelimit": "4m\/4m",
+    "mode": "mixedbesar",
+    "length": "4",
+    "prefix": "XXXX",
+    "area": "RAJEG",
+    "ip": "10.10.10.1:28",
+    "us": "FIBERQ",
+    "ps": "FIBERQ@QTS",
+    "login": "FIBERQ",
+    "nocs": "6287838767626",
+    "jumlah": "20",
+    "timestamp": "2025-10-05 03:52:36",
+    "vouchers": [
+        {
+            "user": "XXXXE2AB",
+            "pass": "XXXXE2AB"
+        },
+        {
+            "user": "XXXX8S4B",
+            "pass": "XXXX8S4B"
+        },
+        {
+            "user": "XXXX1U3L",
+            "pass": "XXXX1U3L"
+        },
+        {
+            "user": "XXXXX033",
+            "pass": "XXXXX033"
+        },
+        {
+            "user": "XXXXQTFQ",
+            "pass": "XXXXQTFQ"
+        },
+        {
+            "user": "XXXX5FLA",
+            "pass": "XXXX5FLA"
+        },
+        {
+            "user": "XXXX3856",
+            "pass": "XXXX3856"
+        },
+        {
+            "user": "XXXXHQWO",
+            "pass": "XXXXHQWO"
+        },
+        {
+            "user": "XXXXUUFZ",
+            "pass": "XXXXUUFZ"
+        },
+        {
+            "user": "XXXXAROE",
+            "pass": "XXXXAROE"
+        },
+        {
+            "user": "XXXXYSFR",
+            "pass": "XXXXYSFR"
+        },
+        {
+            "user": "XXXXZQP2",
+            "pass": "XXXXZQP2"
+        },
+        {
+            "user": "XXXXM387",
+            "pass": "XXXXM387"
+        },
+        {
+            "user": "XXXXKY7D",
+            "pass": "XXXXKY7D"
+        },
+        {
+            "user": "XXXXSK8V",
+            "pass": "XXXXSK8V"
+        },
+        {
+            "user": "XXXXO9GD",
+            "pass": "XXXXO9GD"
+        },
+        {
+            "user": "XXXXCSTH",
+            "pass": "XXXXCSTH"
+        },
+        {
+            "user": "XXXXWI1T",
+            "pass": "XXXXWI1T"
+        },
+        {
+            "user": "XXXXOSG4",
+            "pass": "XXXXOSG4"
+        },
+        {
+            "user": "XXXXTDAW",
+            "pass": "XXXXTDAW"
+        }
+    ]
+}

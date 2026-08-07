@@ -1,0 +1,21 @@
+{
+    "desain": "modern",
+    "packages": "10000 1HP 24JAM",
+    "radius": "",
+    "logo_path": "https://quenbytekniksejahtera.com/crm/billing/voucherhotspot/uploads/logo_691b4a39a4842.png",
+    "bg_path": "default",
+    "ip": "127.0.0.1",
+    "us": "FIBERQQO23E5WO",
+    "ps": "FIBERQQO23E5WO",
+    "login": "FIBERQQO23E5WO",
+    "jumlah": 1,
+    "uptime": "86400",
+    "ratelimit": "4m/4m",
+    "vouchers": [
+        {
+            "user": "FIBERQQO23E5WO",
+            "pass": "FIBERQQO23E5WO"
+        }
+    ],
+    "timestamp": "2025-11-17 23:16:08"
+}

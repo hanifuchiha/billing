@@ -1,0 +1,63 @@
+{
+    "desain": "default",
+    "ip": "10.10.10.1:28",
+    "us": "FIBERQ",
+    "ps": "FIBERQ@QTS",
+    "login": "FIBERQ",
+    "jumlah": "10",
+    "packages": "10.10.10.1:28|FIBERQ|FIBERQ@QTS|RAJEG|10000 1HP 24JAM|10000",
+    "uptime": "1d",
+    "ratelimit": "4m\/4m",
+    "prefix": "XXXX",
+    "radius": "yes",
+    "mode": "mixedbesar",
+    "length": "3",
+    "nocs": "6287838767626",
+    "logo_path": "default",
+    "bg_path": "default",
+    "harga_formatted": "Rp 10.000",
+    "cetak": "",
+    "timestamp": "2025-10-05 01:37:06",
+    "vouchers": [
+        {
+            "user": "XXXX7OS",
+            "pass": "XXXX7OS"
+        },
+        {
+            "user": "XXXXSBL",
+            "pass": "XXXXSBL"
+        },
+        {
+            "user": "XXXX70A",
+            "pass": "XXXX70A"
+        },
+        {
+            "user": "XXXX6K6",
+            "pass": "XXXX6K6"
+        },
+        {
+            "user": "XXXX7FN",
+            "pass": "XXXX7FN"
+        },
+        {
+            "user": "XXXX4NB",
+            "pass": "XXXX4NB"
+        },
+        {
+            "user": "XXXXQP3",
+            "pass": "XXXXQP3"
+        },
+        {
+            "user": "XXXXHMK",
+            "pass": "XXXXHMK"
+        },
+        {
+            "user": "XXXX7RU",
+            "pass": "XXXX7RU"
+        },
+        {
+            "user": "XXXXKJ0",
+            "pass": "XXXXKJ0"
+        }
+    ]
+}

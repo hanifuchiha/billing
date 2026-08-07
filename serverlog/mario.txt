@@ -1,0 +1,377 @@
+{
+    "odp_summary": [
+        {
+            "ODP": "14120-CLG0103.FAT01-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 3,
+            "TOTAL_ONLINE": 3,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "dummy1",
+                "141200705B18.0103.01.01@airlink.co.id",
+                "14120050718.0103.01.03@airlink.co.id"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0103.FAT13",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "dummy2"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0103.FAT07-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 2,
+            "TOTAL_ONLINE": 2,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "dummy3",
+                "14120050618.0103.07.01.@airlink.co.id"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0103.FAT03-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 6,
+            "TOTAL_ONLINE": 5,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "141200507A33.0103.03.05@airlink.co.id",
+                "141200507B34.0103.03",
+                "14120050610.0103.03.01@airlink.co.id",
+                "14120050601.0103.03.02@airlink.co.id",
+                "14120050703.0103.03.04@airlink.co.id",
+                "14120050731.0103.03.06@airlink.co.id"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0103.FAT02-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 6,
+            "TOTAL_ONLINE": 6,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "14120050806.0103.02@airlink.co.id",
+                "14120050720.0103.02.01@airlink.co.id",
+                "14120050506.0103.02.03@airlink.co.id",
+                "14120050727A.0103.02.02@airlink.co.id",
+                "14120050913.0103.02.05@airlink.co.id",
+                "14120050707.0103.02.04@airlink.co.id"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0103.FAT06-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 4,
+            "TOTAL_ONLINE": 4,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "14120050735B.0103.06.01@airlink.co.id",
+                "1412060509.0103.06@airlink.co.id",
+                "14120050608.0103.06.03@airlink.co.id",
+                "14120050604.0103.06.02@airlink.co.id"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0101.FAT01-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 2,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "14120.070001@airlink",
+                "14120050834.0101.01.01@airlink.co.id"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0103.FAT09-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "14120050613.0103.01.05@airlink.co.id"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0103.FAT05-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "14120050814.0103.05A.04@airlink.co.id"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0101.FAT04-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 2,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "14120050808.0101.04.01@airlink.co.id",
+                "AirLinK-004@260726"
+            ]
+        },
+        {
+            "ODP": "14120-LSTR0106.FAT01-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "14120041005.0106.01.01@airlink.co.id"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0103.FAT04-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 2,
+            "TOTAL_ONLINE": 2,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "14120050714.0103.04.02@airlink.co.id",
+                "14120050717.0103.04.01@airlink.co.id"
+            ]
+        },
+        {
+            "ODP": "14120-CLG0101.FAT03-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "AirLinK-003@260726"
+            ]
+        },
+        {
+            "ODP": "A7",
+            "AREA": "Home-14150.07-11",
+            "PEMILIK": "Broadband_AirLinK_Home-14150.07-11_6a50da3a6e69a",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "marundatetst"
+            ]
+        }
+    ],
+    "odp_all_los": [
+        {
+            "ODP": "14120-CLG0101.FAT03-00",
+            "AREA": "Home-14120.05",
+            "PEMILIK": "Broadband_AirLinK_AIR-14120.05_6a3a3e16352a6",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "AirLinK-003@260726"
+            ]
+        },
+        {
+            "ODP": "A7",
+            "AREA": "Home-14150.07-11",
+            "PEMILIK": "Broadband_AirLinK_Home-14150.07-11_6a50da3a6e69a",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "marundatetst"
+            ]
+        }
+    ],
+    "Total_pelanggan": 33,
+    "Total_online": 28,
+    "Total_online_expired": 1,
+    "Total_online_paket": 27,
+    "Total_expired_offline": 3,
+    "Total_los_internet": 2,
+    "Total_expired": 4,
+    "expired_ids": [
+        "dummy1",
+        "14120050703.0103.03.04@airlink.co.id",
+        "AirLinK-003@260726",
+        "AirLinK-004@260726"
+    ],
+    "los_ids": [
+        "14120.070001@airlink",
+        "14120050703.0103.03.04@airlink.co.id",
+        "AirLinK-003@260726",
+        "AirLinK-004@260726",
+        "marundatetst"
+    ],
+    "offline_non_expired_ids": [
+        "14120.070001@airlink",
+        "marundatetst"
+    ],
+    "pppoe_profiles": {
+        "default": 4,
+        "GRATIS": 1,
+        "VPN": 1,
+        "Paket 222K": 2,
+        "Paket 188K": 2,
+        "Paket 177K": 2,
+        "ISOLIREBILLING": 0,
+        "Paket 128K": 4,
+        "vpn": 2,
+        "temporary": 0,
+        "VPNRemote": 0,
+        "Up To 5 Mbps": 0,
+        "Up To 7 Mbps": 0,
+        "Up To 10 Mbps": 90,
+        "Up To 20 Mbps": 5,
+        "Up To 30 Mbps": 4,
+        "Up To 50 Mbps": 0,
+        "managemen": 5,
+        "vpn2": 0,
+        "Up To 70 Mbps": 0,
+        "Gratis": 0,
+        "Up To 2 Mbps": 0,
+        "Up To 3 Mbps": 0,
+        "Up To 15 Mbps": 0,
+        "Up To 75 Mbps": 1,
+        "RLRADIUS": 0,
+        "RLISOLIR": 0,
+        "Paket 115K": 0,
+        "Paket 277K": 0,
+        "OVPN-SmartOLT": 0,
+        "Paket Gratis": 8,
+        "TEST": 0,
+        "Paket 115rb": 9,
+        "Paket 165rb": 42,
+        "Paket 255rb": 1,
+        "Paket 277rb": 5,
+        "Paket 128rb": 22,
+        "Paket 177rb": 5,
+        "Paket 188rb": 8,
+        "Paket 222rb": 2,
+        "SPJ UP TO 10 MBPS": 0,
+        "SPJ UP TO 100 MBPS": 0,
+        "SPJ UP TO 20 MBPS": 0,
+        "SPJ UP TO 30 MBPS": 0,
+        "SPJ UP TO 40 MBPS": 0,
+        "SPJ UP TO 50 MBPS": 0,
+        "SPJ UP TO 60 MBPS": 0,
+        "SPJ UP TO 75 MBPS": 0,
+        "Paket 100K": 0,
+        "AirHome - Free ": 2,
+        "AirHome - 115k": 18,
+        "AirHome - 128k": 2,
+        "AirHome - 165k": 15,
+        "AirHome - 177k": 4,
+        "AirHome - 188k": 1,
+        "AirHome - 222k": 1,
+        "AirHome - 277k": 1,
+        "AirHome - 255k": 1,
+        "AirHome - Free": 23,
+        "Paket 165K": 0,
+        "BELUM BAYAR": 0,
+        "Paket 6ratis": 0,
+        "AirHome - 181k": 0,
+        "AirHome - Aji": 2,
+        "default-encryption": 0,
+        "5Mbps-Brust": 15,
+        "UpTo-50Mbps_OLT": 2,
+        "UpTo-10Mbps_OLT": 260,
+        "10Mbps OLT-NEW": 9,
+        "300Mbps_OLT": 7,
+        "UpTo-20Mbps-Olt": 83,
+        "10Mbps_OLT ": 0,
+        "10Mbps": 1,
+        "ISOLIR": 21,
+        "UpTo-30Mbps": 4,
+        "30Dedicated": 0,
+        "UpTo50Mbps": 3
+    },
+    "hotspot_profiles": {
+        "default": 0,
+        "RLRADIUS": 0
+    },
+    "paket_harga": {
+        "Paket 6ratis": "0",
+        "Paket Gratis": "0",
+        "AirHome - 115k": "115000",
+        "AirHome - 128k": "128000",
+        "AirHome - 165k": "165000",
+        "AirHome - 177k": "177000",
+        "AirHome - 188k": "188000",
+        "AirHome - 222k": "222000",
+        "AirHome - 277k": "277000",
+        "AirHome - 255k": "255000",
+        "AirHome - Free": "0",
+        "Paket 165K": "165000",
+        "GRATIS": "0",
+        "VPN": "0",
+        "Paket 222K": "222000",
+        "Paket 188K": "188000",
+        "EXPIRED": "0",
+        "Paket 177K": "177000",
+        "ISOLIREBILLING": "0",
+        "Paket 128K": "128000",
+        "temporary": "0",
+        "VPNRemote": "0",
+        "Up To 5 Mbps": "0",
+        "Up To 7 Mbps": "0",
+        "Up To 10 Mbps": "0",
+        "Up To 20 Mbps": "0",
+        "Up To 30 Mbps": "0",
+        "Up To 50 Mbps": "0",
+        "managemen": "0",
+        "vpn2": "0",
+        "Up To 70 Mbps": "0",
+        "Up To 2 Mbps": "0",
+        "Up To 3 Mbps": "0",
+        "Up To 15 Mbps": "0",
+        "Up To 75 Mbps": "0",
+        "RLRADIUS": "0",
+        "RLISOLIR": "0",
+        "Paket 115K": "115000",
+        "Paket 277K": "277000",
+        "OVPN-SmartOLT": "0",
+        "TEST": "0",
+        "Paket 115rb": "115000",
+        "Paket 165rb": "165000",
+        "Paket 255rb": "255000",
+        "Paket 277rb": "277000",
+        "Paket 128rb": "128000",
+        "Paket 177rb": "177000",
+        "Paket 188rb": "188000",
+        "Paket 222rb": "222000",
+        "SPJ UP TO 10 MBPS": "0",
+        "SPJ UP TO 100 MBPS": "0",
+        "SPJ UP TO 20 MBPS": "0",
+        "SPJ UP TO 30 MBPS": "0",
+        "SPJ UP TO 40 MBPS": "0",
+        "SPJ UP TO 50 MBPS": "0",
+        "SPJ UP TO 60 MBPS": "0",
+        "SPJ UP TO 75 MBPS": "0",
+        "Paket 100K": "100000",
+        "BELUM BAYAR": "0",
+        "AirHome - 165kAirHome - 165k": "165000",
+        "AirHome": "100000",
+        "UpTo-50Mbps_OLT": "0",
+        "UpTo-10Mbps_OLT": "0",
+        "UpTo-20Mbps-Olt": "0",
+        "UpTo-30Mbps": "0",
+        "AirHome - Aji": "1000"
+    },
+    "updated_at": "2026-08-07 10:11:16"
+}

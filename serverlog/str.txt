@@ -1,0 +1,129 @@
+{
+    "odp_summary": [
+        {
+            "ODP": "ODP1\/PON2\/OL1",
+            "AREA": "TAJURHALANG_SUKMAJAYA_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 15,
+            "TOTAL_ONLINE": 14,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-149@240726",
+                "FQ-187@250525",
+                "FQ-QUENBYQIERA",
+                "FQ-049@050925",
+                "FQ-169@261125",
+                "FQ-198@041225",
+                "FQ-097@221225",
+                "FQ-100@221225",
+                "FQ-142@291225",
+                "FQ-217@020226",
+                "FQ-226@250226",
+                "FQ-007@260226",
+                "FQ-227@260226",
+                "FQ-228@260226",
+                "FQ-115@140626"
+            ]
+        },
+        {
+            "ODP": "ODP2\/PON1\/OL1",
+            "AREA": "TAJURHALANG_SUKMAJAYA_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 8,
+            "TOTAL_ONLINE": 6,
+            "TOTAL_LOS": 2,
+            "IDPELS": [
+                "FQ-201@070126",
+                "FQ-044@200326",
+                "FQ-130@020526",
+                "FQ-066@090526",
+                "FQ-078@060626",
+                "FQ-123@130726",
+                "FQ-133@250726",
+                "FQ-150@290726"
+            ]
+        },
+        {
+            "ODP": "ODP12\/L3\/PON1",
+            "AREA": "TAJURHALANG_SUKMAJAYA_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "FQ-105@030326"
+            ]
+        }
+    ],
+    "odp_all_los": [],
+    "Total_pelanggan": 24,
+    "Total_online": 21,
+    "Total_online_expired": 1,
+    "Total_online_paket": 20,
+    "Total_expired_offline": 2,
+    "Total_los_internet": 1,
+    "Total_expired": 3,
+    "expired_ids": [
+        "FQ-142@291225",
+        "FQ-007@260226",
+        "FQ-078@060626"
+    ],
+    "los_ids": [
+        "FQ-142@291225",
+        "FQ-130@020526",
+        "FQ-078@060626"
+    ],
+    "offline_non_expired_ids": [
+        "FQ-130@020526"
+    ],
+    "pppoe_profiles": {
+        "default": 0,
+        "FREE ACCESS": 3,
+        "FIBER GAP FREE 3 BULAN": 6,
+        "HOME LINK 20 MBPS 159.000": 7,
+        "FIBERQ 10MBPS 100.000": 5,
+        "FIBER 20MBPS 159000": 0,
+        "CCTV": 0,
+        "default-encryption": 0
+    },
+    "hotspot_profiles": {
+        "default": 0,
+        "20000 1HP 5HARI": 0
+    },
+    "paket_harga": {
+        "FIBER 20 MBPS 199.000": "199000",
+        "FIBER 40 MBPS 420.000": "400000",
+        "MERDEKA 10 Rp 99.000": "99000",
+        "MERDEKA 50 Rp 399.000": "399000",
+        "HOME 10MBPS 173.000": "173000",
+        "HOME 20 MBPS 239.000": "239000",
+        "FIBER SOSIALITA 159.000": "159000",
+        "MANDIRI 10MBPS 75.000": "75000",
+        "KONPENSASI ODP 120.000": "120000",
+        "VPN Enterprise 10Mbps": "20000",
+        "VPN Pro 2Mbps": "2000",
+        "HOMELINK 20MBPS 199.000": "199000",
+        "PROMO JATIMULYA 100.000": "100000",
+        "FREE ACCESS": "0",
+        "MERDEKA 50": "399000",
+        "MANDIRI 10MBPS": "75000",
+        "KOMPENSASI ODP 120.000": "120000",
+        "FIBERQ 20MBPS 159": "159000",
+        "FIBERQ 20 MBPS 159.000": "159000",
+        "FIBERQ 20 MBPS 159000": "159000",
+        "PROMO KLENDER 100.000": "100000",
+        "HOMELINK KLENDER 159.000": "159000",
+        "FIBER 20MBPS 159000": "159000",
+        "FIBER 30MBPS 199.000": "199000",
+        "NINJA-10MBPS": "150000",
+        "HOME LINK 20 MBPS 159.000": "159000",
+        "FIBERQ 20Mbps 100.000": "100000",
+        "FIBER 30MBPS 159.000": "159000",
+        "FIBER GAP FREE 3 BULAN": "0",
+        "FIBERQ 10MBPS 100.000": "100000",
+        "MUMER 100.000": "100000",
+        "speed upto 10": "100000",
+        "FIBER 50 MBPS 210.000": "210000"
+    },
+    "updated_at": "2026-08-03 01:35:22"
+}

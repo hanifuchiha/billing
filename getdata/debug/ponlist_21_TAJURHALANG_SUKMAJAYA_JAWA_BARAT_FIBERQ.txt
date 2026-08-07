@@ -1,0 +1,102 @@
+<html><head><title>PON List</title> 
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"> 
+<LINK href="./style/style.css" type=text/css rel=stylesheet> 
+<script src="jslib/jquery-1.4.min.js" type="text/javascript"></script> 
+<script language ="javascript" src ="./jslib/tab.js"></script> 
+<script language ="javascript" src ="./jslib/util.js"></script>
+
+<script language =javascript>
+if (self == top) {
+	self.location = "/";
+}
+
+var ponListTable=new Array( 
+//"0/1/1","N/A"
+'0/1/1','ONU Total=4,Online=2,Offline=2',
+'0/1/2','ONU Total=15,Online=14,Offline=1'
+);
+
+function initClick () {
+		FadeTable(myTableId);
+		FocusButton();
+
+		$("tr[id^='tr']").mouseover(function(){
+			$(this).addClass("dOver");
+			}).mouseout(function(){
+				$(this).removeClass("dOver");
+				})
+}
+
+$(document).ready(function() {initClick();});
+
+function do_set(p)
+{
+	document.location="./onuConfigOnuList.asp?oltponno="+(ponListTable[p*2+0]);
+}
+
+function createTable()
+{
+	var i;
+	var lineNum=(ponListTable.length)/2;
+	
+	for (i=0;i<lineNum;i++ )
+	{
+		if(ponListTable[i*2]!=null)
+		{
+			if((i%2)==1)
+			{
+					document.write("<div><tr id=tr"+i+" class='trBackGroudColor2P' onClick='do_set("+(i)+")'>");
+			}
+			else
+			{
+					document.write("<div><tr id=tr"+i+" class='trBackGroudColor1P' onClick='do_set("+(i)+")'>");
+			}
+			with(document)
+			{
+				write("<TD align=center"+">"+ ponListTable[i*2+0]+"</TD>");
+				write("<TD align=center"+">"+ ponListTable[i*2+1]+"</TD>");
+				write("</TR></div>");
+			}
+		}
+	}
+}
+
+function Reload()
+{
+	document.location="onuConfigPonList.asp";
+}
+</script> 
+</head> 
+
+
+<body topMargin=0> 
+<script LANGUAGE="JavaScript">
+showDiv();
+</script> 
+
+<form name="my_table"> 
+<table id="myTableId" width=800 cellspacing="1" align="center" class="tableBgColor"> 
+<tr> 
+<script language=javascript>
+	document.write("<tr><th colspan=10>Select a pon port</th></tr>");
+</script>
+</tr> 
+<tr class="trBackGroudColor2" align=center > 
+<td width=60><B>PonId</B></td>
+<td ><B>Information</B></td>
+</tr> 
+<script  language=javascript >
+createTable();
+</script> 
+</table> 
+<br>
+
+<P align=center>
+<font face=Arial size=2>
+	<INPUT type=button class="buttonN" value="Refresh" onClick="Reload()">
+</font>
+</p>
+</form>
+
+</body>
+</html> 

@@ -1,0 +1,83 @@
+{
+    "desain": "default",
+    "ip": "10.10.10.1:28",
+    "us": "FIBERQ",
+    "ps": "FIBERQ@QTS",
+    "login": "FIBERQ",
+    "jumlah": "15",
+    "packages": "10.10.10.1:28|FIBERQ|FIBERQ@QTS|RAJEG|10000 1HP 24JAM|10000",
+    "uptime": "1d",
+    "ratelimit": "4m\/4m",
+    "prefix": "RJ1",
+    "radius": "yes",
+    "mode": "mixedbesar",
+    "length": "8",
+    "nocs": "6287838767626",
+    "logo_path": "default",
+    "bg_path": "default",
+    "harga_formatted": "Rp 10.000",
+    "cetak": "",
+    "timestamp": "2025-10-05 01:29:43",
+    "vouchers": [
+        {
+            "user": "RJ1C1F0D907",
+            "pass": "RJ1C1F0D907"
+        },
+        {
+            "user": "RJ1PEXV92EZ",
+            "pass": "RJ1PEXV92EZ"
+        },
+        {
+            "user": "RJ1GAASZKE3",
+            "pass": "RJ1GAASZKE3"
+        },
+        {
+            "user": "RJ10TXNHT7N",
+            "pass": "RJ10TXNHT7N"
+        },
+        {
+            "user": "RJ17XWCGUUO",
+            "pass": "RJ17XWCGUUO"
+        },
+        {
+            "user": "RJ1ERLC3YWO",
+            "pass": "RJ1ERLC3YWO"
+        },
+        {
+            "user": "RJ14IRWTQQQ",
+            "pass": "RJ14IRWTQQQ"
+        },
+        {
+            "user": "RJ1BMFOPKT4",
+            "pass": "RJ1BMFOPKT4"
+        },
+        {
+            "user": "RJ15QMTZN7X",
+            "pass": "RJ15QMTZN7X"
+        },
+        {
+            "user": "RJ1HW3M2ODD",
+            "pass": "RJ1HW3M2ODD"
+        },
+        {
+            "user": "RJ125K21LWF",
+            "pass": "RJ125K21LWF"
+        },
+        {
+            "user": "RJ1SJSMG8IC",
+            "pass": "RJ1SJSMG8IC"
+        },
+        {
+            "user": "RJ11Z8V845K",
+            "pass": "RJ11Z8V845K"
+        },
+        {
+            "user": "RJ1A0GWJNAS",
+            "pass": "RJ1A0GWJNAS"
+        },
+        {
+            "user": "RJ1S4U2KK0B",
+            "pass": "RJ1S4U2KK0B"
+        }
+    ]
+}

@@ -1,0 +1,21 @@
+{
+    "radius": "yes",
+    "packages": "10.0.0.12:8728|FIBERQ|Deltaganteng@92|JATIMULYA_CILODONG_DEPOK|50000 1HP 7HARI|50000",
+    "uptime": "7d",
+    "ratelimit": "4m\/4m",
+    "mode": "mixedbesar",
+    "length": "8",
+    "prefix": "",
+    "area": "JATIMULYA_CILODONG_DEPOK",
+    "ip": "10.0.0.12:8728",
+    "us": "FIBERQ",
+    "ps": "Deltaganteng@92",
+    "jumlah": "1",
+    "timestamp": "2026-04-16 04:32:19",
+    "vouchers": [
+        {
+            "user": "3YUW6PU7",
+            "pass": "3YUW6PU7"
+        }
+    ]
+}

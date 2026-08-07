@@ -1,0 +1,54 @@
+{
+    "radius": "yes",
+    "mode": "mixedbesar",
+    "length": "8",
+    "prefix": "FIBERQ",
+    "area": "",
+    "ip": "",
+    "us": "",
+    "ps": "Deltaganteng@92",
+    "jumlah": "10",
+    "timestamp": "2025-11-17 23:13:05",
+    "vouchers": [
+        {
+            "user": "FIBERQTN29IJB8",
+            "pass": "FIBERQTN29IJB8"
+        },
+        {
+            "user": "FIBERQ6AA42M9U",
+            "pass": "FIBERQ6AA42M9U"
+        },
+        {
+            "user": "FIBERQAW2EAQN5",
+            "pass": "FIBERQAW2EAQN5"
+        },
+        {
+            "user": "FIBERQ5LF0R21B",
+            "pass": "FIBERQ5LF0R21B"
+        },
+        {
+            "user": "FIBERQ2SRY2YCT",
+            "pass": "FIBERQ2SRY2YCT"
+        },
+        {
+            "user": "FIBERQYC1NXI93",
+            "pass": "FIBERQYC1NXI93"
+        },
+        {
+            "user": "FIBERQX4ZR7RC1",
+            "pass": "FIBERQX4ZR7RC1"
+        },
+        {
+            "user": "FIBERQ2A66DCU8",
+            "pass": "FIBERQ2A66DCU8"
+        },
+        {
+            "user": "FIBERQMED5NKWR",
+            "pass": "FIBERQMED5NKWR"
+        },
+        {
+            "user": "FIBERQUKF1185T",
+            "pass": "FIBERQUKF1185T"
+        }
+    ]
+}

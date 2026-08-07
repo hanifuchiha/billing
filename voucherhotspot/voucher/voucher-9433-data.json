@@ -1,0 +1,29 @@
+{
+    "radius": "yes",
+    "packages": "10.10.10.22:8888|fznet|nopan8|Jasinga|PKT-4Jam|2000",
+    "uptime": "4h",
+    "ratelimit": "3M\/3M",
+    "mode": "mixedbesar",
+    "length": "6",
+    "prefix": "",
+    "area": "Jasinga",
+    "ip": "10.10.10.22:8888",
+    "us": "fznet",
+    "ps": "nopan8",
+    "jumlah": "3",
+    "timestamp": "2025-10-16 21:48:17",
+    "vouchers": [
+        {
+            "user": "BL5E02",
+            "pass": "BL5E02"
+        },
+        {
+            "user": "FT29RC",
+            "pass": "FT29RC"
+        },
+        {
+            "user": "14VA5E",
+            "pass": "14VA5E"
+        }
+    ]
+}

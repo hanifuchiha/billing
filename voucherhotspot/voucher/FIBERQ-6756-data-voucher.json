@@ -1,0 +1,71 @@
+{
+    "desain": "thermal2",
+    "ip": "10.10.10.1:28",
+    "us": "FIBERQ",
+    "ps": "FIBERQ@QTS",
+    "login": "FIBERQ",
+    "jumlah": "12",
+    "packages": "10.10.10.1:28|FIBERQ|FIBERQ@QTS|RAJEG|10000 1HP 24JAM|10000",
+    "uptime": "1d",
+    "ratelimit": "4m\/4m",
+    "prefix": "ss",
+    "radius": "yes",
+    "mode": "mixedbesar",
+    "length": "8",
+    "nocs": "6287838767626",
+    "logo_path": "default",
+    "bg_path": "default",
+    "harga_formatted": "Rp 10.000",
+    "cetak": "",
+    "timestamp": "2025-10-03 13:59:54",
+    "vouchers": [
+        {
+            "user": "ss61W92UDM",
+            "pass": "ss61W92UDM"
+        },
+        {
+            "user": "ssDDXORMS8",
+            "pass": "ssDDXORMS8"
+        },
+        {
+            "user": "ssNMPY79BS",
+            "pass": "ssNMPY79BS"
+        },
+        {
+            "user": "ssA9O1YZ8I",
+            "pass": "ssA9O1YZ8I"
+        },
+        {
+            "user": "ssDZXR3LPO",
+            "pass": "ssDZXR3LPO"
+        },
+        {
+            "user": "ssGMGC7YZ6",
+            "pass": "ssGMGC7YZ6"
+        },
+        {
+            "user": "ss7GSMNA2R",
+            "pass": "ss7GSMNA2R"
+        },
+        {
+            "user": "ss8C4TQLMR",
+            "pass": "ss8C4TQLMR"
+        },
+        {
+            "user": "ssJ44JHTWA",
+            "pass": "ssJ44JHTWA"
+        },
+        {
+            "user": "ss78SGRXBU",
+            "pass": "ss78SGRXBU"
+        },
+        {
+            "user": "ssYLE4UMN2",
+            "pass": "ssYLE4UMN2"
+        },
+        {
+            "user": "ssNLUCX9C3",
+            "pass": "ssNLUCX9C3"
+        }
+    ]
+}

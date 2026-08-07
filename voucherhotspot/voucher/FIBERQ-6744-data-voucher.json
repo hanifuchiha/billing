@@ -1,0 +1,27 @@
+{
+    "desain": "default",
+    "ip": "",
+    "us": "",
+    "ps": "",
+    "login": "",
+    "jumlah": "1",
+    "packages": "Paket|1|desc|10000|2000|Unlimited",
+    "uptime": "1d",
+    "ratelimit": "Unlimited",
+    "prefix": "rt",
+    "radius": "yes",
+    "mode": "mixedbesar",
+    "length": "8",
+    "nocs": "",
+    "logo_path": "default",
+    "bg_path": "default",
+    "harga_formatted": "Rp 0",
+    "cetak": "",
+    "timestamp": "2025-10-03 22:45:00",
+    "vouchers": [
+        {
+            "user": "rtPW8ELEKZ",
+            "pass": "rtPW8ELEKZ"
+        }
+    ]
+}

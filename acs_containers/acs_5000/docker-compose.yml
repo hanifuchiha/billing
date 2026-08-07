@@ -1,0 +1,22 @@
+services:
+  mongo:
+    image: mongo:4.4
+    container_name: genieacs-mongo-5000
+    restart: always
+    volumes:
+      - ./mongo:/data/db
+
+  genieacs:
+    image: deandegil/genieacs
+    container_name: genieacs-5000
+    restart: always
+    depends_on:
+      - mongo
+    ports:
+            - "5000:3000"
+            - "5001:7547"
+            - "5002:7557"
+            - "5003:7567"
+    environment:
+      GENIEACS_MONGODB_CONNECTION_URL: mongodb://mongo/genieacs
+      GENIEACS_UI_JWT_SECRET: quenbysecret

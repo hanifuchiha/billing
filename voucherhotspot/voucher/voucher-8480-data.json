@@ -1,0 +1,59 @@
+{
+    "radius": "yes",
+    "packages": "10.10.10.1:28|FIBERQ|FIBERQ@QTS|RAJEG|10000 1HP 24JAM|10000",
+    "uptime": "1d",
+    "ratelimit": "4m\/4m",
+    "mode": "mixedbesarkecil",
+    "length": "8",
+    "prefix": "",
+    "area": "RAJEG",
+    "ip": "10.10.10.1:28",
+    "us": "FIBERQ",
+    "ps": "FIBERQ@QTS",
+    "login": "FIBERQ",
+    "nocs": "6287838767626",
+    "jumlah": "10",
+    "timestamp": "2025-10-05 04:28:55",
+    "vouchers": [
+        {
+            "user": "kEBns2yk",
+            "pass": "kEBns2yk"
+        },
+        {
+            "user": "FizXtMg2",
+            "pass": "FizXtMg2"
+        },
+        {
+            "user": "3f7TjzIv",
+            "pass": "3f7TjzIv"
+        },
+        {
+            "user": "lfg4b0NA",
+            "pass": "lfg4b0NA"
+        },
+        {
+            "user": "5rMB0fx1",
+            "pass": "5rMB0fx1"
+        },
+        {
+            "user": "g9Q1doGk",
+            "pass": "g9Q1doGk"
+        },
+        {
+            "user": "M1vpRBZv",
+            "pass": "M1vpRBZv"
+        },
+        {
+            "user": "3MKGaPJG",
+            "pass": "3MKGaPJG"
+        },
+        {
+            "user": "Yt7MlUuA",
+            "pass": "Yt7MlUuA"
+        },
+        {
+            "user": "xT8hlja9",
+            "pass": "xT8hlja9"
+        }
+    ]
+}

@@ -1,0 +1,931 @@
+{
+    "odp_summary": [
+        {
+            "ODP": "SERVER\/CILANGKAP",
+            "AREA": "CILANGKAP_JAKARTA_TIMUR",
+            "PEMILIK": "MEDIAQ",
+            "TOTAL_PELANGGAN": 3,
+            "TOTAL_ONLINE": 3,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "MDQ-0036@280124",
+                "MDQ-0037@280124",
+                "MDQ-0038@240224"
+            ]
+        },
+        {
+            "ODP": "ODP 8",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 12,
+            "TOTAL_ONLINE": 6,
+            "TOTAL_LOS": 6,
+            "IDPELS": [
+                "FQ-033@220425",
+                "FQ-179@260425",
+                "FQ-173@270425",
+                "FQ-FASUMRW4",
+                "FQ-172@061225",
+                "FQ-127@161125",
+                "FQ-203@130126",
+                "FQ-099@141125",
+                "FQ-035@170426",
+                "FQ-002@020626",
+                "FQ-152@300726",
+                "FQ-132@030726"
+            ]
+        },
+        {
+            "ODP": "ODP 9",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 3,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 2,
+            "IDPELS": [
+                "FQ-171@230425",
+                "FQ-096@241125",
+                "FQ-192@080625"
+            ]
+        },
+        {
+            "ODP": "ODP 1",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 12,
+            "TOTAL_ONLINE": 8,
+            "TOTAL_LOS": 4,
+            "IDPELS": [
+                "FQ-176@230425",
+                "FQ-FASUMRT7",
+                "FQ-039@100725",
+                "FQ-082@220725",
+                "FQ-006@170925",
+                "FQ-046@281025",
+                "FQ-202@090126",
+                "FQ-FASUMSERVER",
+                "FQ-034@280526",
+                "FQ-065@040826",
+                "FQ-089@040826",
+                "FQ-069@050826"
+            ]
+        },
+        {
+            "ODP": "ODP POJOK",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 5,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 5,
+            "IDPELS": [
+                "FQ-028@090525",
+                "FQ-015@030825",
+                "FQ-040@290825",
+                "FQ-222@080226",
+                "FQ-174@130526"
+            ]
+        },
+        {
+            "ODP": "ODP 6",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 6,
+            "TOTAL_ONLINE": 5,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-FASUMRT4",
+                "FQ-052@041125",
+                "FQ-057@211025",
+                "FQ-114@041125",
+                "FQ-051@220625",
+                "FQ-072@090326"
+            ]
+        },
+        {
+            "ODP": "SERVER\/KELNDER",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "FQ-012@310725"
+            ]
+        },
+        {
+            "ODP": "ODP DIDIN",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 14,
+            "TOTAL_ONLINE": 11,
+            "TOTAL_LOS": 3,
+            "IDPELS": [
+                "FQ-047@030925",
+                "FQ-063@251025",
+                "FQ-090@141125",
+                "FQ-128@161125",
+                "FQ-175@291125",
+                "FQ-194@291125",
+                "FQ-087@291125",
+                "FQ-156@040226",
+                "FQ-188@050226",
+                "FQ-032@080426",
+                "FQ-016@080426",
+                "FQ-141@100526",
+                "FQ-136@160726",
+                "FQ-075@060826"
+            ]
+        },
+        {
+            "ODP": "ODP PUTRA",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 2,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 2,
+            "IDPELS": [
+                "FQ-050@280925",
+                "FQ-131@281225"
+            ]
+        },
+        {
+            "ODP": "ODP 2",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 4,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 3,
+            "IDPELS": [
+                "FQ-107@251025",
+                "FQ-074@251025",
+                "FQ-126@280426",
+                "FQ-037@290626"
+            ]
+        },
+        {
+            "ODP": "ODP 7",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 4,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 3,
+            "IDPELS": [
+                "FQ-196@021225",
+                "FQ-213@290126",
+                "FQ-219@040226",
+                "FQ-221@070226"
+            ]
+        },
+        {
+            "ODP": "ODP 5",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-215@290126"
+            ]
+        },
+        {
+            "ODP": "ODP 3",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 4,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 4,
+            "IDPELS": [
+                "FQ-008@310326",
+                "FQ-079@310326",
+                "FQ-017@070526",
+                "FQ-157@070526"
+            ]
+        },
+        {
+            "ODP": "ODP1\/ODC5",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 7,
+            "TOTAL_ONLINE": 5,
+            "TOTAL_LOS": 2,
+            "IDPELS": [
+                "FQ-025@010120",
+                "FQ-106@010524",
+                "FQ-143@231124",
+                "FQ-191@271125",
+                "FQ-060@061225",
+                "FQ-183@061225",
+                "FQ-206@200126"
+            ]
+        },
+        {
+            "ODP": "ODP1\/ODC4",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 2,
+            "TOTAL_ONLINE": 2,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "FQ-023@070423",
+                "FQ-031@160526"
+            ]
+        },
+        {
+            "ODP": "ODP2\/ODC5",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 13,
+            "TOTAL_ONLINE": 12,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-014@280723",
+                "FQ-054@010324",
+                "FQ-144@251124",
+                "FQ-145@251124",
+                "FQ-158@070325",
+                "FQ-159@070325",
+                "FQ-019@130825",
+                "FQ-119@051125",
+                "FQ-022@140126",
+                "FQ-214@290126",
+                "FQ-102@020226",
+                "FQ-230@270226",
+                "FQ-103@010426"
+            ]
+        },
+        {
+            "ODP": "ODP2\/ODC3",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 3,
+            "TOTAL_ONLINE": 3,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "FQ-045@280923",
+                "FQ-043@260925",
+                "FQ-068@250426"
+            ]
+        },
+        {
+            "ODP": "ODP1\/ODC3",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 5,
+            "TOTAL_ONLINE": 4,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-056@280923",
+                "FQ-085@230324",
+                "FQ-086@230324",
+                "FQ-093@050424",
+                "FQ-FASUM@MUSOLAHRT2"
+            ]
+        },
+        {
+            "ODP": "ODP2\/ODC4",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 11,
+            "TOTAL_ONLINE": 8,
+            "TOTAL_LOS": 3,
+            "IDPELS": [
+                "FQ-064@041023",
+                "FQ-013@241123",
+                "FQ-018@031223",
+                "FQ-059@120524",
+                "FQ-011@020724",
+                "FQ-030@100324",
+                "FQ-164@170325",
+                "FQ-077@231025",
+                "FQ-154@221125",
+                "FQ-161@221125",
+                "FQ-117@010326"
+            ]
+        },
+        {
+            "ODP": "ODP6\/ODC3",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 2,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 2,
+            "IDPELS": [
+                "FQ-070@211023",
+                "FQ-FASUM@RT2"
+            ]
+        },
+        {
+            "ODP": "ODP4\/ODC3",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 11,
+            "TOTAL_ONLINE": 10,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-073@070324",
+                "FQ-112@210524",
+                "FQ-061@210624",
+                "FQ-116@030924",
+                "FQ-121@160924",
+                "FQ-PESANTREN@SWADAYA",
+                "FQ-181@280425",
+                "FQ-095@251025",
+                "FQ-223@100226",
+                "FQ-076@250226",
+                "FQ-009@060426"
+            ]
+        },
+        {
+            "ODP": "ODP3\/ODC5",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 7,
+            "TOTAL_ONLINE": 6,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-080@200324",
+                "FQ-021@070824",
+                "FQ-109@020924",
+                "FQ-067@150325",
+                "FQ-041@241025",
+                "FQ-195@021225",
+                "FQ-216@300126"
+            ]
+        },
+        {
+            "ODP": "ODP4\/ODC5",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 8,
+            "TOTAL_ONLINE": 7,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-048@300324",
+                "FQ-005@250925",
+                "FQ-204@160126",
+                "FQ-212@280126",
+                "FQ-218@030226",
+                "FQ-220@050226",
+                "FQ-124@270426",
+                "FQ-110@150626"
+            ]
+        },
+        {
+            "ODP": "ODC5",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 14,
+            "TOTAL_ONLINE": 11,
+            "TOTAL_LOS": 3,
+            "IDPELS": [
+                "FQ-092@050424",
+                "FQ-004@260824",
+                "FQ-055@300924",
+                "FQ-135@171024",
+                "FQ-026@181124",
+                "FQ-170@180425",
+                "FQ-207@240126",
+                "FQ-208@240126",
+                "FQ-209@250126",
+                "FQ-210@250126",
+                "FQ-211@250126",
+                "FQ-036@270825",
+                "FQ-153@040226",
+                "FQ-098@090626"
+            ]
+        },
+        {
+            "ODP": "ODP3\/ODC3",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 5,
+            "TOTAL_ONLINE": 4,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-094@100824",
+                "FQ-163@110425",
+                "FQ-001@160925",
+                "FQ-108@041125",
+                "FQ-053@150426"
+            ]
+        },
+        {
+            "ODP": "ODP7\/ODC3",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 5,
+            "TOTAL_ONLINE": 4,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-020@120924",
+                "FQ-120@130924",
+                "FQ-137@211024",
+                "FQ-138@221024",
+                "FQ-139@221024"
+            ]
+        },
+        {
+            "ODP": "ODP1\/ODC6",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 8,
+            "TOTAL_ONLINE": 5,
+            "TOTAL_LOS": 3,
+            "IDPELS": [
+                "FQ-FASUMTPA@AYATUL",
+                "FQ-122@200125",
+                "FQ-113@250125",
+                "FQ-162@110325",
+                "FQ-165@240325",
+                "FQ-167@260325",
+                "FQ-199@051025",
+                "FQ-151@070126"
+            ]
+        },
+        {
+            "ODP": "ODP6\/ODC5",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 2,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-YAHYA",
+                "FQ-010@230526"
+            ]
+        },
+        {
+            "ODP": "ODP7\/ODC5",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-146@281124"
+            ]
+        },
+        {
+            "ODP": "ODP1\/ODC1",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 6,
+            "TOTAL_ONLINE": 5,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-166@250325",
+                "FQ-104@151025",
+                "FQ-084@090125",
+                "FQ-024@120126",
+                "FQ-229@270226",
+                "FQ-081@090326"
+            ]
+        },
+        {
+            "ODP": "ODP3\/ODC1",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "FQ-058@291025"
+            ]
+        },
+        {
+            "ODP": "ODP8\/ODC1",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 7,
+            "TOTAL_ONLINE": 7,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "FQ-205@160126",
+                "FQ-003@070426",
+                "FQ-083@250426",
+                "FQ-125@060526",
+                "FQ-038@010626",
+                "FQ-062@030626",
+                "FQ-148@130726"
+            ]
+        },
+        {
+            "ODP": "ODP5\/ODC5",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 3,
+            "TOTAL_ONLINE": 3,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "FQ-224@200226",
+                "FQ-027@150526",
+                "FQ-147@130726"
+            ]
+        },
+        {
+            "ODP": "ODP5\/ODC3",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 5,
+            "TOTAL_ONLINE": 5,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "FQ-088@230226",
+                "FQ-186@260226",
+                "FQ-232@100326",
+                "FQ-140@050526",
+                "FQ-101@130626"
+            ]
+        },
+        {
+            "ODP": "ODP2\/ODC6",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "FQ-111@170326"
+            ]
+        },
+        {
+            "ODP": "ODP1\/PON2\/OL1",
+            "AREA": "TAJURHALANG_SUKMAJAYA_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 15,
+            "TOTAL_ONLINE": 14,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-149@240726",
+                "FQ-187@250525",
+                "FQ-QUENBYQIERA",
+                "FQ-049@050925",
+                "FQ-169@261125",
+                "FQ-198@041225",
+                "FQ-097@221225",
+                "FQ-100@221225",
+                "FQ-142@291225",
+                "FQ-217@020226",
+                "FQ-226@250226",
+                "FQ-007@260226",
+                "FQ-227@260226",
+                "FQ-228@260226",
+                "FQ-115@140626"
+            ]
+        },
+        {
+            "ODP": "ODP2\/PON1\/OL1",
+            "AREA": "TAJURHALANG_SUKMAJAYA_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 9,
+            "TOTAL_ONLINE": 7,
+            "TOTAL_LOS": 2,
+            "IDPELS": [
+                "FQ-201@070126",
+                "FQ-044@200326",
+                "FQ-130@020526",
+                "FQ-066@090526",
+                "FQ-078@060626",
+                "FQ-123@130726",
+                "FQ-133@250726",
+                "FQ-150@290726",
+                "FQ-029@030826"
+            ]
+        },
+        {
+            "ODP": "ODP12\/L3\/PON1",
+            "AREA": "TAJURHALANG_SUKMAJAYA_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "FQ-105@030326"
+            ]
+        },
+        {
+            "ODP": "LDP1-SERVER",
+            "AREA": "JATIPADANG_PASAR_MINGGU_JAKARTA",
+            "PEMILIK": "MEDIAQ",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 1,
+            "TOTAL_LOS": 0,
+            "IDPELS": [
+                "MDQ-0031"
+            ]
+        },
+        {
+            "ODP": "ODP1\/PON1\/L1",
+            "AREA": "JATIMULYA_CILODONG_DEPOK",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 6,
+            "TOTAL_ONLINE": 2,
+            "TOTAL_LOS": 4,
+            "IDPELS": [
+                "FQ-134@151024",
+                "FQ-160@080325",
+                "FQ-071@041125",
+                "FQ-129@220126",
+                "FQ-233@180326",
+                "FQ-042@010626"
+            ]
+        }
+    ],
+    "odp_all_los": [
+        {
+            "ODP": "ODP POJOK",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 5,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 5,
+            "IDPELS": [
+                "FQ-028@090525",
+                "FQ-015@030825",
+                "FQ-040@290825",
+                "FQ-222@080226",
+                "FQ-174@130526"
+            ]
+        },
+        {
+            "ODP": "ODP PUTRA",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 2,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 2,
+            "IDPELS": [
+                "FQ-050@280925",
+                "FQ-131@281225"
+            ]
+        },
+        {
+            "ODP": "ODP 5",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-215@290126"
+            ]
+        },
+        {
+            "ODP": "ODP 3",
+            "AREA": "KLENDER_JAKARTA_TIMUR",
+            "PEMILIK": "VISMED",
+            "TOTAL_PELANGGAN": 4,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 4,
+            "IDPELS": [
+                "FQ-008@310326",
+                "FQ-079@310326",
+                "FQ-017@070526",
+                "FQ-157@070526"
+            ]
+        },
+        {
+            "ODP": "ODP6\/ODC3",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 2,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 2,
+            "IDPELS": [
+                "FQ-070@211023",
+                "FQ-FASUM@RT2"
+            ]
+        },
+        {
+            "ODP": "ODP7\/ODC5",
+            "AREA": "PONDOK_RAJEG_CIBINONG_JAWA_BARAT",
+            "PEMILIK": "FIBERQ",
+            "TOTAL_PELANGGAN": 1,
+            "TOTAL_ONLINE": 0,
+            "TOTAL_LOS": 1,
+            "IDPELS": [
+                "FQ-146@281124"
+            ]
+        }
+    ],
+    "Total_pelanggan": 230,
+    "Total_online": 166,
+    "Total_online_expired": 5,
+    "Total_online_paket": 161,
+    "Total_expired_offline": 60,
+    "Total_los_internet": 4,
+    "Total_expired": 65,
+    "expired_ids": [
+        "FQ-171@230425",
+        "FQ-176@230425",
+        "FQ-179@260425",
+        "FQ-173@270425",
+        "FQ-028@090525",
+        "FQ-082@220725",
+        "FQ-015@030825",
+        "FQ-047@030925",
+        "FQ-006@170925",
+        "FQ-050@280925",
+        "FQ-107@251025",
+        "FQ-074@251025",
+        "FQ-196@021225",
+        "FQ-096@241125",
+        "FQ-172@061225",
+        "FQ-040@290825",
+        "FQ-131@281225",
+        "FQ-202@090126",
+        "FQ-203@130126",
+        "FQ-099@141125",
+        "FQ-213@290126",
+        "FQ-219@040226",
+        "FQ-188@050226",
+        "FQ-222@080226",
+        "FQ-215@290126",
+        "FQ-072@090326",
+        "FQ-008@310326",
+        "FQ-079@310326",
+        "FQ-016@080426",
+        "FQ-035@170426",
+        "FQ-126@280426",
+        "FQ-017@070526",
+        "FQ-157@070526",
+        "FQ-141@100526",
+        "FQ-174@130526",
+        "FQ-037@290626",
+        "FQ-056@280923",
+        "FQ-070@211023",
+        "FQ-059@120524",
+        "FQ-061@210624",
+        "FQ-021@070824",
+        "FQ-030@100324",
+        "FQ-109@020924",
+        "FQ-120@130924",
+        "FQ-026@181124",
+        "FQ-146@281124",
+        "FQ-162@110325",
+        "FQ-164@170325",
+        "FQ-163@110425",
+        "FQ-119@051125",
+        "FQ-199@051025",
+        "FQ-060@061225",
+        "FQ-183@061225",
+        "FQ-151@070126",
+        "FQ-153@040226",
+        "FQ-229@270226",
+        "FQ-068@250426",
+        "FQ-124@270426",
+        "FQ-010@230526",
+        "FQ-098@090626",
+        "FQ-142@291225",
+        "FQ-007@260226",
+        "FQ-078@060626",
+        "FQ-160@080325",
+        "FQ-042@010626"
+    ],
+    "los_ids": [
+        "FQ-171@230425",
+        "FQ-176@230425",
+        "FQ-179@260425",
+        "FQ-173@270425",
+        "FQ-028@090525",
+        "FQ-082@220725",
+        "FQ-015@030825",
+        "FQ-006@170925",
+        "FQ-050@280925",
+        "FQ-107@251025",
+        "FQ-074@251025",
+        "FQ-196@021225",
+        "FQ-096@241125",
+        "FQ-172@061225",
+        "FQ-040@290825",
+        "FQ-131@281225",
+        "FQ-202@090126",
+        "FQ-203@130126",
+        "FQ-099@141125",
+        "FQ-213@290126",
+        "FQ-219@040226",
+        "FQ-188@050226",
+        "FQ-222@080226",
+        "FQ-215@290126",
+        "FQ-072@090326",
+        "FQ-008@310326",
+        "FQ-079@310326",
+        "FQ-016@080426",
+        "FQ-035@170426",
+        "FQ-126@280426",
+        "FQ-017@070526",
+        "FQ-157@070526",
+        "FQ-141@100526",
+        "FQ-174@130526",
+        "FQ-056@280923",
+        "FQ-070@211023",
+        "FQ-059@120524",
+        "FQ-061@210624",
+        "FQ-030@100324",
+        "FQ-109@020924",
+        "FQ-120@130924",
+        "FQ-FASUM@RT2",
+        "FQ-026@181124",
+        "FQ-146@281124",
+        "FQ-162@110325",
+        "FQ-164@170325",
+        "FQ-163@110425",
+        "FQ-119@051125",
+        "FQ-199@051025",
+        "FQ-060@061225",
+        "FQ-183@061225",
+        "FQ-151@070126",
+        "FQ-153@040226",
+        "FQ-229@270226",
+        "FQ-124@270426",
+        "FQ-010@230526",
+        "FQ-098@090626",
+        "FQ-142@291225",
+        "FQ-130@020526",
+        "FQ-078@060626",
+        "FQ-160@080325",
+        "FQ-129@220126",
+        "FQ-233@180326",
+        "FQ-042@010626"
+    ],
+    "offline_non_expired_ids": [
+        "FQ-FASUM@RT2",
+        "FQ-130@020526",
+        "FQ-129@220126",
+        "FQ-233@180326"
+    ],
+    "pppoe_profiles": {
+        "default": 0,
+        "HOME 10MBPS 173.000": 4,
+        "HOMELINK 20MBPS 199.000": 3,
+        "FIBERQ 20 MBPS 159000": 0,
+        "default-encryption": 0,
+        "PROMO KLENDER 100.000": 15,
+        "HOMELINK KLENDER 159.000": 1,
+        "FREE ACCESS": 16,
+        "FIBER 30MBPS 199.000": 0,
+        "FIBER 30MBPS 159.000": 3,
+        "FIBERQ 20Mbps 100.000": 10,
+        "MERDEKA 10 Rp 99.000": 73,
+        "FIBER 20MBPS 159000": 0,
+        "FIBER 20 MBPS 199.000": 4,
+        "FIBER SOSIALITA 159.000": 13,
+        "MANDIRI 10MBPS 75.000": 1,
+        "KONPENSASI ODP 120.000": 1,
+        "VPN Pro 2Mbps": 1,
+        "VPN Enterprise 10Mbps": 0,
+        "FIBERQ 20 MBPS 159.000": 3,
+        "FREE VPN": 7,
+        "MUMER 100.000": 0,
+        "FIBER 50 MBPS 210.000": 1,
+        "FIBER GAP FREE 3 BULAN": 7,
+        "HOME LINK 20 MBPS 159.000": 7,
+        "FIBERQ 10MBPS 100.000": 5,
+        "CCTV": 0,
+        "PROMO JATIMULYA 100.000": 3
+    },
+    "hotspot_profiles": {
+        "default": 0,
+        "HOTSPOT-10M": 0,
+        "HOTSPOT-20M": 0,
+        "TES": 0,
+        "10000 1HP 1hari": 0,
+        "50000 1HP 7HARI": 0,
+        "20000 1HP 5HARI": 0
+    },
+    "paket_harga": {
+        "FIBER 20 MBPS 199.000": "199000",
+        "MERDEKA 10 Rp 99.000": "99000",
+        "MERDEKA 50 Rp 399.000": "399000",
+        "HOME 10MBPS 173.000": "173000",
+        "HOME 20 MBPS 239.000": "239000",
+        "FIBER SOSIALITA 159.000": "159000",
+        "MANDIRI 10MBPS 75.000": "75000",
+        "KONPENSASI ODP 120.000": "120000",
+        "VPN Enterprise 10Mbps": "20000",
+        "VPN Pro 2Mbps": "2000",
+        "HOMELINK 20MBPS 199.000": "199000",
+        "PROMO JATIMULYA 100.000": "100000",
+        "FREE ACCESS": "0",
+        "MERDEKA 50": "399000",
+        "MANDIRI 10MBPS": "75000",
+        "KOMPENSASI ODP 120.000": "120000",
+        "FIBERQ 20MBPS 159": "159000",
+        "FIBERQ 20 MBPS 159.000": "159000",
+        "FIBERQ 20 MBPS 159000": "159000",
+        "PROMO KLENDER 100.000": "100000",
+        "HOMELINK KLENDER 159.000": "159000",
+        "FIBER 20MBPS 159000": "159000",
+        "FIBER 30MBPS 199.000": "199000",
+        "NINJA-10MBPS": "150000",
+        "HOME LINK 20 MBPS 159.000": "159000",
+        "FIBERQ 20Mbps 100.000": "100000",
+        "FIBER 30MBPS 159.000": "159000",
+        "FIBER GAP FREE 3 BULAN": "0",
+        "FIBERQ 10MBPS 100.000": "100000",
+        "MUMER 100.000": "100000",
+        "speed upto 10": "100000",
+        "FIBER 50 MBPS 210.000": "210000"
+    },
+    "updated_at": "2026-08-07 08:59:20"
+}

@@ -1,0 +1,21 @@
+{
+    "radius": "yes",
+    "packages": "10.10.10.16:8728|admin|b1m0123|Rb1100|1d_4rb|4000",
+    "uptime": "1d",
+    "ratelimit": "8M\/8M",
+    "mode": "mixedbesarkecil",
+    "length": "6",
+    "prefix": "",
+    "area": "Rb1100",
+    "ip": "10.10.10.16:8728",
+    "us": "admin",
+    "ps": "b1m0123",
+    "jumlah": "1",
+    "timestamp": "2025-10-06 23:55:38",
+    "vouchers": [
+        {
+            "user": "FlYWC7",
+            "pass": "FlYWC7"
+        }
+    ]
+}

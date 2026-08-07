@@ -1,0 +1,23 @@
+{
+    "params": [
+        "InternetGatewayDevice.LANDevice.1.Hosts.Host.*.HostName | HostName.*",
+        "InternetGatewayDevice.LANDevice.1.Hosts.Host.*.IPAddress | InternetGatewayDevice.LANDevice.1.Hosts.Host.*.IPAddress",
+        "InternetGatewayDevice.LANDevice.1.Hosts.Host.*.InterfaceType | InternetGatewayDevice.LANDevice.1.Hosts.Host.*.InterfaceType",
+        "Device.LANDevice.1.Hosts.Host.*.HostName | Device.LANDevice.1.Hosts.Host.*.HostName",
+        "Device.LANDevice.1.Hosts.Host.*.IPAddress | Device.LANDevice.1.Hosts.Host.*.IPAddress",
+        "Device.LANDevice.1.Hosts.Host.*.InterfaceType | Device.LANDevice.1.Hosts.Host.*.InterfaceType",
+        "VirtualParameters.pppoeUsername | VirtualParameters.pppoeUsername",
+        "VirtualParameters.pppoeUsername2 | VirtualParameters.pppoeUsername2",
+        "VirtualParameters.pppoeIP | VirtualParameters.pppoeIP",
+        "VirtualParameters.RXPower | VirtualParameters.RXPower",
+        "VirtualParameters.TXPower | VirtualParameters.TXPower",
+        "InternetGatewayDevice.LANDevice.1.Hosts.Host.15.HostName | InternetGatewayDevice.LANDevice.1.Hosts.Host.15.HostName",
+        "InternetGatewayDevice.LANDevice.1.Hosts.Host.15.IPAddress | InternetGatewayDevice.LANDevice.1.Hosts.Host.15.IPAddress",
+        "InternetGatewayDevice.LANDevice.1.Hosts.Host.15.InterfaceType | InternetGatewayDevice.LANDevice.1.Hosts.Host.15.InterfaceType",
+        "InternetGatewayDevice.LANDevice.1.Hosts.Host.15.LeaseTimeRemaining._object | InternetGatewayDevice.LANDevice.1.Hosts.Host.15.LeaseTimeRemaining._object",
+        "InternetGatewayDevice.LANDevice.1.Hosts.Host.15.LeaseTimeRemaining._writable | InternetGatewayDevice.LANDevice.1.Hosts.Host.15.LeaseTimeRemaining._writable",
+        "InternetGatewayDevice.LANDevice.1.Hosts.Host.15.MACAddress | InternetGatewayDevice.LANDevice.1.Hosts.Host.15.MACAddress"
+    ],
+    "updated_at": "2026-03-10 21:48:39",
+    "updated_by": "FIBERQ"
+}

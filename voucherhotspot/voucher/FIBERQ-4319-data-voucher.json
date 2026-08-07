@@ -1,0 +1,83 @@
+{
+    "desain": "default",
+    "ip": "10.10.10.1:28",
+    "us": "FIBERQ",
+    "ps": "FIBERQ@QTS",
+    "login": "FIBERQ",
+    "jumlah": "15",
+    "packages": "10.10.10.1:28|FIBERQ|FIBERQ@QTS|RAJEG|10000 1HP 24JAM|10000",
+    "uptime": "1d",
+    "ratelimit": "4m\/4m",
+    "prefix": "RJ1",
+    "radius": "yes",
+    "mode": "mixedbesar",
+    "length": "8",
+    "nocs": "6287838767626",
+    "logo_path": "default",
+    "bg_path": "default",
+    "harga_formatted": "Rp 10.000",
+    "cetak": "",
+    "timestamp": "2025-10-05 01:28:06",
+    "vouchers": [
+        {
+            "user": "RJ14Q29C09Q",
+            "pass": "RJ14Q29C09Q"
+        },
+        {
+            "user": "RJ1VD81MOC7",
+            "pass": "RJ1VD81MOC7"
+        },
+        {
+            "user": "RJ1T7LR5L8H",
+            "pass": "RJ1T7LR5L8H"
+        },
+        {
+            "user": "RJ1GSUCXZFG",
+            "pass": "RJ1GSUCXZFG"
+        },
+        {
+            "user": "RJ1DVJXIZST",
+            "pass": "RJ1DVJXIZST"
+        },
+        {
+            "user": "RJ1TKJHV1MU",
+            "pass": "RJ1TKJHV1MU"
+        },
+        {
+            "user": "RJ1EGAFEOQ0",
+            "pass": "RJ1EGAFEOQ0"
+        },
+        {
+            "user": "RJ1PK9EKI56",
+            "pass": "RJ1PK9EKI56"
+        },
+        {
+            "user": "RJ1HXGD0C1K",
+            "pass": "RJ1HXGD0C1K"
+        },
+        {
+            "user": "RJ13ZSVUI1H",
+            "pass": "RJ13ZSVUI1H"
+        },
+        {
+            "user": "RJ1RLVUFNQQ",
+            "pass": "RJ1RLVUFNQQ"
+        },
+        {
+            "user": "RJ1I71P93T3",
+            "pass": "RJ1I71P93T3"
+        },
+        {
+            "user": "RJ1H0FJ1HGW",
+            "pass": "RJ1H0FJ1HGW"
+        },
+        {
+            "user": "RJ1OORM3QNL",
+            "pass": "RJ1OORM3QNL"
+        },
+        {
+            "user": "RJ1LHOFCWGG",
+            "pass": "RJ1LHOFCWGG"
+        }
+    ]
+}

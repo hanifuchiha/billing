@@ -1,0 +1,9 @@
+waapi=http://10.0.0.10:3101
+namebot=CS2
+password=CS2
+sender=2fe7bf3b-6511-4cad-a1d3-df1b189b4ee3
+grup=6287838767626@s.whatsapp.net
+grup_tiket=6287838767626@s.whatsapp.net
+grup_izin=6287838767626@s.whatsapp.net
+grup_material=6287838767626@s.whatsapp.net
+grup_dana=6287838767626@s.whatsapp.net

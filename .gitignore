@@ -3,6 +3,8 @@
 /cache/
 /logs/
 /uploads/
+/Genie-ACS-alijayanet/
+/virtualparameter/
 
 *.sql
 *.zip

@@ -1,0 +1,7 @@
+{
+    "enabled": true,
+    "min_sla_percent": 0,
+    "max_discount_percent": 100,
+    "apply_to_manual_only": false,
+    "show_breakdown": true
+}
