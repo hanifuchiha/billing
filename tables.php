@@ -5229,7 +5229,7 @@ function resetPemakaian(btn, idPel, nama) {
                                         $modal .= '</div></div></div>';
 
                                         $modal .= '<script>
-                                        document.addEventListener("DOMContentLoaded", function() {
+                                        (function() {
                                             var tikor = "' . $tikorAttr . '";
                                             var modalEl = document.getElementById("exampleoverview' . $idpelAttr . '");
                                             if (!modalEl) return;
@@ -5262,7 +5262,7 @@ function resetPemakaian(btn, idPel, nama) {
                                                 window["_map' . $idpelAttr . '"] = map;
                                                 setTimeout(function() { map.invalidateSize(); }, 300);
                                             });
-                                        });
+                                        })();
                                         </script>';
 
                                         $adminchatFor = ($AKSES === 'ADMIN') ? 'admin' : $pemilikAttr;
@@ -5274,7 +5274,7 @@ function resetPemakaian(btn, idPel, nama) {
                                         $modal .= '<div class="modal-footer bg-light border-top"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="fas fa-times"></i> Tutup Chat</button></div>';
                                         $modal .= '</div></div></div>';
                                         $modal .= '<script>
-                                        document.addEventListener("DOMContentLoaded", function() {
+                                        (function() {
                                             var chatModal = document.getElementById("examplelivechat' . $idpelAttr . '");
                                             var chatIframe = document.getElementById("iframeChat' . $idpelAttr . '");
                                             if (!chatModal || !chatIframe) return;
@@ -5286,7 +5286,7 @@ function resetPemakaian(btn, idPel, nama) {
                                                 chatIframe.src = "";
                                                 chatIframe.style.display = "none";
                                             });
-                                        });
+                                        })();
                                         </script>';
 
                                         $modalsBuffer .= $modal;
@@ -6303,15 +6303,19 @@ function resetPemakaian(btn, idPel, nama) {
                                     }
                                 }
 
-                                document.querySelectorAll(".send-invoice").forEach(button => {
-                                    button.addEventListener("click", function() {
-                                        const formId = this.getAttribute("data-form-id");
-                                        if (!document.getElementById(formId)) {
-                                            console.error(`Form dengan ID '${formId}' tidak ditemukan.`);
-                                            return;
-                                        }
-                                        openChooseBotSendInvoiceModal(formId);
-                                    });
+                                document.addEventListener('click', function(e) {
+                                    const button = e.target.closest('.send-invoice');
+                                    if (!button) {
+                                        return;
+                                    }
+
+                                    e.preventDefault();
+                                    const formId = button.getAttribute('data-form-id');
+                                    if (!document.getElementById(formId)) {
+                                        console.error(`Form dengan ID '${formId}' tidak ditemukan.`);
+                                        return;
+                                    }
+                                    openChooseBotSendInvoiceModal(formId);
                                 });
 
                                 document.getElementById('chooseBotSendInvoiceForm').addEventListener('submit', function(e) {
@@ -6416,13 +6420,16 @@ function resetPemakaian(btn, idPel, nama) {
                                     restoreUnderlyingBootstrapModals('_manualActiveModalBackref');
                                 }
 
-                                document.querySelectorAll('.active-customer').forEach(button => {
-                                    button.addEventListener('click', function(e) {
-                                        e.preventDefault();
-                                        const formId = this.getAttribute('data-form-id');
-                                        const tipeTempo = this.getAttribute('data-tipe-tempo') || '';
-                                        openManualActiveModal(formId, tipeTempo);
-                                    });
+                                document.addEventListener('click', function(e) {
+                                    const button = e.target.closest('.active-customer');
+                                    if (!button) {
+                                        return;
+                                    }
+
+                                    e.preventDefault();
+                                    const formId = button.getAttribute('data-form-id');
+                                    const tipeTempo = button.getAttribute('data-tipe-tempo') || '';
+                                    openManualActiveModal(formId, tipeTempo);
                                 });
 
                                 document.getElementById('manualOnlyActivate').addEventListener('change', toggleManualOnlyActivateFields);
@@ -7185,7 +7192,4 @@ document.addEventListener("DOMContentLoaded", function() {
 
        
 <?php require 'footer.php'; ?>
-
-
-
 
