@@ -170,12 +170,13 @@ function syncProductAreaMap(formEl) {
 <?php
 $status = $_GET['status'] ?? '';
 $msg    = $_GET['msg']    ?? '';
+$decodedMsg = urldecode($msg);
 if ($status == 'success'): ?>
-    <script>alert('Berhasil! <?php echo addslashes(nl2br(htmlspecialchars(urldecode($msg)))); ?>');</script>
+    <script>alert(<?php echo json_encode("Berhasil!\n" . $decodedMsg, JSON_UNESCAPED_UNICODE); ?>);</script>
 <?php elseif ($status == 'cannot_delete'): ?>
-    <script>alert('Gagal! <?php echo addslashes(nl2br(htmlspecialchars(urldecode($msg ?: 'ODP masih digunakan atau masih memiliki turunan terkait, tidak dapat dihapus.')))); ?>');</script>
+    <script>alert(<?php echo json_encode("Gagal!\n" . urldecode($msg ?: 'ODP masih digunakan atau masih memiliki turunan terkait, tidak dapat dihapus.'), JSON_UNESCAPED_UNICODE); ?>);</script>
 <?php elseif ($status == 'error'): ?>
-    <script>alert('Gagal! <?php echo addslashes(nl2br(htmlspecialchars(urldecode($msg)))); ?>');</script>
+    <script>alert(<?php echo json_encode("Gagal!\n" . $decodedMsg, JSON_UNESCAPED_UNICODE); ?>);</script>
 <?php endif; ?>
 
 <?php

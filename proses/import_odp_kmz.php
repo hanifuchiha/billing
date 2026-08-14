@@ -154,6 +154,8 @@ try {
     $error_count = 0;
     $duplicate_count = 0;
     $errors = [];
+    $inserted = [];
+    $duplicates = [];
     
     foreach ($placemarks as $index => $placemark) {
         try {
@@ -193,16 +195,18 @@ try {
             $kode = $kode_prefix . preg_replace('/[^a-zA-Z0-9\-_]/', '', $name);
             $tikor = $latitude . ',' . $longitude;
             
-            // Cek duplikat berdasarkan kode atau koordinat
+            // Cek duplikat berdasarkan kode saja. Koordinat yang sama tetap boleh
+            // dipakai untuk beberapa ODP di titik fisik yang sama.
             if ($skip_duplicates) {
-                $check_sql = "SELECT id FROM odp WHERE (KODE = ? OR TIKOR = ?) LIMIT 1";
+                $check_sql = "SELECT id FROM odp WHERE KODE = ? LIMIT 1";
                 $check_stmt = mysqli_prepare($conn, $check_sql);
-                mysqli_stmt_bind_param($check_stmt, 'ss', $kode, $tikor);
+                mysqli_stmt_bind_param($check_stmt, 's', $kode);
                 mysqli_stmt_execute($check_stmt);
                 $check_result = mysqli_stmt_get_result($check_stmt);
                 
                 if (mysqli_num_rows($check_result) > 0) {
                     $duplicate_count++;
+                    $duplicates[] = "Placemark " . ($index + 1) . ": KODE '$kode' sudah ada, data dilewati";
                     continue; // Skip duplicate
                 }
             }
@@ -218,6 +222,7 @@ try {
 
             if (mysqli_stmt_execute($insert_stmt)) {
                 $success_count++;
+                $inserted[] = "Placemark " . ($index + 1) . ": $kode - $name";
             } else {
                 throw new Exception("Gagal menyimpan data: " . mysqli_stmt_error($insert_stmt));
             }
@@ -229,14 +234,17 @@ try {
     }
     
     // Prepare result message
-    $message = "Import KMZ/KML selesai!\\n";
-    $message .= "Berhasil: $success_count data\\n";
+    $total_processed = $success_count + $duplicate_count + $error_count;
+    $message = "Import ODP KMZ/KML selesai.\n";
+    $message .= "Total placemark diproses: $total_processed data\n";
+    $message .= "Berhasil masuk: $success_count data\n";
     if ($duplicate_count > 0) {
-        $message .= "Duplikat dilewati: $duplicate_count data\\n";
+        $message .= "Duplikat kode dilewati: $duplicate_count data\n";
     }
     if ($error_count > 0) {
-        $message .= "Error: $error_count data\\n";
+        $message .= "Gagal import: $error_count data\n";
     }
+    $message .= "\nCatatan: TIKOR/koordinat yang sama tetap boleh masuk. Duplikat hanya dicek dari KODE.";
     
     // Log import activity
     $log_msg = "ODP KMZ Import: Success=$success_count, Errors=$error_count, Duplicates=$duplicate_count by " . ($ceknama ?: 'System');
@@ -253,10 +261,22 @@ try {
     file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
     
     // Redirect with success message
+    if (!empty($inserted)) {
+        $message .= "\n\nData berhasil masuk:\n" . implode("\n", array_slice($inserted, 0, 8));
+        if (count($inserted) > 8) {
+            $message .= "\n... dan " . (count($inserted) - 8) . " data berhasil lainnya";
+        }
+    }
+    if (!empty($duplicates)) {
+        $message .= "\n\nData dilewati karena KODE duplikat:\n" . implode("\n", array_slice($duplicates, 0, 8));
+        if (count($duplicates) > 8) {
+            $message .= "\n... dan " . (count($duplicates) - 8) . " duplikat lainnya";
+        }
+    }
     if ($error_count > 0 && !empty($errors)) {
-        $error_detail = "\\n\\nDetail error:\\n" . implode("\\n", array_slice($errors, 0, 5));
+        $error_detail = "\n\nData gagal import:\n" . implode("\n", array_slice($errors, 0, 5));
         if (count($errors) > 5) {
-            $error_detail .= "\\n... dan " . (count($errors) - 5) . " error lainnya";
+            $error_detail .= "\n... dan " . (count($errors) - 5) . " gagal lainnya";
         }
         $message .= $error_detail;
     }

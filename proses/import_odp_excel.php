@@ -67,7 +67,55 @@ function normalizeHirarki($value) {
 function normalizeSplitter($value) {
     $allowed = ['1:2', '1:4', '1:8', '1:16', '1:32'];
     $value = trim((string)$value);
-    return in_array($value, $allowed, true) ? $value : '';
+    if (in_array($value, $allowed, true)) {
+        return $value;
+    }
+
+    // Excel kadang mengubah teks "1:16" menjadi angka waktu 0.052777...
+    // karena dianggap jam:menit. Konversi balik supaya import tetap ramah.
+    if (is_numeric($value)) {
+        $totalMinutes = (int)round(((float)$value) * 24 * 60);
+        $hours = intdiv($totalMinutes, 60);
+        $minutes = $totalMinutes % 60;
+        $ratio = $hours . ':' . $minutes;
+        if (in_array($ratio, $allowed, true)) {
+            return $ratio;
+        }
+    }
+
+    return null;
+}
+
+function buildServerAreaHelp(mysqli $conn, string $pemilik, string $area): string {
+    $pemilik = trim($pemilik);
+    $area = trim($area);
+
+    if ($area !== '') {
+        $sql = "SELECT PEMILIK, BRAND, AREA FROM server WHERE AREA = ? ORDER BY BRAND, AREA LIMIT 3";
+        $stmt = mysqli_prepare($conn, $sql);
+        if ($stmt) {
+            mysqli_stmt_bind_param($stmt, 's', $area);
+            mysqli_stmt_execute($stmt);
+            $result = mysqli_stmt_get_result($stmt);
+            $suggestions = [];
+            while ($row = mysqli_fetch_assoc($result)) {
+                $suggestions[] = "PEMILIK='" . ($row['PEMILIK'] ?? '') . "', AREA='" . ($row['AREA'] ?? '') . "'";
+            }
+            if (!empty($suggestions)) {
+                return "Nilai Excel: PEMILIK='$pemilik', AREA='$area'. Untuk AREA ini gunakan " . implode(' atau ', $suggestions) . ". Kolom PEMILIK harus berisi kode PEMILIK, bukan nama BRAND.";
+            }
+        }
+    }
+
+    $examples = [];
+    $q = mysqli_query($conn, "SELECT PEMILIK, BRAND, AREA FROM server ORDER BY BRAND, AREA LIMIT 5");
+    if ($q) {
+        while ($row = mysqli_fetch_assoc($q)) {
+            $examples[] = ($row['PEMILIK'] ?? '') . ' | ' . ($row['AREA'] ?? '');
+        }
+    }
+    $exampleText = !empty($examples) ? " Contoh valid: " . implode('; ', $examples) . "." : "";
+    return "Nilai Excel: PEMILIK='$pemilik', AREA='$area'. Pasangan ini tidak ada di tabel server.$exampleText";
 }
 
 try {
@@ -124,6 +172,8 @@ try {
     $error_count = 0;
     $duplicate_count = 0;
     $errors = [];
+    $inserted = [];
+    $duplicates = [];
 
     foreach ($import_data as $index => $row) {
         $row_num = $index + 2; // +2 karena mulai dari row 2 (setelah header)
@@ -179,17 +229,18 @@ try {
                 $brand = trim($server_row['BRAND'] ?? '');
             }
             if (empty($brand)) {
-                throw new Exception("Server/Area tidak valid atau BRAND tidak ditemukan");
+                throw new Exception("Server/Area tidak cocok. " . buildServerAreaHelp($conn, $pemilik, $area));
             }
 
             if ($skip_duplicates) {
-                $check_sql = "SELECT id FROM odp WHERE KODE = ? OR TIKOR = ? LIMIT 1";
+                $check_sql = "SELECT id FROM odp WHERE KODE = ? LIMIT 1";
                 $check_stmt = mysqli_prepare($conn, $check_sql);
-                mysqli_stmt_bind_param($check_stmt, 'ss', $kode, $tikor);
+                mysqli_stmt_bind_param($check_stmt, 's', $kode);
                 mysqli_stmt_execute($check_stmt);
                 $check_result = mysqli_stmt_get_result($check_stmt);
                 if ($check_result && mysqli_num_rows($check_result) > 0) {
                     $duplicate_count++;
+                    $duplicates[] = "Row $row_num: KODE '$kode' sudah ada, data dilewati";
                     continue;
                 }
             }
@@ -201,8 +252,9 @@ try {
             mysqli_stmt_bind_param($insert_stmt, 'ssssssisss', $kode, $name, $tikor, $pemilik, $area, $brand, $port, $hirarki, $splitter, $hirarki_parent);
             if (mysqli_stmt_execute($insert_stmt)) {
                 $success_count++;
+                $inserted[] = "Row $row_num: $kode - $name";
             } else {
-                throw new Exception("Gagal menyimpan data: " . mysqli_error($conn));
+                throw new Exception("Gagal menyimpan data ke database: " . mysqli_error($conn));
             }
         } catch (Exception $e) {
             $error_count++;
@@ -211,14 +263,17 @@ try {
     }
     
     // Prepare result message
-    $message = "Import selesai!\\n";
-    $message .= "Berhasil: $success_count data\\n";
+    $total_processed = $success_count + $duplicate_count + $error_count;
+    $message = "Import ODP Excel selesai.\n";
+    $message .= "Total baris diproses: $total_processed data\n";
+    $message .= "Berhasil masuk: $success_count data\n";
     if ($duplicate_count > 0) {
-        $message .= "Duplikat dilewati: $duplicate_count data\\n";
+        $message .= "Duplikat kode dilewati: $duplicate_count data\n";
     }
     if ($error_count > 0) {
-        $message .= "Error: $error_count data\\n";
+        $message .= "Gagal import: $error_count data\n";
     }
+    $message .= "\nCatatan: TIKOR/koordinat yang sama tetap boleh masuk. Duplikat hanya dicek dari KODE.";
     
     // Log import activity
     $log_msg = "ODP Excel Import: Success=$success_count, Errors=$error_count, Duplicates=$duplicate_count by " . ($ceknama ?: 'System');
@@ -235,10 +290,22 @@ try {
     file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
     
     // Redirect with success message
+    if (!empty($inserted)) {
+        $message .= "\n\nData berhasil masuk:\n" . implode("\n", array_slice($inserted, 0, 8));
+        if (count($inserted) > 8) {
+            $message .= "\n... dan " . (count($inserted) - 8) . " data berhasil lainnya";
+        }
+    }
+    if (!empty($duplicates)) {
+        $message .= "\n\nData dilewati karena KODE duplikat:\n" . implode("\n", array_slice($duplicates, 0, 8));
+        if (count($duplicates) > 8) {
+            $message .= "\n... dan " . (count($duplicates) - 8) . " duplikat lainnya";
+        }
+    }
     if ($error_count > 0 && !empty($errors)) {
-        $error_detail = "\\n\\nDetail error:\\n" . implode("\\n", array_slice($errors, 0, 10));
+        $error_detail = "\n\nData gagal import:\n" . implode("\n", array_slice($errors, 0, 10));
         if (count($errors) > 10) {
-            $error_detail .= "\\n... dan " . (count($errors) - 10) . " error lainnya";
+            $error_detail .= "\n... dan " . (count($errors) - 10) . " gagal lainnya";
         }
         $message .= $error_detail;
     }
