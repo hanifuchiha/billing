@@ -178,6 +178,28 @@ if ($status == 'success'): ?>
     <script>alert('Gagal! <?php echo addslashes(nl2br(htmlspecialchars(urldecode($msg)))); ?>');</script>
 <?php endif; ?>
 
+<?php
+$odpAccessWhere = "1=0";
+if ($AKSES != 'ASSISTANT') {
+    $queryServerId = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE user_id = $current_user_id");
+    $userServerIds = [];
+    while ($rowServerId = mysqli_fetch_assoc($queryServerId)) {
+        $userServerIds[] = "'" . mysqli_real_escape_string($conn, $rowServerId['PEMILIK']) . "'";
+    }
+    $userServerList = count($userServerIds) > 0 ? implode(",", $userServerIds) : "''";
+    $odpAccessWhere = "(o.pemilik IN ($userServerList) OR EXISTS (
+        SELECT 1 FROM odp_server os_access
+        WHERE os_access.odp_kode = o.KODE AND os_access.pemilik IN ($userServerList)
+    ))";
+} else {
+    $safeAreaList = isset($area_list) && trim((string)$area_list) !== '' ? $area_list : "''";
+    $odpAccessWhere = "(o.AREA IN ($safeAreaList) OR EXISTS (
+        SELECT 1 FROM odp_server os_access
+        WHERE os_access.odp_kode = o.KODE AND os_access.area IN ($safeAreaList)
+    ))";
+}
+?>
+
 <div class="container-fluid py-4">
   <div class="row">
     <div class="col-12">
@@ -197,16 +219,7 @@ if ($status == 'success'): ?>
         <!-- Stats Row -->
         <div class="row g-3 px-4 mb-4">
           <?php
-            $sqlStats = "SELECT COUNT(*) as total, SUM(CASE WHEN Hirarki='ODC' THEN 1 ELSE 0 END) as odc, SUM(CASE WHEN Hirarki='ODP' AND hirarki_parent IS NOT NULL THEN 1 ELSE 0 END) as terikat FROM odp";
-            if ($AKSES != 'ASSISTANT') {
-                $qr  = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE user_id=$current_user_id");
-                $ids = [];
-                while ($r = mysqli_fetch_assoc($qr)) { $ids[] = "'" . $r['PEMILIK'] . "'"; }
-                $l = count($ids) > 0 ? implode(",", $ids) : "''";
-                $sqlStats .= " WHERE pemilik IN ($l)";
-            } else {
-                $sqlStats .= " WHERE AREA IN ($area_list)";
-            }
+            $sqlStats = "SELECT COUNT(*) as total, SUM(CASE WHEN Hirarki='ODC' THEN 1 ELSE 0 END) as odc, SUM(CASE WHEN Hirarki='ODP' AND hirarki_parent IS NOT NULL THEN 1 ELSE 0 END) as terikat FROM odp o WHERE $odpAccessWhere";
             $rs  = mysqli_query($conn, $sqlStats);
             $st  = mysqli_fetch_assoc($rs);
             $tot = (int)($st['total']   ?? 0);
@@ -221,14 +234,14 @@ if ($status == 'success'): ?>
                        WHEN splitter='1:16' THEN 16
                        WHEN splitter='1:32' THEN 32
                        ELSE 0 END) as total_ports
-              FROM odp WHERE Hirarki='ODP'";
-            if ($AKSES != 'ASSISTANT') { $sqlHompas .= " AND pemilik IN ($l)"; } else { $sqlHompas .= " AND AREA IN ($area_list)"; }
+              FROM odp o WHERE o.Hirarki='ODP'";
+            $sqlHompas .= " AND $odpAccessWhere";
             $rs_hompas   = mysqli_query($conn, $sqlHompas);
             $hompas_data = mysqli_fetch_assoc($rs_hompas);
             $total_hompas = (int)($hompas_data['total_ports'] ?? 0);
 
             $sqlHompasIsi = "SELECT COUNT(*) as total_pelanggan FROM pelanggan p INNER JOIN odp o ON p.ODP = o.KODE";
-            if ($AKSES != 'ASSISTANT') { $sqlHompasIsi .= " WHERE o.pemilik IN ($l)"; } else { $sqlHompasIsi .= " WHERE o.AREA IN ($area_list)"; }
+            $sqlHompasIsi .= " WHERE $odpAccessWhere";
             $rs_hompas_isi   = mysqli_query($conn, $sqlHompasIsi);
             $hompas_isi_data = mysqli_fetch_assoc($rs_hompas_isi);
             $total_hompas_terisi = (int)($hompas_isi_data['total_pelanggan'] ?? 0);
@@ -426,12 +439,32 @@ body.app-theme-dark .text-muted { color: #94a3b8 !important; }
                 <option value="">All Area</option>
                 <?php
                 if ($AKSES == 'ASSISTANT') {
-                    $queryAreas = mysqli_query($conn, "SELECT DISTINCT AREA FROM odp WHERE AREA IS NOT NULL AND AREA!='' AND AREA IN ($area_list) ORDER BY AREA");
+                    $queryAreas = mysqli_query($conn, "
+                        SELECT DISTINCT area FROM (
+                            SELECT AREA AS area FROM odp WHERE AREA IS NOT NULL AND AREA!='' AND AREA IN ($area_list)
+                            UNION
+                            SELECT area FROM odp_server WHERE area IS NOT NULL AND area!='' AND area IN ($area_list)
+                        ) x
+                        ORDER BY area
+                    ");
                 } else {
-                    $queryAreas = mysqli_query($conn, "SELECT DISTINCT o.AREA FROM odp o INNER JOIN server s ON o.PEMILIK=s.PEMILIK WHERE o.AREA IS NOT NULL AND o.AREA!='' AND s.user_id=$current_user_id ORDER BY o.AREA");
+                    $queryAreas = mysqli_query($conn, "
+                        SELECT DISTINCT area FROM (
+                            SELECT o.AREA AS area
+                            FROM odp o
+                            INNER JOIN server s ON o.PEMILIK=s.PEMILIK
+                            WHERE o.AREA IS NOT NULL AND o.AREA!='' AND s.user_id=$current_user_id
+                            UNION
+                            SELECT os.area
+                            FROM odp_server os
+                            INNER JOIN server s ON os.pemilik=s.PEMILIK AND os.area=s.AREA
+                            WHERE os.area IS NOT NULL AND os.area!='' AND s.user_id=$current_user_id
+                        ) x
+                        ORDER BY area
+                    ");
                 }
                 while ($rowArea = mysqli_fetch_assoc($queryAreas)) {
-                    echo '<option value="' . htmlspecialchars($rowArea['AREA']) . '">' . htmlspecialchars($rowArea['AREA']) . '</option>';
+                    echo '<option value="' . htmlspecialchars($rowArea['area']) . '">' . htmlspecialchars($rowArea['area']) . '</option>';
                 }
                 ?>
               </select>
@@ -442,9 +475,9 @@ body.app-theme-dark .text-muted { color: #94a3b8 !important; }
                 <option value="">All Server Area</option>
                 <?php
                 if ($AKSES == 'ASSISTANT') {
-                    $queryProducts = mysqli_query($conn, "SELECT DISTINCT BRAND FROM odp WHERE BRAND IS NOT NULL AND BRAND!='' AND AREA IN ($area_list) ORDER BY BRAND");
+                    $queryProducts = mysqli_query($conn, "SELECT DISTINCT o.BRAND FROM odp o WHERE o.BRAND IS NOT NULL AND o.BRAND!='' AND $odpAccessWhere ORDER BY o.BRAND");
                 } else {
-                    $queryProducts = mysqli_query($conn, "SELECT DISTINCT o.BRAND FROM odp o INNER JOIN server s ON o.PEMILIK=s.PEMILIK WHERE o.BRAND IS NOT NULL AND o.BRAND!='' AND s.user_id=$current_user_id ORDER BY o.BRAND");
+                    $queryProducts = mysqli_query($conn, "SELECT DISTINCT o.BRAND FROM odp o WHERE o.BRAND IS NOT NULL AND o.BRAND!='' AND $odpAccessWhere ORDER BY o.BRAND");
                 }
                 while ($rowProduct = mysqli_fetch_assoc($queryProducts)) {
                     echo '<option value="' . htmlspecialchars($rowProduct['BRAND']) . '">' . htmlspecialchars($rowProduct['BRAND']) . '</option>';
@@ -490,15 +523,7 @@ body.app-theme-dark .text-muted { color: #94a3b8 !important; }
                 $odpPage = isset($_POST['page']) ? (int)$_POST['page'] : 1;
                 if ($odpPage < 1) $odpPage = 1;
 
-                if ($AKSES != 'ASSISTANT') {
-                    $queryServerId = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE user_id = $current_user_id");
-                    $userServerIds = [];
-                    while ($row = mysqli_fetch_assoc($queryServerId)) { $userServerIds[] = "'" . $row['PEMILIK'] . "'"; }
-                    $userServerList = count($userServerIds) > 0 ? implode(",", $userServerIds) : "''";
-                    $odpWhere = "o.pemilik IN ($userServerList)";
-                } else {
-                    $odpWhere = "o.AREA IN ($area_list)";
-                }
+                $odpWhere = $odpAccessWhere;
                 $odpOrderBy = "ORDER BY
                               CASE WHEN o.Hirarki='ODC' THEN 0 WHEN o.Hirarki='ODP' THEN 1 WHEN o.Hirarki IN ('ODP-RASIO','ODP-JUMPER') THEN 2 ELSE 3 END,
                               COALESCE(o.hirarki_parent, o.KODE),
@@ -528,8 +553,15 @@ body.app-theme-dark .text-muted { color: #94a3b8 !important; }
                         $prodList = [['pemilik' => $data['PEMILIK'], 'area' => $data['AREA'], 'brand' => $data['BRAND'] ?? '']];
                     }
 
-                    // data-area: area utama (kolom lama) untuk filter area
-                    $dataArea = strtolower((string)($data['AREA'] ?? ''));
+                    // data-area memuat area utama + semua relasi server area, agar filter Area
+                    // menampilkan ODP yang punya multi-area di tabel odp_server.
+                    $areaValues = [];
+                    if (!empty($data['AREA'])) $areaValues[] = strtolower(trim((string)$data['AREA']));
+                    foreach ($prodList as $prArea) {
+                        if (!empty($prArea['area'])) $areaValues[] = strtolower(trim((string)$prArea['area']));
+                    }
+                    $areaValues = array_values(array_unique(array_filter($areaValues, function($v) { return $v !== ''; })));
+                    $dataArea = implode('|', $areaValues);
                     // data-product: semua brand yang terikat (spasi-separated untuk filter)
                     $allBrands = array_unique(array_map(function($p){ return strtolower($p['brand'] ?? $p['area']); }, $prodList));
                     $dataProduct = implode(' ', $allBrands);
@@ -907,6 +939,21 @@ body.app-theme-dark .text-muted { color: #94a3b8 !important; }
                             showIndicator(false);
                         });
                 }
+
+                function loadAllPages() {
+                    if (currentPage >= totalPages) return Promise.resolve();
+                    if (isLoading) {
+                        return new Promise(function(resolve) { setTimeout(resolve, 250); }).then(loadAllPages);
+                    }
+                    return appendNextPage().then(function() {
+                        if (currentPage < totalPages) return loadAllPages();
+                    });
+                }
+
+                window.isOdpLazyComplete = function() {
+                    return currentPage >= totalPages;
+                };
+                window.loadAllOdpPages = loadAllPages;
 
                 var observer = new IntersectionObserver(function(entries) {
                     entries.forEach(function(entry) {
@@ -1446,12 +1493,30 @@ function toggleGroup(button) {
 function filterOdpTable() {
     function norm(v)  { return (v||'').toString().toLowerCase().replace(/\s+/g,' ').trim(); }
     function normH(v) { return (v||'').toString().toLowerCase().replace(/\s+/g,'').trim(); }
+    function areaMatches(rowArea, selectedArea) {
+        if (!selectedArea) return true;
+        return norm(rowArea).split('|').map(function(v) { return norm(v); }).indexOf(selectedArea) !== -1;
+    }
 
     var searchVal   = norm((document.getElementById('searchOdpInput') || {}).value || '');
     var hirarkiVal  = normH((document.getElementById('filterHirarki')  || {}).value || '');
     var areaVal     = norm((document.getElementById('filterArea')     || {}).value || '');
     var productVal  = norm((document.getElementById('filterProduct')  || {}).value || '');
     var splitterVal = norm((document.getElementById('filterSplitter') || {}).value || '');
+
+    var hasFilter = !!(searchVal || hirarkiVal || areaVal || productVal || splitterVal);
+    if (hasFilter && typeof window.loadAllOdpPages === 'function' && typeof window.isOdpLazyComplete === 'function' && !window.isOdpLazyComplete()) {
+        if (!window.odpFilterWaitingAll) {
+            window.odpFilterWaitingAll = true;
+            window.loadAllOdpPages().then(function() {
+                window.odpFilterWaitingAll = false;
+                filterOdpTable();
+            }).catch(function() {
+                window.odpFilterWaitingAll = false;
+            });
+        }
+        return;
+    }
 
     // Filter semua baris data (tr yang punya data-hirarki)
     var allDataRows = document.querySelectorAll('tbody.odp-data-table tr[data-hirarki]');
@@ -1466,7 +1531,7 @@ function filterOdpTable() {
         var show = true;
         if (searchVal   && rSrch.indexOf(searchVal)   === -1) show = false;
         if (hirarkiVal  && rH   !== hirarkiVal)                show = false;
-        if (areaVal     && rA   !== areaVal)                   show = false;
+        if (areaVal     && !areaMatches(rA, areaVal))          show = false;
         // Product: data-product bisa berisi beberapa brand dipisah spasi
         if (productVal  && rP.indexOf(productVal) === -1)      show = false;
         if (splitterVal && rS   !== splitterVal)               show = false;
@@ -1492,7 +1557,7 @@ function filterOdpTable() {
                 var rSrch2 = norm((odcGhostRow.getAttribute('data-search') || '') + ' ' + gKey);
                 show = true;
                 if (searchVal  && rSrch2.indexOf(searchVal) === -1) show = false;
-                if (areaVal    && rA2 !== areaVal)                   show = false;
+                if (areaVal    && !areaMatches(rA2, areaVal))        show = false;
                 if (productVal && rP2.indexOf(productVal) === -1)    show = false;
             } else {
                 // Header tetap tampil jika tidak ada ghost row
@@ -1770,13 +1835,17 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('loadingOverlay').style.display = 'flex';
     });
 
-    // Edit form submit � sync area_map lalu validasi
-    document.querySelectorAll('form[action="proses/editodp.php"]').forEach(function(form) {
-        form.addEventListener('submit', function(e) {
-            var count = syncProductAreaMap(this);
-            if (!count) { alert('Pilih minimal 1 Server Area untuk ODP ini.'); e.preventDefault(); return false; }
-            document.getElementById('loadingOverlay').style.display = 'flex';
-        });
+    // Edit form submit: delegated supaya form edit dari lazy-load tetap tersinkron.
+    document.addEventListener('submit', function(e) {
+        var form = e.target;
+        if (!form || !form.matches('form[action="proses/editodp.php"]')) return;
+        var count = syncProductAreaMap(form);
+        if (!count) {
+            alert('Pilih minimal 1 Server Area untuk ODP ini.');
+            e.preventDefault();
+            return false;
+        }
+        document.getElementById('loadingOverlay').style.display = 'flex';
     });
 
     // Add modal: toggle hirarki_parent + auto-check product dari ODC parent
