@@ -1466,6 +1466,50 @@ document.addEventListener("DOMContentLoaded", function() {
         color: #0f172a !important;
         border-color: rgba(148, 163, 184, 0.75);
     }
+
+    .customer-payment-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        font-size: 12px;
+    }
+
+    .customer-payment-summary .summary-item {
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        border-radius: 8px;
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.92);
+    }
+
+    .customer-payment-summary .summary-label {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .customer-payment-summary .summary-value {
+        color: #0f172a;
+        font-size: 22px;
+        font-weight: 800;
+        line-height: 1.1;
+        margin-top: 4px;
+    }
+
+    body.app-theme-dark .customer-payment-summary .summary-item {
+        background: rgba(15, 23, 42, 0.88);
+        border-color: rgba(148, 163, 184, 0.45);
+    }
+
+    body.app-theme-dark .customer-payment-summary .summary-value {
+        color: #f8fafc;
+    }
+
+    @media (max-width: 575.98px) {
+        .customer-payment-summary {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 
 
@@ -4723,6 +4767,52 @@ function resetPemakaian(btn, idPel, nama) {
                                         }
                                     }
 
+                                    $summaryTotalPelanggan = 0;
+                                    $summarySudahBayar = 0;
+                                    $summaryBelumBayar = 0;
+                                    $paidExistsSql = "EXISTS (
+                                        SELECT 1 FROM transaksi t
+                                        WHERE t.IDPEL = p.IDPEL
+                                          AND t.STATUS = 'BERHASIL'
+                                          AND DATE(t.waktu) >= p.TEMPO
+                                    )";
+
+                                    if ($rowsIsLosOnly) {
+                                        $summaryTotalPelanggan = isset($rowsOfflineIdpel) && is_array($rowsOfflineIdpel) ? count($rowsOfflineIdpel) : 0;
+                                        if ($summaryTotalPelanggan > 0) {
+                                            $summaryPaidIds = [];
+                                            foreach (array_chunk($rowsOfflineIdpel, 500) as $summaryChunk) {
+                                                $summaryIdList = implode(',', array_map(function ($v) use ($conn) {
+                                                    return "'" . mysqli_real_escape_string($conn, (string)$v) . "'";
+                                                }, $summaryChunk));
+                                                $qSummaryPaid = mysqli_query($conn, "SELECT COUNT(*) AS total FROM pelanggan p WHERE p.IDPEL IN ($summaryIdList) AND $paidExistsSql");
+                                                $rowSummaryPaid = $qSummaryPaid ? mysqli_fetch_assoc($qSummaryPaid) : ['total' => 0];
+                                                $summarySudahBayar += (int)($rowSummaryPaid['total'] ?? 0);
+                                            }
+                                        }
+                                        $summaryBelumBayar = max(0, $summaryTotalPelanggan - $summarySudahBayar);
+                                    } else {
+                                        $qPaymentSummary = mysqli_query($conn, "
+                                            SELECT
+                                                COUNT(*) AS total_pelanggan,
+                                                COALESCE(SUM(CASE WHEN $paidExistsSql THEN 1 ELSE 0 END), 0) AS sudah_bayar
+                                            FROM pelanggan p
+                                            WHERE $rowsBaseWhere
+                                        ");
+                                        $paymentSummaryRow = $qPaymentSummary ? mysqli_fetch_assoc($qPaymentSummary) : ['total_pelanggan' => 0, 'sudah_bayar' => 0];
+                                        $summaryTotalPelanggan = (int)($paymentSummaryRow['total_pelanggan'] ?? 0);
+                                        $summarySudahBayar = (int)($paymentSummaryRow['sudah_bayar'] ?? 0);
+                                        $summaryBelumBayar = max(0, $summaryTotalPelanggan - $summarySudahBayar);
+                                    }
+
+                                    echo '<tr class="customer-summary-row"><td colspan="5" class="p-3">';
+                                    echo '<div class="customer-payment-summary">';
+                                    echo '<div class="summary-item"><div class="summary-label">Total Pelanggan</div><div class="summary-value">' . number_format($summaryTotalPelanggan, 0, ',', '.') . '</div></div>';
+                                    echo '<div class="summary-item"><div class="summary-label text-success">Sudah Bayar</div><div class="summary-value text-success">' . number_format($summarySudahBayar, 0, ',', '.') . '</div></div>';
+                                    echo '<div class="summary-item"><div class="summary-label text-danger">Belum Bayar</div><div class="summary-value text-danger">' . number_format($summaryBelumBayar, 0, ',', '.') . '</div></div>';
+                                    echo '</div>';
+                                    echo '</td></tr>';
+
                                     if (!$rowsHasAnyFilter && !$rowsIsLosOnly) {
                                         echo '<tr><td colspan="5" class="text-center text-secondary py-4">Gunakan pencarian atau filter di atas untuk menampilkan data pelanggan.</td></tr>';
                                     }
@@ -7217,4 +7307,3 @@ document.addEventListener("DOMContentLoaded", function() {
 
        
 <?php require 'footer.php'; ?>
-
