@@ -96,6 +96,16 @@ $rows[] = [
 ];
 
 while ($row = mysqli_fetch_assoc($query)) {
+    // Reseller/mitra ISP dengan filter harga aktif: harga yang di-export harus
+    // ikut harga custom mereka, bukan harga asli tersimpan -- pola sama persis
+    // dgn Transaction.php/customertransation.php.
+    $hargaExport = $row['HARGA'] ?? '';
+    if (!empty($is_reseller) && !empty($reseller_price_filter_enabled) && !empty($row['PAKET']) && !empty($row['PEMILIK'])) {
+        $effectiveHarga = reseller_effective_harga($conn, $row['PAKET'], $row['PEMILIK']);
+        if ($effectiveHarga > 0) {
+            $hargaExport = $effectiveHarga;
+        }
+    }
     $rows[] = [
         $row['PASSWORD'] ?? '',
         $row['IDPEL'] ?? '',
@@ -104,7 +114,7 @@ while ($row = mysqli_fetch_assoc($query)) {
         $row['TIPE_BAYAR'] ?? '',
         $row['TIPE_TEMPO'] ?? '',
         $row['PAKET'] ?? '',
-        $row['HARGA'] ?? '',
+        $hargaExport,
         $row['ALAMAT'] ?? '',
         $row['NOWA'] ?? '',
         $row['TANGGALPASANG'] ?? '',

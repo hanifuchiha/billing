@@ -820,6 +820,11 @@ document.addEventListener("DOMContentLoaded", function() {
     <div class="card-header d-flex justify-content-between align-items-center" style="padding: 10px 15px;">
       <h5 class="mb-0" style="font-size: 1em;">📊 Statistik dan Laporan Pembayaran</h5>
       <div>
+        <?php
+        $exportBtnBulan = (isset($_GET['bulan']) && $_GET['bulan'] !== '') ? (int)$_GET['bulan'] : (int)date('m');
+        $exportBtnTahun = (isset($_GET['tahun']) && $_GET['tahun'] !== '') ? (int)$_GET['tahun'] : (int)date('Y');
+        ?>
+        <a id="exportLaporanDashboard" href="export_laporan_dashboard.php?bulan=<?php echo $exportBtnBulan; ?>&tahun=<?php echo $exportBtnTahun; ?>" class="btn btn-success btn-sm me-2" style="font-weight: 600;"><i class="fas fa-file-excel me-1"></i>Export Laporan</a>
         <button class="btn btn-secondary btn-sm me-2" onclick="clearBrowserCache()" style="font-weight: 600;"><i class="fas fa-broom me-1"></i>Clear Cache</button>
         <button class="btn btn-secondary btn-sm" onclick="location.reload()" style="font-weight: 600;"><i class="fas fa-sync-alt me-1"></i>Refresh</button>
       </div>
@@ -1043,10 +1048,22 @@ $trx_tanggal_expr_t = "STR_TO_DATE(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
         return ['month' => (int)$monthMap[$monthName], 'year' => $year];
       };
 
+      // BUG (fixed, sama persis dgn statistics.php/pelanggan_menunggak.php):
+      // $usageValue = PENGUNAAN transaksi BERHASIL TERAKHIR (periode yang SUDAH
+      // DIBAYAR), bukan yang belum dibayar. SEBELUMNYA function ini balikin jatuh
+      // tempo dari bulan/tahun $usageValue APA ADANYA (bulan yang sudah lunas)
+      // sbg "jatuh tempo pertama yang belum dibayar". Jatuh tempo PERTAMA yang
+      // belum dibayar = 1 bulan SETELAH periode lunas ini.
       $getFirstDueFixedByUsage = function ($usageValue, $fixedDay) use ($parseIndoMonthYear, $buildMonthlyDate) {
         $parsed = $parseIndoMonthYear((string)$usageValue);
         if (!$parsed) return null;
-        return $buildMonthlyDate((int)$parsed['year'], (int)$parsed['month'], (int)$fixedDay);
+        $dueMonth = (int)$parsed['month'] + 1;
+        $dueYear = (int)$parsed['year'];
+        if ($dueMonth > 12) {
+          $dueMonth = 1;
+          $dueYear++;
+        }
+        return $buildMonthlyDate($dueYear, $dueMonth, (int)$fixedDay);
       };
 
       $getReferenceDate = function ($row) {
@@ -1117,6 +1134,27 @@ $trx_tanggal_expr_t = "STR_TO_DATE(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
         return $buildMonthlyDate((int)date('Y', $n), (int)date('m', $n), $dueDay);
       };
 
+      // "Menunggak" di widget INI (Statistik dan Laporan Pembayaran) SEKARANG
+      // mengikuti status EXPIRED di router (persis sama dgn kartu "Expired
+      // Online"+"Expired Los" di atas & dgn statistics.php/pelanggan_menunggak.php),
+      // BUKAN lagi murni hasil hitung siklus billing spt SEBELUMNYA -- widget
+      // ini ternyata TIDAK PERNAH ikut dimigrasikan waktu fix 2026-08-05 (beda
+      // section dari kartu Expired di atas, implementasi terpisah/copy-paste
+      // lama), jadi masih pakai cara lama & tidak sinkron dgn 2 halaman lain
+      // (dilaporkan user: "Statistik dan Laporan Pembayaran didashboard masih
+      // tidak sesuai" walau kartu Expired Online/Los di atasnya sudah benar).
+      // Cache `expired_ids` ditulis tiap menit oleh cron getdata/serverload.php.
+      $dashboardMenunggakCacheUsername = ($AKSES == 'ASSISTANT') ? $asistant_name : $ceknama;
+      $dashboardMenunggakCacheFile = __DIR__ . '/serverlog/' . $dashboardMenunggakCacheUsername . '.txt';
+      $dashboardExpiredLookup = [];
+      if (is_file($dashboardMenunggakCacheFile)) {
+        $dashboardMenunggakCacheDecoded = json_decode((string)@file_get_contents($dashboardMenunggakCacheFile), true);
+        if (is_array($dashboardMenunggakCacheDecoded)) {
+          $dashboardExpiredIdsCache = array_values(array_unique(array_filter(array_map('strval', $dashboardMenunggakCacheDecoded['expired_ids'] ?? []))));
+          $dashboardExpiredLookup = array_flip($dashboardExpiredIdsCache);
+        }
+      }
+
       // Prefetch semua tanggal bayar BERHASIL untuk pelanggan akun ini SEKALI
       // (mnq_build_payment_index, lihat libs/menunggak_payment_lookup.php),
       // supaya cek "apakah sudah bayar di periode X" & "kapan last_paid" tidak
@@ -1140,6 +1178,8 @@ $trx_tanggal_expr_t = "STR_TO_DATE(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
 
       $uniqueMenunggak = [];
       foreach ($dashboardPelangganRows as $row) {
+        $idpelPrefilter = (string)($row['IDPEL'] ?? '');
+        if ($idpelPrefilter === '' || !isset($dashboardExpiredLookup[$idpelPrefilter])) continue;
         $paket = isset($row['PAKET']) ? strtolower(trim((string)$row['PAKET'])) : '';
         $brand = isset($row['BRAND']) ? strtolower(trim((string)$row['BRAND'])) : '';
         $area = isset($row['AREA']) ? strtolower(trim((string)$row['AREA'])) : '';
@@ -1147,49 +1187,86 @@ $trx_tanggal_expr_t = "STR_TO_DATE(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
         $harga = $resolveHarga($paket, $brand, $area);
         if ($harga === null || (float)$harga <= 0) continue;
 
-        $idpel = (string)($row['IDPEL'] ?? '');
-        $lastPaidInfo = mnq_get_last_paid($menunggakPaymentIndex, $idpel);
+        $lastPaidInfo = mnq_get_last_paid($menunggakPaymentIndex, $idpelPrefilter);
         $row['last_paid'] = $lastPaidInfo['last_paid'];
         $row['last_pengunaan'] = $lastPaidInfo['last_pengunaan'];
-
-        if (!$shouldCount($row, $today)) continue;
-        if ($idpel !== '') {
-          $uniqueMenunggak[$idpel] = $row;
-        }
+        $uniqueMenunggak[$idpelPrefilter] = $row;
       }
 
       $dataMenunggak = [];
       foreach ($uniqueMenunggak as $row) {
         $idpel = (string)$row['IDPEL'];
-        // last_paid/last_pengunaan sudah diisi di loop atas dari $menunggakPaymentIndex.
+        $lastPaid = $row['last_paid'] ?? null;
 
-        $reference = $getReferenceDate($row);
-        $nextDueDate = $resolveFirstDueForRow($row, $reference, $fixedDueDateDay);
-        if (empty($nextDueDate) || strtotime($nextDueDate) === false || strtotime($nextDueDate) > strtotime($today)) continue;
-
-        $todayTs = strtotime($today);
-        $isConsecutive = true;
+        // Baris ini SUDAH PASTI masuk (cache expired_ids sudah jadi gerbang di
+        // prefilter atas) -- closure di bawah cuma dipakai best-effort utk isi
+        // kolom bulan_nunggak tampilan (siklus billing), floor 1 kalau hitungan
+        // siklus tidak sepakat/tidak bisa dihitung -- selaras pola
+        // statistics.php/pelanggan_menunggak.php.
         $bulanTunggak = 0;
-        while (strtotime($nextDueDate) <= $todayTs) {
-          $cycleStart = $nextDueDate;
-          $cycleEnd = $getNextDue($row, $cycleStart, $fixedDueDateDay);
-          if (empty($cycleEnd) || strtotime($cycleEnd) === false) {
-            break;
-          }
 
-          if ($hasSuccessfulPaymentInPeriod($idpel, $cycleStart, $cycleEnd)) {
-            $isConsecutive = false;
-            break;
+        $dashboardTipeBayarRow = strtolower(trim((string)($row['TIPE_BAYAR'] ?? 'prabayar')));
+        $dashboardLastPaidRaw = trim((string)($lastPaid ?? ''));
+        if ($dashboardTipeBayarRow !== 'pascabayar' && $dashboardLastPaidRaw === '') {
+          $dashboardTanggalPasangRow = trim((string)($row['TANGGALPASANG'] ?? ''));
+          $dashboardTodayTsBaru = strtotime($today);
+          $dashboardPasangTsBaru = strtotime($dashboardTanggalPasangRow);
+          if ($dashboardTanggalPasangRow !== '' && $dashboardTodayTsBaru !== false && $dashboardPasangTsBaru !== false) {
+            $bulanTunggak = 1;
+            if ($idpel !== '') {
+              $cursor = $dashboardTanggalPasangRow;
+              $count = 0;
+              $foundPayment = false;
+              $safety = 0;
+              while (strtotime($cursor) !== false && strtotime($cursor) <= $dashboardTodayTsBaru && $safety < 600) {
+                $safety++;
+                $cycleEnd = $getNextDue($row, $cursor, $fixedDueDateDay);
+                if (empty($cycleEnd) || strtotime($cycleEnd) === false) {
+                  break;
+                }
+                if ($hasSuccessfulPaymentInPeriod($idpel, $cursor, $cycleEnd)) {
+                  $foundPayment = true;
+                  break;
+                }
+                $count++;
+                $cursor = $cycleEnd;
+              }
+              if ($foundPayment) {
+                $bulanTunggak = 0;
+              } elseif ($count >= 1) {
+                $bulanTunggak = $count;
+              }
+            }
           }
+        } elseif ($shouldCount($row, $today)) {
+          $reference = $getReferenceDate($row);
+          $nextDueDate = $resolveFirstDueForRow($row, $reference, $fixedDueDateDay);
+          if (!empty($nextDueDate) && strtotime($nextDueDate) !== false && strtotime($nextDueDate) <= strtotime($today)) {
+            $todayTs = strtotime($today);
+            $isConsecutive = true;
+            while (strtotime($nextDueDate) <= $todayTs) {
+              $cycleStart = $nextDueDate;
+              $cycleEnd = $getNextDue($row, $cycleStart, $fixedDueDateDay);
+              if (empty($cycleEnd) || strtotime($cycleEnd) === false) {
+                break;
+              }
 
-          $bulanTunggak++;
-          $nextDueDate = $cycleEnd;
+              if ($hasSuccessfulPaymentInPeriod($idpel, $cycleStart, $cycleEnd)) {
+                $isConsecutive = false;
+                break;
+              }
+
+              $bulanTunggak++;
+              $nextDueDate = $cycleEnd;
+            }
+            if (!$isConsecutive) {
+              $bulanTunggak = 0;
+            }
+          }
         }
 
-        if ($isConsecutive && $bulanTunggak >= 1) {
-          $row['bulan_nunggak'] = $bulanTunggak;
-          $dataMenunggak[] = $row;
-        }
+        $row['bulan_nunggak'] = max(1, $bulanTunggak);
+        $dataMenunggak[] = $row;
       }
 
       $total_jatuh_tempo = count($dataMenunggak);
@@ -1206,7 +1283,26 @@ $trx_tanggal_expr_t = "STR_TO_DATE(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
       $data_nunggak_1 = ['total' => $nunggak1];
       $data_nunggak_2 = ['total' => $nunggak2];
   // 8. Berhenti Berlangganan (ambil dari tabel pelanggan_berhenti)
-  $sql_berhenti = "SELECT COUNT(*) as total FROM pelanggan_berhenti WHERE pemilik IN ($userServerList) AND MONTH(tanggal_berhenti) = '$bulan_ini' AND YEAR(tanggal_berhenti) = '$tahun_ini'";
+  // Tabel ini tidak punya kolom AREA, jadi tidak bisa langsung "AND AREA IN
+  // (...)" seperti query pelanggan/transaksi lain -- $userServerList global di
+  // atas (baris 16-21) TIDAK di-scope AREA (selalu semua server milik owner),
+  // jadi badge ini bisa bocor jumlah churn dari area lain kalau dipakai
+  // langsung untuk ASSISTANT. Bangun ulang list pemilik yang sudah di-scope
+  // AREA, sama seperti pola di daftar_pelanggan_berhenti.php.
+  $userServerIdsBerhenti = [];
+  if ($AKSES === 'ASSISTANT') {
+      if (isset($area_list) && trim((string)$area_list) !== '') {
+          $queryServerIdBerhenti = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE AREA IN ($area_list)");
+          while ($rowServerBerhenti = mysqli_fetch_assoc($queryServerIdBerhenti)) {
+              $userServerIdsBerhenti[] = "'" . $rowServerBerhenti['PEMILIK'] . "'";
+          }
+      }
+  } else {
+      $userServerIdsBerhenti = array_map(fn($p) => "'" . addslashes($p) . "'", $userServers);
+  }
+  $userServerListBerhenti = count($userServerIdsBerhenti) > 0 ? implode(",", $userServerIdsBerhenti) : "''";
+
+  $sql_berhenti = "SELECT COUNT(*) as total FROM pelanggan_berhenti WHERE pemilik IN ($userServerListBerhenti) AND MONTH(tanggal_berhenti) = '$bulan_ini' AND YEAR(tanggal_berhenti) = '$tahun_ini'";
   $data_berhenti = mysqli_fetch_assoc(query_or_die($conn, $sql_berhenti));
 
 
@@ -1464,13 +1560,17 @@ $total_nunggak_2 = count($data_menunggak_2);
         <?php if (!empty($is_reseller)):
           $reseller_omset_kotor = (float)($data_bulan['total'] ?? 0);
           $reseller_laba = $reseller_omset_kotor - (float)$reseller_bandwidth_burden;
+          $reseller_scheme_now = $reseller_settings['cost_scheme'] ?? 'bandwidth';
+          $reseller_beban_label = ($reseller_scheme_now === 'omset_percent')
+            ? 'Beban (' . number_format((float)($reseller_settings['omset_percent'] ?? 0), 2, ',', '.') . '% Omset)'
+            : 'Beban Bandwidth';
         ?>
         <div class="col-md-3 mb-3">
           <div class="card shadow-sm h-100 border-success">
             <div class="card-body text-center" style="padding: 8px;">
               <div class="fw-bold text-success" style="font-size: 0.75em;">Laba/Saldo Anda (Bulan Ini)</div>
               <div style="font-size: 0.7em; color: #6c757d;">Omset Kotor: Rp. <?php echo number_format($reseller_omset_kotor, 0, ',', '.'); ?></div>
-              <div style="font-size: 0.7em; color: #6c757d;">Beban Bandwidth: Rp. <?php echo number_format((float)$reseller_bandwidth_burden, 0, ',', '.'); ?></div>
+              <div style="font-size: 0.7em; color: #6c757d;"><?php echo htmlspecialchars($reseller_beban_label, ENT_QUOTES, 'UTF-8'); ?>: Rp. <?php echo number_format((float)$reseller_bandwidth_burden, 0, ',', '.'); ?></div>
               <div style="font-size: 1.2em; color: #198754; font-weight: bold;">Rp. <?php echo number_format($reseller_laba, 0, ',', '.'); ?></div>
             </div>
           </div>
@@ -1638,9 +1738,12 @@ document.getElementById('searchCustomer').addEventListener('input', function() {
     $instalasi_bulan_ini_total = (int)($row_instalasi_bulan_ini['total'] ?? 0);
   }
 
+  // $userServerList di sini TIDAK di-scope AREA (selalu semua server milik
+  // owner) -- pakai $userServerListBerhenti (sudah di-scope AREA utk ASSISTANT,
+  // dihitung di atas baris ~1220) supaya konsisten dgn card "Berhenti Berlangganan".
   $sql_berhenti_bulan_ini = "SELECT COUNT(*) AS total
                             FROM pelanggan_berhenti
-                            WHERE pemilik IN ($userServerList)
+                            WHERE pemilik IN ($userServerListBerhenti)
                               AND MONTH(tanggal_berhenti) = $bulan_saat_ini
                               AND YEAR(tanggal_berhenti) = $tahun_saat_ini";
   $result_berhenti_bulan_ini = mysqli_query($conn, $sql_berhenti_bulan_ini);
@@ -1938,21 +2041,38 @@ document.getElementById('searchCustomer').addEventListener('input', function() {
         }
 
         if (data && data.success) {
-          const active = !!data.radius_active;
-          if (radiusValueEl) radiusValueEl.textContent = active ? 'Aktif' : 'Tidak Aktif';
+          // radius_status: 'active' | 'inactive' | 'error' -- sinkron dgn PID
+          // yang sama persis dipakai radius.php (radius_status_helper.php).
+          // 'error' (deteksi gagal total di server, mis. shell_exec diblokir)
+          // SENGAJA dibedakan dari 'inactive' (service benar2 terkonfirmasi
+          // mati) -- sebelumnya keduanya sama2 tampil "Tidak Aktif" merah,
+          // sekarang 'error' tampil jelas beda supaya tidak dikira service-nya
+          // yang mati padahal deteksinya yang gagal.
+          const status = data.radius_status || (data.radius_active ? 'active' : 'inactive');
+          if (radiusValueEl) {
+            radiusValueEl.textContent = status === 'active' ? 'Aktif'
+              : status === 'error' ? 'Error (gagal cek)'
+              : 'Tidak Aktif';
+          }
           if (radiusCardEl) {
-            radiusCardEl.style.background = active
+            radiusCardEl.style.background = status === 'active'
               ? 'linear-gradient(135deg, #22c55e, #15803d)'
-              : 'linear-gradient(135deg, #ef4444, #b91c1c)';
+              : status === 'error'
+                ? 'linear-gradient(135deg, #f59e0b, #b45309)'
+                : 'linear-gradient(135deg, #ef4444, #b91c1c)';
           }
         } else {
-          if (radiusValueEl) radiusValueEl.textContent = 'Tidak diketahui';
+          if (radiusValueEl) radiusValueEl.textContent = 'Error (gagal cek)';
+          if (radiusCardEl) radiusCardEl.style.background = 'linear-gradient(135deg, #f59e0b, #b45309)';
         }
       } catch (err) {
         if (pingValueEl) pingValueEl.textContent = 'Terputus';
         if (pingCardEl) pingCardEl.style.background = 'linear-gradient(135deg, #ef4444, #b91c1c)';
-        if (radiusValueEl) radiusValueEl.textContent = '-';
-        if (radiusCardEl) radiusCardEl.style.background = 'linear-gradient(135deg, #64748b, #334155)';
+        // SEBELUMNYA tampil '-' abu-abu netral kalau endpoint-nya sendiri
+        // error/tidak terjangkau -- padahal itu justru kondisi paling penting
+        // utk diketahui admin (server mati/terputus), jangan disamarkan.
+        if (radiusValueEl) radiusValueEl.textContent = 'Error (server tidak terjangkau)';
+        if (radiusCardEl) radiusCardEl.style.background = 'linear-gradient(135deg, #ef4444, #b91c1c)';
       }
     }
 

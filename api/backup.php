@@ -33,6 +33,17 @@ if (!$ctx) {
     api_json(['success' => false, 'error' => 'User tidak ditemukan'], 401);
 }
 
+// Reseller/mitra ISP dengan filter harga aktif: data pelanggan/transaksi yang di-export lewat
+// billing_core_data harus ikut harga custom mereka, bukan HARGA tersimpan mentah -- sama pola
+// dgn perbaikan export Excel/PDF di web (export_pelanggan_excel.php, export_excel.php,
+// export_pdf.php). reseller_effective_harga() baca status reseller dari variabel GLOBAL
+// (diisi cek-sesi.php di web) -- di sini diisi manual dari hasil resolve auth API di atas.
+require_once '../reseller_helper.php';
+$resellerSettingsApi = reseller_get_settings($conn, $ctx['session_user_id']);
+$GLOBALS['is_reseller'] = in_array($resellerSettingsApi['assistant_role'], ['reseller', 'mitra_isp'], true);
+$GLOBALS['reseller_price_filter_enabled'] = (bool)$resellerSettingsApi['price_filter_enabled'];
+$GLOBALS['reseller_id'] = (int)$ctx['session_user_id'];
+
 // ---------------------------------------------------------------------------
 // Helper functions ported near-verbatim from apiinterface.php
 // ---------------------------------------------------------------------------
@@ -267,8 +278,16 @@ switch ($type) {
                 continue;
             }
 
+            $applyResellerHarga = $GLOBALS['is_reseller'] && $GLOBALS['reseller_price_filter_enabled'] && ($entity === 'pelanggan' || $entity === 'transaksi');
+
             $rows = [];
             while ($row = mysqli_fetch_assoc($res)) {
+                if ($applyResellerHarga && !empty($row['PAKET'])) {
+                    $effectiveHarga = reseller_effective_harga($conn, $row['PAKET'], $row['PEMILIK'] ?? $pemilik);
+                    if ($effectiveHarga > 0) {
+                        $row['HARGA'] = $effectiveHarga;
+                    }
+                }
                 $rows[] = $row;
             }
             $resultBundle['data'][$entity] = [

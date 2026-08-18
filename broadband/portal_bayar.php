@@ -25,6 +25,41 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
     }
 }
 
+// Kolom PAY_DETAIL -- simpan JSON {cekout, kodebayar, barcode, payurl} saat baris
+// PERMINTAAN KODE dibuat, supaya kalau pelanggan pindah halaman lalu balik lagi
+// (resume), kode bayar/link checkout aslinya bisa ditampilkan ulang -- SEBELUMNYA
+// info ini cuma ada di variabel request-scoped, hilang total begitu request selesai
+// (lihat cabang resume "IPAYMU/DOKU/FASPAY/DUITKU/MIDTRANS/XENDIT/DOMPETX" di bawah
+// yang selalu hardcode pay_code='' & checkout_url='#').
+if (!function_exists('portalBayarEnsurePayDetailColumn')) {
+    function portalBayarEnsurePayDetailColumn($conn): void
+    {
+        static $checked = false;
+        if ($checked) {
+            return;
+        }
+        $checked = true;
+        $check = mysqli_query($conn, "SHOW COLUMNS FROM transaksi LIKE 'PAY_DETAIL'");
+        if ($check && mysqli_num_rows($check) > 0) {
+            return;
+        }
+        mysqli_query($conn, "ALTER TABLE transaksi ADD COLUMN PAY_DETAIL TEXT DEFAULT NULL");
+    }
+}
+portalBayarEnsurePayDetailColumn($conn);
+
+if (!function_exists('portalBayarPayDetailJson')) {
+    function portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl): string
+    {
+        return json_encode([
+            'cekout' => $cekout ?: '',
+            'kodebayar' => $kodebayar ?: '',
+            'barcode' => $barcode ?: '',
+            'payurl' => $payurl ?: '',
+        ]);
+    }
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="id">
@@ -326,6 +361,22 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
         .btn-success {
             background-color: var(--dark-green);
             color: white;
+        }
+
+        /* Tombol "CHECKOUT DISINI" -- dibuat mencolok (besar/hijau terang/berkedut)
+           supaya pelanggan tidak kelewatan harus klik link ini utk lanjut bayar. */
+        .btn-checkout-highlight {
+            font-size: 18px;
+            padding: 16px;
+            background-color: #00c853 !important;
+            box-shadow: 0 0 0 rgba(0, 200, 83, 0.6);
+            animation: checkoutPulse 1.4s infinite;
+        }
+
+        @keyframes checkoutPulse {
+            0% { box-shadow: 0 0 0 0 rgba(0, 200, 83, 0.7); transform: scale(1); }
+            70% { box-shadow: 0 0 0 14px rgba(0, 200, 83, 0); transform: scale(1.03); }
+            100% { box-shadow: 0 0 0 0 rgba(0, 200, 83, 0); transform: scale(1); }
         }
 
         .btn-danger {
@@ -757,9 +808,17 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
             //    portal bayar utk collect tunggakan lama).
             //  - Rolling (mengikuti_tanggal_bayar) / Monthversary: TIDAK terpaku
             //    periode kalender bersama -- siklusnya per-pelanggan sendiri
-            //    (30 hari sejak bayar terakhir / anchor tanggal pasang), jadi
-            //    tetap ambil baris PENAGIHAN PALING AWAL/lama tanpa syarat label
-            //    (perilaku lama, sudah benar utk mode ini).
+            //    (30 hari sejak bayar terakhir / anchor tanggal pasang). SEBELUMNYA
+            //    ambil baris PENAGIHAN PALING AWAL/lama (niatnya: lunasi tunggakan
+            //    lama dulu) -- TAPI ini bikin pembayaran yang baru masuk tercatat
+            //    LUNAS utk periode lama yang sudah lewat (mis. Juni yang memang
+            //    tidak dibayar), sementara tagihan periode BERJALAN (mis. Agustus)
+            //    tetap nyangkut PENAGIHAN. Sekarang ambil baris PENAGIHAN PALING
+            //    BARU (periode berjalan/terkini) -- invoice_generator_rolling_
+            //    monthversary.php cuma generate SATU baris per periode & baris
+            //    terbaru selalu = periode yg sedang ditagih sekarang; tunggakan
+            //    lama yg sudah lewat dibiarkan apa adanya di riwayat (bukan
+            //    tanggung jawab portal bayar utk collect tunggakan lama di sini).
             // ===================================================================
             date_default_timezone_set('Asia/Jakarta');
 
@@ -776,16 +835,42 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                 $dueMonthTsPenagihanFokus = ((int) date('j', $todayTsPenagihanFokus) <= (int) ($jatuh_tempo ?? 25))
                     ? $todayTsPenagihanFokus
                     : strtotime('+1 month', $todayTsPenagihanFokus);
+
+                // SEBELUM Awal Tutup Buku: paksa mode 'berjalan' (tampilkan tagihan
+                // bulan aktual/menunggak SEKARANG), TERLEPAS dari setting Periode
+                // Tercatat -- supaya label tagihan tidak "loncat" ke periode
+                // berikutnya lebih awal dari waktunya (mis. baru tanggal 9 tapi
+                // sudah nampil "September" krn Periode Tercatat=berikutnya). Begitu
+                // masuk/lewat Awal Tutup Buku, baru ikut Periode Tercatat asli.
+                $tglSkgTutupBukuFokus = (int) date('j', $todayTsPenagihanFokus);
+                $modePeriodeFokus = ($tglSkgTutupBukuFokus < (int) ($tanggal_awal_tutup_buku ?? 0))
+                    ? 'berjalan'
+                    : (string) ($periode_tercatat ?? 'berjalan');
+
                 $periodeBerjalanFokus = tagihanResolvePeriodeTercatat(
                     (int) date('n', $dueMonthTsPenagihanFokus),
                     (int) date('Y', $dueMonthTsPenagihanFokus),
-                    (string) ($periode_tercatat ?? 'berjalan')
+                    $modePeriodeFokus
                 );
                 $stmtPenagihan = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND UPPER(STATUS) = 'PENAGIHAN' AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER(?)) ORDER BY id DESC LIMIT 1");
                 $stmtPenagihan->bind_param("ss", $merchantRef, $periodeBerjalanFokus);
             } else {
-                $stmtPenagihan = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND UPPER(STATUS) = 'PENAGIHAN' ORDER BY $trxDateExprPenagihan ASC, id ASC LIMIT 1");
-                $stmtPenagihan->bind_param("s", $merchantRef);
+                // Rolling/Monthversary: label PENGUNAAN = bulan/tahun tanggal jatuh
+                // tempo ITU SENDIRI, tanpa offset (lihat invoice_generator_rolling_
+                // monthversary.php). SEBELUMNYA ambil baris PENAGIHAN PALING BARU
+                // tanpa syarat -- tapi kalau cron sudah generate invoice bulan depan
+                // lebih awal (mis. hari ini masih Agustus tapi invoice September
+                // sudah ada krn "hari sebelum" jatuh tempo), baris September itu ikut
+                // dianggap aktif padahal belum waktunya. Sekarang cocokkan ke BULAN
+                // AKTUAL (kalender hari ini) dulu -- prinsipnya SAMA dgn Fixed Due
+                // Date: jangan tampilkan tagihan masa depan sebelum waktunya.
+                $bulanAktualPenagihanFokus = tagihanResolvePeriodeTercatat(
+                    (int) date('n'),
+                    (int) date('Y'),
+                    'berjalan'
+                );
+                $stmtPenagihan = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND UPPER(STATUS) = 'PENAGIHAN' AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER(?)) ORDER BY $trxDateExprPenagihan DESC, id DESC LIMIT 1");
+                $stmtPenagihan->bind_param("ss", $merchantRef, $bulanAktualPenagihanFokus);
             }
             $stmtPenagihan->execute();
             $resultPenagihan = $stmtPenagihan->get_result();
@@ -987,14 +1072,34 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
 
                 $gatewayLabelMap = ['ipaymu' => 'iPaymu', 'doku' => 'DOKU', 'faspay' => 'Faspay', 'duitku' => 'Duitku', 'midtrans' => 'Midtrans', 'xendit' => 'Xendit', 'dompetx' => 'DompetX'];
                 $gatewayLabel = $gatewayLabelMap[$default_payment];
+                // BUGFIX: TANGGALBAYAR tersimpan sbg string format Indonesia (mis. "Jumat, 07
+                // Agustus 2026") yang TIDAK bisa di-parse ulang oleh strtotime() -- selalu balik
+                // 'false', lalu strtotime('+24 hours', false) menghitung dari epoch (1 Jan 1970)
+                // sehingga expired_time SELALU di masa lalu & badge selalu tampil "Expired" biar
+                // pun transaksi baru saja dibuat. Fallback ke waktu sekarang kalau parse gagal.
+                $localTanggalTs = strtotime((string) ($localPendingRow['TANGGALBAYAR'] ?? ''));
+                if ($localTanggalTs === false) {
+                    $localTanggalTs = time();
+                }
+                // Kode bayar/link checkout asli (tersimpan saat baris ini dibuat, lihat
+                // portalBayarEnsurePayDetailColumn() di atas) -- kalau baris lama sebelum
+                // kolom ini ada / JSON gagal decode, fallback ke kosong/'#' spt sebelumnya.
+                $localPayDetail = [];
+                if (!empty($localPendingRow['PAY_DETAIL'])) {
+                    $decoded = json_decode((string) $localPendingRow['PAY_DETAIL'], true);
+                    if (is_array($decoded)) {
+                        $localPayDetail = $decoded;
+                    }
+                }
                 $data = [
                     'payment_name' => $gatewayLabel,
                     'reference' => $reference,
                     'amount' => $localPendingRow['HARGA'] ?? $totalTagihan,
-                    'pay_code' => '',
-                    'expired_time' => strtotime('+24 hours', strtotime($localPendingRow['TANGGALBAYAR'] ?? 'now')),
+                    'pay_code' => $localPayDetail['kodebayar'] ?? '',
+                    'expired_time' => strtotime('+24 hours', $localTanggalTs),
                     'status' => 'UNPAID',
-                    'checkout_url' => '#',
+                    'checkout_url' => $localPayDetail['cekout'] ?? '#',
+                    'barcode' => $localPayDetail['barcode'] ?? '',
                     'instructions' => [[
                         'title' => 'Menunggu Konfirmasi Pembayaran',
                         'steps' => [
@@ -1011,9 +1116,9 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                 $idpembayar = $merchantRef;
                 $refpembayar = $reference;
                 $exp = $data['expired_time'];
-                $cekout = $data['checkout_url'];
-                $payurl = $data['checkout_url'];
-                $barcode = '';
+                $cekout = ($data['checkout_url'] !== '#') ? $data['checkout_url'] : '#';
+                $payurl = $cekout;
+                $barcode = $data['barcode'];
                 $harusbayar = $data['amount'];
                 $cekpaidtripay = $data['status'];
             } else {
@@ -1135,7 +1240,7 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
             
             <div class="payment-actions">
                 <?php if (!empty($data['checkout_url']) && $data['checkout_url'] !== '#'): ?>
-                <a href="<?php echo $data['checkout_url']; ?>" class="payment-button btn-success" target="_blank">Lihat Checkout</a>
+                <a href="<?php echo $data['checkout_url']; ?>" class="payment-button btn-success btn-checkout-highlight" target="_blank">CHECKOUT DISINI</a>
                 <?php endif; ?>
                 <a href="portal_bayar.php?cari=<?= $merchantRef; ?>&ref=<?= $reference; ?>&action=hapus" class="payment-button btn-danger">Batalkan</a>
             </div>
@@ -1302,7 +1407,7 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                         $instructions = [[
                             'title' => 'Instruksi Pembayaran Duitku',
                             'steps' => [
-                                'Klik tombol "Lihat Checkout" untuk melanjutkan pembayaran',
+                                'Klik tombol "CHECKOUT DISINI" untuk melanjutkan pembayaran',
                                 'Pilih metode pembayaran yang telah Anda tentukan',
                                 'Ikuti instruksi pembayaran yang muncul',
                                 'Pembayaran akan diverifikasi otomatis'
@@ -1327,10 +1432,11 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                         // callback Duitku tidak akan pernah cocok dengan pengecekan
                         // "$has_paid_periode" di atas (yang mencocokkan PENGUNAAN),
                         // sehingga status "sudah bayar" tidak pernah muncul di portal.
-                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK) 
-                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'DUITKU')";
+                        $duitku_pay_detail = portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl);
+                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
+                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'DUITKU', ?)";
                         $stmt = $conn->prepare($query);
-                        $stmt->bind_param("ssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik);
+                        $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik, $duitku_pay_detail);
                         $stmt->execute();
                         $stmt->close();
                     } else {
@@ -1425,7 +1531,7 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                         $instructions = [[
                             'title' => 'Instruksi Pembayaran iPaymu',
                             'steps' => [
-                                'Klik tombol "Lihat Checkout" untuk melanjutkan ke halaman pembayaran iPaymu',
+                                'Klik tombol "CHECKOUT DISINI" untuk melanjutkan ke halaman pembayaran iPaymu',
                                 'Pilih metode pembayaran yang tersedia (VA/QRIS/E-Wallet)',
                                 'Ikuti instruksi pembayaran yang muncul',
                                 'Pembayaran akan diverifikasi otomatis'
@@ -1441,10 +1547,11 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                         $namapaket = $pelanggan['PAKET'];
                         $nama = $pelanggan['NAMA'];
 
-                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK)
-                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'IPAYMU')";
+                        $ipaymu_pay_detail = portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl);
+                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
+                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'IPAYMU', ?)";
                         $stmt = $conn->prepare($query);
-                        $stmt->bind_param("ssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik);
+                        $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik, $ipaymu_pay_detail);
                         $stmt->execute();
                         $stmt->close();
                     } else {
@@ -1527,7 +1634,7 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                         $instructions = [[
                             'title' => 'Instruksi Pembayaran DOKU',
                             'steps' => [
-                                'Klik tombol "Lihat Checkout" untuk melanjutkan ke halaman pembayaran DOKU',
+                                'Klik tombol "CHECKOUT DISINI" untuk melanjutkan ke halaman pembayaran DOKU',
                                 'Pilih metode pembayaran yang tersedia',
                                 'Ikuti instruksi pembayaran yang muncul',
                                 'Pembayaran akan diverifikasi otomatis'
@@ -1543,10 +1650,11 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                         $namapaket = $pelanggan['PAKET'];
                         $nama = $pelanggan['NAMA'];
 
-                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK)
-                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'DOKU')";
+                        $doku_pay_detail = portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl);
+                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
+                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'DOKU', ?)";
                         $stmt = $conn->prepare($query);
-                        $stmt->bind_param("ssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik);
+                        $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik, $doku_pay_detail);
                         $stmt->execute();
                         $stmt->close();
                     } else {
@@ -1630,7 +1738,7 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                         ]] : [[
                             'title' => 'Instruksi Pembayaran Faspay',
                             'steps' => [
-                                'Klik tombol "Lihat Checkout" untuk melanjutkan ke halaman pembayaran Faspay',
+                                'Klik tombol "CHECKOUT DISINI" untuk melanjutkan ke halaman pembayaran Faspay',
                                 'Selesaikan pembayaran sesuai metode (e-wallet/QRIS/retail) yang dipilih',
                                 'Pembayaran akan diverifikasi otomatis'
                             ]
@@ -1645,10 +1753,11 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                         $namapaket = $pelanggan['PAKET'];
                         $nama = $pelanggan['NAMA'];
 
-                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK)
-                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'FASPAY')";
+                        $faspay_pay_detail = portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl);
+                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
+                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'FASPAY', ?)";
                         $stmt = $conn->prepare($query);
-                        $stmt->bind_param("ssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik);
+                        $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik, $faspay_pay_detail);
                         $stmt->execute();
                         $stmt->close();
                     } else {
@@ -1806,10 +1915,11 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                             // DompetX mencocokkan transaksi lewat BUKTI (=$reference), bukan
                             // lewat id internal DompetX (lihat catatan reference di
                             // callbackdompetx/callback_dompetx.php).
-                            $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK)
-                                      VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'DOMPETX')";
+                            $dompetx_pay_detail = portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl);
+                            $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
+                                      VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'DOMPETX', ?)";
                             $stmt = $conn->prepare($query);
-                            $stmt->bind_param("ssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik);
+                            $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik, $dompetx_pay_detail);
                             $stmt->execute();
                             $stmt->close();
                         } else {
@@ -1944,7 +2054,7 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                             $instructions = [[
                                 'title' => 'Instruksi Pembayaran Midtrans',
                                 'steps' => [
-                                    'Klik tombol "Lihat Checkout" untuk melanjutkan ke halaman pembayaran Midtrans',
+                                    'Klik tombol "CHECKOUT DISINI" untuk melanjutkan ke halaman pembayaran Midtrans',
                                     'Pilih metode pembayaran yang tersedia (VA/QRIS/E-Wallet/Kartu Kredit)',
                                     'Ikuti instruksi pembayaran yang muncul',
                                     'Pembayaran akan diverifikasi otomatis',
@@ -1960,10 +2070,11 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                             $namapaket = $pelanggan['PAKET'];
                             $nama = $pelanggan['NAMA'];
 
-                            $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK)
-                                      VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'MIDTRANS')";
+                            $midtrans_pay_detail = portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl);
+                            $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
+                                      VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'MIDTRANS', ?)";
                             $stmt = $conn->prepare($query);
-                            $stmt->bind_param("ssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $midtrans_amount, $reference, $pemilik);
+                            $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $midtrans_amount, $reference, $pemilik, $midtrans_pay_detail);
                             $stmt->execute();
                             $stmt->close();
                         }
@@ -1985,26 +2096,66 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                     if (!$xendit_config || empty($xendit_config['server_key'])) {
                         $xendit_error_message = 'Konfigurasi Xendit (secret/server key) belum diatur.';
                     } else {
+                        // ===================================================================
+                        // XENDIT: 3 jalur channel -- QRIS & Virtual Account bayar LANGSUNG
+                        // (nomor VA / kode QR tampil di halaman ini sendiri lewat field generik
+                        // $kodebayar/$barcode yang sudah dirender di blok "Kode Pembayaran Anda"
+                        // di bawah, TANPA redirect). "Metode Lain" (INVOICE) tetap pakai Invoice
+                        // API lama (redirect ke hosted checkout Xendit) utk kartu/e-wallet/dll
+                        // yang belum ada API per-metodenya di sini -- perilaku ini TIDAK berubah.
+                        // ===================================================================
+                        $xendit_channel = trim((string) ($_POST['xendit_channel'] ?? 'INVOICE'));
+                        $xendit_va_banks = [
+                            'VA_BCA' => 'BCA', 'VA_BNI' => 'BNI', 'VA_BRI' => 'BRI',
+                            'VA_MANDIRI' => 'MANDIRI', 'VA_PERMATA' => 'PERMATA',
+                        ];
+                        if ($xendit_channel !== 'QRIS' && !isset($xendit_va_banks[$xendit_channel])) {
+                            $xendit_channel = 'INVOICE';
+                        }
+
                         $xendit_external_id = 'INV-' . time() . '-' . $merchantRef;
                         $xendit_amount = (int) round($totalTagihan);
-
-                        $xendit_body = [
-                            'external_id' => $xendit_external_id,
-                            'amount' => $xendit_amount,
-                            'description' => 'Pembayaran WiFi ' . $pelanggan['PAKET'] . ' - ' . $merchantRef,
-                            'payer_email' => $email,
-                            'customer' => [
-                                'given_names' => $pelanggan['NAMA'],
-                                'email' => $email,
-                                'mobile_number' => $pelanggan['NOWA'],
-                            ],
-                            'success_redirect_url' => $xendit_config['return'] ?: "https://$domain/crm/billing/broadband/portal.php?cari={$pelanggan['IDPEL']}",
-                        ];
-
                         $xendit_auth = base64_encode($xendit_config['server_key'] . ':');
+
+                        if ($xendit_channel === 'QRIS') {
+                            $xendit_url = 'https://api.xendit.co/qr_codes';
+                            $xendit_body = [
+                                'reference_id' => $xendit_external_id,
+                                'type' => 'DYNAMIC',
+                                'currency' => 'IDR',
+                                'amount' => $xendit_amount,
+                                'callback_url' => $xendit_config['callback'],
+                            ];
+                        } elseif ($xendit_channel !== 'INVOICE') {
+                            $xendit_url = 'https://api.xendit.co/callback_virtual_accounts';
+                            $xendit_body = [
+                                'external_id' => $xendit_external_id,
+                                'bank_code' => $xendit_va_banks[$xendit_channel],
+                                'name' => $pelanggan['NAMA'],
+                                'is_closed' => true,
+                                'expected_amount' => $xendit_amount,
+                                'expiration_date' => date('c', strtotime('+24 hours')),
+                                'is_single_use' => true,
+                            ];
+                        } else {
+                            $xendit_url = 'https://api.xendit.co/v2/invoices';
+                            $xendit_body = [
+                                'external_id' => $xendit_external_id,
+                                'amount' => $xendit_amount,
+                                'description' => 'Pembayaran WiFi ' . $pelanggan['PAKET'] . ' - ' . $merchantRef,
+                                'payer_email' => $email,
+                                'customer' => [
+                                    'given_names' => $pelanggan['NAMA'],
+                                    'email' => $email,
+                                    'mobile_number' => $pelanggan['NOWA'],
+                                ],
+                                'success_redirect_url' => $xendit_config['return'] ?: "https://$domain/crm/billing/broadband/portal.php?cari={$pelanggan['IDPEL']}",
+                            ];
+                        }
+
                         $xendit_ch = curl_init();
                         curl_setopt_array($xendit_ch, [
-                            CURLOPT_URL => 'https://api.xendit.co/v2/invoices',
+                            CURLOPT_URL => $xendit_url,
                             CURLOPT_RETURNTRANSFER => true,
                             CURLOPT_POST => true,
                             CURLOPT_POSTFIELDS => json_encode($xendit_body),
@@ -2020,6 +2171,7 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                         curl_close($xendit_ch);
 
                         $xendit_debug_info = [
+                            'channel' => $xendit_channel,
                             'request_data' => $xendit_body,
                             'response_raw' => $xendit_response,
                             'curl_error' => $xendit_curl_error,
@@ -2029,34 +2181,70 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
 
                         $xendit_result_data = json_decode($xendit_response, true);
 
+                        // Field kunci penanda sukses beda per endpoint.
+                        $xendit_success_field = ($xendit_channel === 'QRIS') ? 'qr_string'
+                            : (($xendit_channel === 'INVOICE') ? 'invoice_url' : 'account_number');
+                        $xendit_success = !$xendit_curl_error && !empty($xendit_result_data[$xendit_success_field]);
+
                         if ($xendit_curl_error) {
                             $xendit_error_message = 'CURL Error: ' . $xendit_curl_error;
-                        } elseif (empty($xendit_result_data['invoice_url'])) {
+                        } elseif (!$xendit_success) {
                             $xendit_error_message = 'Xendit Error: ' . ($xendit_result_data['message'] ?? ('HTTP ' . $xendit_http_code));
                             $xendit_debug_info['parsed_result'] = $xendit_result_data;
                         } else {
-                            $reference = $xendit_result_data['external_id'] ?? $xendit_external_id;
+                            $reference = $xendit_result_data['external_id'] ?? $xendit_result_data['reference_id'] ?? $xendit_external_id;
                             $namapembayaran = 'Xendit Payment Gateway';
                             $kodebayar = '';
+                            $barcode = '';
+                            $cekout = '';
                             $statusbayar = 'UNPAID';
                             $namapembayar = $pelanggan['NAMA'];
                             $idpembayar = $merchantRef;
                             $refpembayar = $reference;
-                            $exp = !empty($xendit_result_data['expiry_date']) ? strtotime($xendit_result_data['expiry_date']) : strtotime('+24 hours');
-                            $cekout = $xendit_result_data['invoice_url'];
-                            $payurl = $cekout;
-                            $barcode = '';
+                            $exp = strtotime('+24 hours');
                             $harusbayar = $xendit_amount;
                             $cekpaidtripay = 'UNPAID';
-                            $instructions = [[
-                                'title' => 'Instruksi Pembayaran Xendit',
-                                'steps' => [
-                                    'Klik tombol "Lihat Checkout" untuk melanjutkan ke halaman pembayaran Xendit',
-                                    'Pilih metode pembayaran yang tersedia (VA/QRIS/E-Wallet/Kartu Kredit/Retail)',
-                                    'Ikuti instruksi pembayaran yang muncul',
-                                    'Pembayaran akan diverifikasi otomatis',
-                                ],
-                            ]];
+
+                            if ($xendit_channel === 'QRIS') {
+                                $namapembayaran = 'Xendit QRIS';
+                                $barcode = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=' . urlencode($xendit_result_data['qr_string']);
+                                $instructions = [[
+                                    'title' => 'Instruksi Pembayaran QRIS',
+                                    'steps' => [
+                                        'Buka aplikasi e-wallet/mobile banking yang mendukung QRIS.',
+                                        'Scan QR Code yang tampil di bawah ini.',
+                                        'Pastikan nominal sesuai lalu selesaikan pembayaran.',
+                                        'Pembayaran akan diverifikasi otomatis.',
+                                    ],
+                                ]];
+                            } elseif ($xendit_channel === 'INVOICE') {
+                                $exp = !empty($xendit_result_data['expiry_date']) ? strtotime($xendit_result_data['expiry_date']) : strtotime('+24 hours');
+                                $cekout = $xendit_result_data['invoice_url'];
+                                $instructions = [[
+                                    'title' => 'Instruksi Pembayaran Xendit',
+                                    'steps' => [
+                                        'Klik tombol "CHECKOUT DISINI" untuk melanjutkan ke halaman pembayaran Xendit',
+                                        'Pilih metode pembayaran yang tersedia (E-Wallet/Kartu Kredit/Retail/dll)',
+                                        'Ikuti instruksi pembayaran yang muncul',
+                                        'Pembayaran akan diverifikasi otomatis',
+                                    ],
+                                ]];
+                            } else {
+                                $bankLabel = $xendit_va_banks[$xendit_channel];
+                                $namapembayaran = 'Xendit VA ' . $bankLabel;
+                                $kodebayar = $xendit_result_data['account_number'];
+                                $exp = !empty($xendit_result_data['expiration_date']) ? strtotime($xendit_result_data['expiration_date']) : strtotime('+24 hours');
+                                $instructions = [[
+                                    'title' => 'Instruksi Pembayaran Virtual Account ' . $bankLabel,
+                                    'steps' => [
+                                        'Buka aplikasi mobile banking/ATM ' . $bankLabel . '.',
+                                        'Pilih menu Transfer/Virtual Account, masukkan nomor: ' . $kodebayar,
+                                        'Pastikan nominal sesuai lalu selesaikan pembayaran.',
+                                        'Pembayaran akan diverifikasi otomatis.',
+                                    ],
+                                ]];
+                            }
+                            $payurl = $cekout;
 
                             function formatTanggalXendit($tanggal) {
                                 setlocale(LC_TIME, 'id_ID.UTF-8');
@@ -2067,10 +2255,11 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                             $namapaket = $pelanggan['PAKET'];
                             $nama = $pelanggan['NAMA'];
 
-                            $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK)
-                                      VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'XENDIT')";
+                            $xendit_pay_detail = portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl);
+                            $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
+                                      VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'XENDIT', ?)";
                             $stmt = $conn->prepare($query);
-                            $stmt->bind_param("ssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $xendit_amount, $reference, $pemilik);
+                            $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $xendit_amount, $reference, $pemilik, $xendit_pay_detail);
                             $stmt->execute();
                             $stmt->close();
                         }
@@ -2198,10 +2387,11 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
 
                         // PENTING: PENGUNAAN (periode) WAJIB disimpan di sini juga,
                         // dengan alasan yang sama seperti pada blok Duitku di atas.
-                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK) 
-                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'PERMINTAAN')";
+                        $tripay_pay_detail = portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl);
+                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
+                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'PERMINTAAN', ?)";
                         $stmt = $conn->prepare($query);
-                        $stmt->bind_param("ssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $tripayAmount, $reference, $pemilik);
+                        $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $tripayAmount, $reference, $pemilik, $tripay_pay_detail);
                         $stmt->execute();
                         $stmt->close();
                     } else {
@@ -2374,7 +2564,7 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
             
             <div class="payment-actions">
                 <?php if (!empty($cekout) && $cekout !== '#'): ?>
-                <a href="<?php echo $cekout; ?>" class="payment-button btn-success" target="_blank">Lihat Checkout</a>
+                <a href="<?php echo $cekout; ?>" class="payment-button btn-success btn-checkout-highlight" target="_blank">CHECKOUT DISINI</a>
                 <?php endif; ?>
                 <a href="portal_baru.php?cari=<?= $merchantRef; ?>&ref=<?= $reference; ?>&action=hapus" class="payment-button btn-danger">Batalkan</a>
             </div>
@@ -2746,12 +2936,24 @@ if (!function_exists('portalBayarFormatTanggalIndo')) {
                         $xendit_config = mysqli_fetch_assoc($xendit_result);
                     }
                     ?>
+                    <?php
+                    // Channel VA/QRIS langsung (kode ada di backend, lihat cabang
+                    // xendit_submit) DINONAKTIFKAN sementara dari UI -- akun Xendit tenant
+                    // ini belum aktivasi channel VA/QRIS (error "BANK_NOT_ACTIVATED_ERROR"
+                    // dari SEMUA bank saat ditest live 2026-08-07). Selector dropdown
+                    // disembunyikan dulu, form kirim xendit_channel=INVOICE (fallback
+                    // checkout link yang terbukti jalan) supaya pelanggan tidak kejebak
+                    // pilih opsi yang pasti gagal. Begitu Xendit aktifkan VA/QRIS di akun
+                    // tenant, tinggal kembalikan <select> ini (lihat riwayat git/memory
+                    // project_xendit_va_qris_direct.md).
+                    ?>
                     <?php if ($xendit_config): ?>
                         <?php if (!empty($xendit_error_message)): ?>
                             <div class="alert alert-danger"><?= htmlspecialchars($xendit_error_message) ?></div>
                         <?php endif; ?>
                         <form method="POST">
                             <input type="hidden" name="xendit_submit" value="1">
+                            <input type="hidden" name="xendit_channel" value="INVOICE">
                             <input type="hidden" name="merchant_ref" value="<?= htmlspecialchars($merchantRef) ?>">
                             <button type="submit" class="submit-button">BAYAR SEKARANG</button>
                         </form>

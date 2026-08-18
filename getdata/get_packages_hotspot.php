@@ -27,6 +27,7 @@ mysqli_stmt_execute($stmt);
 $result = mysqli_stmt_get_result($stmt);
 
 $rows = reseller_filter_rows($conn, reseller_collect_rows($result), 'hotspot');
+$rows = paketVisibilityFilterRows($rows, $assistant_hidden_paket_hotspot, 'paket');
 
 // Cek apakah ada data
 if (empty($rows)) {

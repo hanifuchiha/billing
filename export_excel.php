@@ -3,94 +3,84 @@ require 'cek-sesi.php';
 
 header("Content-Type: application/vnd.ms-excel");
 header("Content-Disposition: attachment; filename=transaksi_export.xls");
+// Nama file selalu sama (transaksi_export.xls) -- tanpa header ini, browser/
+// proxy/CDN di depan bisa nyimpen cache response lama dan tetap kirim balik
+// itu walau query filter (mis. status) sudah beda, hasilnya kelihatan kayak
+// "export tidak ikut filter" padahal query di server sudah benar.
+header("Cache-Control: no-store, no-cache, must-revalidate, max-age=0");
+header("Pragma: no-cache");
 
 // Transaction.php mengirim start_date/end_date (bukan start/end) -- terima
 // dua-duanya supaya filter tanggal dari UI benar-benar diteruskan.
-$start = $_GET['start_date'] ?? ($_GET['start'] ?? date('Y-m-01'));
-$end = $_GET['end_date'] ?? ($_GET['end'] ?? date('Y-m-d'));
-$cekidpel = $_GET['idpel'] ?? '';
+$start = $_GET['start_date'] ?? ($_GET['start'] ?? '');
+$end = $_GET['end_date'] ?? ($_GET['end'] ?? '');
+$cekidpel = trim((string)($_GET['idpel'] ?? ''));
 $jenis = $_GET['jenis'] ?? 'pt'; // pt, umkm, pkppribadi
 
-// Scoping kepemilikan server (pola sama dgn dashboard.php) -- WAJIB, sebelum
-// fix ini file ini query SEMUA transaksi dari SEMUA tenant tanpa filter
-// apapun (termasuk alamat/no WA/RT/RW pelanggan).
-$exportOwnedPemilik = [];
+// Toggle "btn_trx_lihat_paket" (Pengaturan User > Tombol Individual ASSISTANT,
+// halaman Transaction) -- endpoint export ini tidak require header.php, jadi
+// $ui_visibility_settings tidak pernah tersedia dan pengecekan diulang manual
+// server-side, sama persis pola di getdata/get_daily_transaction.php.
+$bisaLihatPaketExport = true;
 if ($AKSES === 'ASSISTANT') {
-    if (isset($area_list) && trim((string)$area_list) !== '') {
-        $qOwnScope = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE AREA IN ($area_list)");
-        if ($qOwnScope) {
-            while ($rOwnScope = mysqli_fetch_assoc($qOwnScope)) {
-                $pOwnScope = trim((string)($rOwnScope['PEMILIK'] ?? ''));
-                if ($pOwnScope !== '') {
-                    $exportOwnedPemilik[] = "'" . mysqli_real_escape_string($conn, $pOwnScope) . "'";
-                }
+    $exportPaketSettingsUsername = !empty($asistant_name) ? $asistant_name : $ceknama;
+    $exportPaketSafeUsername = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$exportPaketSettingsUsername);
+    $bisaLihatPaketExport = false; // default ASSISTANT: sembunyikan, kecuali toggle diaktifkan
+    if ($exportPaketSafeUsername !== '') {
+        $exportPaketSettingsFile = __DIR__ . '/settings/dashboard-cards-' . $exportPaketSafeUsername . '.json';
+        if (is_file($exportPaketSettingsFile)) {
+            $exportPaketDecoded = json_decode((string)@file_get_contents($exportPaketSettingsFile), true);
+            if (is_array($exportPaketDecoded) && array_key_exists('btn_trx_lihat_paket', $exportPaketDecoded)) {
+                $bisaLihatPaketExport = (bool)$exportPaketDecoded['btn_trx_lihat_paket'];
+            } else {
+                $bisaLihatPaketExport = true; // key belum pernah disimpan -> default true
             }
-        }
-    }
-} elseif ($AKSES !== 'ADMIN') {
-    $qOwnScope = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE user_id = " . (int)($current_user_id ?? 0));
-    if ($qOwnScope) {
-        while ($rOwnScope = mysqli_fetch_assoc($qOwnScope)) {
-            $pOwnScope = trim((string)($rOwnScope['PEMILIK'] ?? ''));
-            if ($pOwnScope !== '') {
-                $exportOwnedPemilik[] = "'" . mysqli_real_escape_string($conn, $pOwnScope) . "'";
-            }
+        } else {
+            $bisaLihatPaketExport = true; // belum pernah ada file settings -> default true
         }
     }
 }
-$exportOwnedPemilikList = count($exportOwnedPemilik) > 0 ? implode(',', $exportOwnedPemilik) : "''";
-$pemilikScopeSql = ($AKSES === 'ADMIN') ? '1=1' : "transaksi.PEMILIK IN ($exportOwnedPemilikList)";
 
-$tanggal_bayar_filter_sql = "COALESCE(
-    DATE(transaksi.TANGGALBAYAR),
-    STR_TO_DATE(transaksi.TANGGALBAYAR, '%Y-%m-%d'),
-    STR_TO_DATE(
-        CONCAT(
-            TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                SUBSTRING_INDEX(transaksi.TANGGALBAYAR, ',', -1),
-                'Januari', '01'
-            ), 'Februari', '02'), 'Maret', '03'), 'April', '04'), 'Mei', '05'), 'Juni', '06'), 'Juli', '07'), 'Agustus', '08'), 'September', '09'), 'Oktober', '10'), 'November', '11'), 'Desember', '12'))
-        ),
-        '%d %m %Y'
-    )
-)";
-
+require_once __DIR__ . '/export_transaksi_filter.php';
+$exportFilter = exportTransaksiBuildFilter($conn, $AKSES, $area_list ?? '', $current_user_id ?? 0, $_GET);
 $sql = "SELECT transaksi.*,
     p.ALAMAT AS PEL_ALAMAT, p.NOWA AS PEL_NOWA, p.rt AS PEL_RT, p.rw AS PEL_RW,
     p.kelurahan AS PEL_KELURAHAN, p.kecamatan AS PEL_KECAMATAN
     FROM transaksi
-    LEFT JOIN pelanggan p ON TRIM(transaksi.IDPEL) = TRIM(p.IDPEL)
-    WHERE $tanggal_bayar_filter_sql BETWEEN ? AND ? AND transaksi.STATUS NOT LIKE 'PERMINTAAN KODE' AND $pemilikScopeSql";
-if ($cekidpel !== '') {
-    $sql .= " AND transaksi.IDPEL = ?";
+    {$exportFilter['join']}
+    WHERE {$exportFilter['where_sql']}
+    ORDER BY transaksi.id DESC";
+$query = mysqli_query($conn, $sql);
+if (!$query) {
+    die('Query error: ' . mysqli_error($conn));
 }
-$sql .= " ORDER BY transaksi.id DESC";
 
-$stmt = mysqli_prepare($conn, $sql);
-if ($cekidpel !== '') {
-    mysqli_stmt_bind_param($stmt, 'sss', $start, $end, $cekidpel);
-} else {
-    mysqli_stmt_bind_param($stmt, 'ss', $start, $end);
-}
-mysqli_stmt_execute($stmt);
-$query = mysqli_stmt_get_result($stmt);
-
+$periodeLabel = ($start !== '' && $end !== '') ? ($start . ' s/d ' . $end) : 'Semua tanggal (sesuai filter lain yang dipilih)';
 echo "<table border='1'>";
-echo "<tr><th colspan='14'>Data Transaksi Periode: $start s/d $end</th></tr>";
+echo "<tr><th colspan='15'>Data Transaksi Periode: " . htmlspecialchars($periodeLabel) . "</th></tr>";
 echo "<tr>
-<th>No</th><th>Tanggal Bayar</th><th>Nama</th><th>ID Pel</th><th>Penggunaan</th><th>Harga</th><th>Ref Tripay</th><th>Status</th><th>Alamat</th><th>RT</th><th>RW</th><th>Kelurahan</th><th>Kecamatan</th><th>No WA</th>
+<th>No</th><th>Tanggal Bayar</th><th>Nama</th><th>ID Pel</th><th>Paket</th><th>Penggunaan</th><th>Harga</th><th>Ref Tripay</th><th>Status</th><th>Alamat</th><th>RT</th><th>RW</th><th>Kelurahan</th><th>Kecamatan</th><th>No WA</th>
 </tr>";
 
 $no = 1;
 $total = 0;
 while ($data = mysqli_fetch_array($query)) {
+    // Reseller/mitra ISP dengan filter harga aktif: harga yang di-export harus
+    // ikut harga custom mereka, sama persis pola di Transaction.php ~734-739.
     $harga = (float)$data['HARGA'];
+    if (!empty($is_reseller) && !empty($reseller_price_filter_enabled) && !empty($data['PAKET'])) {
+        $effectiveHarga = reseller_effective_harga($conn, $data['PAKET'], $data['PEMILIK'] ?? '');
+        if ($effectiveHarga > 0) {
+            $harga = $effectiveHarga;
+        }
+    }
     $total += $harga;
     echo "<tr>
         <td>{$no}</td>
         <td>{$data['TANGGALBAYAR']}</td>
         <td>{$data['NAMA']}</td>
         <td>{$data['IDPEL']}</td>
+        <td>" . ((!$bisaLihatPaketExport || paketVisibilityIsHidden((string)($data['PAKET'] ?? ''), $assistant_hidden_paket_broadband ?? [])) ? '-' : htmlspecialchars($data['PAKET'] ?? '')) . "</td>
         <td>{$data['PENGUNAAN']}</td>
         <td>{$harga}</td>
         <td>{$data['BUKTI']}</td>
@@ -112,11 +102,11 @@ $pphBadan = ($jenis == 'pt') ? $total * 0.22 : 0;
 $totalPajak = $ppn + $pph25 + $pphFinal;
 $grand = $total + $totalPajak;
 
-echo "<tr><th colspan='11'>Total Harga</th><td colspan='3'>Rp. " . number_format($total, 0, ',', '.') . "</td></tr>";
-if ($ppn > 0) echo "<tr><th colspan='11'>PPN 11%</th><td colspan='3'>Rp. " . number_format($ppn, 0, ',', '.') . "</td></tr>";
-if ($pph25 > 0) echo "<tr><th colspan='11'>PPh 25 (2.5%)</th><td colspan='3'>Rp. " . number_format($pph25, 0, ',', '.') . "</td></tr>";
-if ($pphFinal > 0) echo "<tr><th colspan='11'>PPh Final UMKM (0.5%)</th><td colspan='3'>Rp. " . number_format($pphFinal, 0, ',', '.') . "</td></tr>";
-if ($pphBadan > 0) echo "<tr><th colspan='11'>Simulasi PPh Badan (22%)</th><td colspan='3'>Rp. " . number_format($pphBadan, 0, ',', '.') . "</td></tr>";
-echo "<tr><th colspan='11'>Total Pajak Dibayar</th><td colspan='3'><strong>Rp. " . number_format($totalPajak, 0, ',', '.') . "</strong></td></tr>";
-echo "<tr><th colspan='11'>Grand Total</th><td colspan='3'><strong>Rp. " . number_format($grand, 0, ',', '.') . "</strong></td></tr>";
+echo "<tr><th colspan='12'>Total Harga</th><td colspan='3'>Rp. " . number_format($total, 0, ',', '.') . "</td></tr>";
+if ($ppn > 0) echo "<tr><th colspan='12'>PPN 11%</th><td colspan='3'>Rp. " . number_format($ppn, 0, ',', '.') . "</td></tr>";
+if ($pph25 > 0) echo "<tr><th colspan='12'>PPh 25 (2.5%)</th><td colspan='3'>Rp. " . number_format($pph25, 0, ',', '.') . "</td></tr>";
+if ($pphFinal > 0) echo "<tr><th colspan='12'>PPh Final UMKM (0.5%)</th><td colspan='3'>Rp. " . number_format($pphFinal, 0, ',', '.') . "</td></tr>";
+if ($pphBadan > 0) echo "<tr><th colspan='12'>Simulasi PPh Badan (22%)</th><td colspan='3'>Rp. " . number_format($pphBadan, 0, ',', '.') . "</td></tr>";
+echo "<tr><th colspan='12'>Total Pajak Dibayar</th><td colspan='3'><strong>Rp. " . number_format($totalPajak, 0, ',', '.') . "</strong></td></tr>";
+echo "<tr><th colspan='12'>Grand Total</th><td colspan='3'><strong>Rp. " . number_format($grand, 0, ',', '.') . "</strong></td></tr>";
 echo "</table>";

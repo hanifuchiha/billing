@@ -12,9 +12,14 @@ if ($AKSES == 'ASSISTANT') {
     <?php
     $filter_bulan = isset($_GET['bulan']) ? $_GET['bulan'] : date('m');
     $filter_tahun = isset($_GET['tahun']) ? $_GET['tahun'] : date('Y');
+    $filter_area = isset($_GET['area']) ? trim((string)$_GET['area']) : (isset($_SESSION['filter_area']) ? (string)$_SESSION['filter_area'] : 'all');
+    if ($filter_area === '') {
+        $filter_area = 'all';
+    }
 
     $_SESSION['filter_bulan'] = $filter_bulan;
     $_SESSION['filter_tahun'] = $filter_tahun;
+    $_SESSION['filter_area'] = $filter_area;
 
     // Filter range tanggal sargable (bisa pakai index tanggal_berhenti),
     // dibanding MONTH()/YEAR() yang memaksa MySQL scan semua baris (fungsi di
@@ -37,21 +42,25 @@ if ($AKSES == 'ASSISTANT') {
     // utk ASSISTANT berisi id akun OWNER (lihat cek-sesi.php), BUKAN id
     // assistant itu sendiri, jadi "WHERE user_id = $current_user_id" polos
     // SELALU balik SEMUA server milik owner (bocor lintas-area).
+    // Filter Area (dropdown baru): pelanggan_berhenti TIDAK punya kolom AREA
+    // sama sekali, jadi tidak bisa langsung "AND AREA = ..." seperti tabel lain
+    // -- di-derive lewat PEMILIK yang terdaftar di AREA tsb (server table),
+    // sama pola dengan scoping ASSISTANT di dashboard.php/export_laporan_dashboard.php.
+    // Untuk ASSISTANT, area yang diminta tetap wajib ada di dalam $area_list
+    // miliknya (tidak bisa filter area di luar cakupannya).
+    $areaScopeSql = ($AKSES === 'ASSISTANT' && isset($area_list) && trim((string)$area_list) !== '')
+        ? "AREA IN ($area_list)"
+        : "user_id = " . (int)$current_user_id;
+    if ($filter_area !== 'all') {
+        $areaScopeSql .= " AND AREA = '" . mysqli_real_escape_string($conn, $filter_area) . "'";
+    }
+
     $userServerIds = [];
-    if ($AKSES === 'ASSISTANT') {
-      if (isset($area_list) && trim((string)$area_list) !== '') {
-        $queryServerId = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE AREA IN ($area_list)");
-        if ($queryServerId) {
-          while($row = mysqli_fetch_assoc($queryServerId)) {
+    $queryServerId = mysqli_query($conn, "SELECT DISTINCT PEMILIK FROM server WHERE $areaScopeSql");
+    if ($queryServerId) {
+        while($row = mysqli_fetch_assoc($queryServerId)) {
             $userServerIds[] = "'".$row['PEMILIK']."'";
-          }
         }
-      }
-    } else {
-      $queryServerId = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE user_id = $current_user_id");
-      while($row = mysqli_fetch_assoc($queryServerId)) {
-        $userServerIds[] = "'".$row['PEMILIK']."'";
-      }
     }
     $userServerList = count($userServerIds) > 0 ? implode(",", $userServerIds) : "''";
 
@@ -72,7 +81,22 @@ if ($AKSES == 'ASSISTANT') {
     $berhentiPage = min($berhentiPage, $berhentiTotalPages);
     $berhentiOffset = ($berhentiPage - 1) * $berhentiPageSize;
 
-    $sql = "SELECT idpel, nama, paket, harga, alamat, nowa, alasan, tanggal_berhenti, keterangan, pemilik FROM pelanggan_berhenti $where_sql ORDER BY tanggal_berhenti DESC LIMIT $berhentiPageSize OFFSET $berhentiOffset";
+    // Batch besar khusus dipakai "Muat Semua utk Pencarian" (JS
+    // berhentiLoadAllRemaining) -- SEBELUMNYA cuma bisa loncat $berhentiPageSize
+    // (20) baris per round-trip, jadi kalau filter bulan/tahun "Semua" dan
+    // datanya banyak, pencarian butuh RATUSAN round-trip sekuensial yang
+    // masing2 ikut nge-render ULANG seluruh halaman (header/sidebar) -- dari
+    // sisi user kelihatannya pencarian cuma "muter-muter"/loading tanpa
+    // pernah selesai. Override offset+ukuran batch lewat parameter 'off'/'bsize'
+    // (max 500) supaya cukup sedikit round-trip.
+    if (isset($_GET['off'])) {
+        $berhentiOffset = max(0, (int)$_GET['off']);
+        $berhentiFetchLimit = isset($_GET['bsize']) ? max(20, min(500, (int)$_GET['bsize'])) : $berhentiPageSize;
+    } else {
+        $berhentiFetchLimit = $berhentiPageSize;
+    }
+
+    $sql = "SELECT idpel, nama, paket, harga, alamat, nowa, alasan, tanggal_berhenti, keterangan, pemilik FROM pelanggan_berhenti $where_sql ORDER BY tanggal_berhenti DESC LIMIT $berhentiFetchLimit OFFSET $berhentiOffset";
     $result = mysqli_query($conn, $sql);
 
     // Bangun daftar bot milik user untuk checkbox group broadcast
@@ -135,6 +159,23 @@ if ($AKSES == 'ASSISTANT') {
           </select>
         </div>
         <div class="col-auto">
+          <label for="area" class="form-label mb-0">Area</label>
+          <select name="area" id="area" class="form-select">
+            <option value="all" <?php if($filter_area==='all') echo 'selected'; ?>>Semua Area</option>
+            <?php
+            $berhentiAreaScopeSql = ($AKSES === 'ASSISTANT' && isset($area_list) && trim((string)$area_list) !== '')
+                ? "AREA IN ($area_list)"
+                : "user_id = " . (int)$current_user_id;
+            $queryAreaOptBerhenti = mysqli_query($conn, "SELECT DISTINCT AREA FROM server WHERE $berhentiAreaScopeSql AND AREA IS NOT NULL AND AREA != '' ORDER BY AREA ASC");
+            while ($queryAreaOptBerhenti && ($rowAreaOptBerhenti = mysqli_fetch_assoc($queryAreaOptBerhenti))) {
+                $areaOptValBerhenti = (string)$rowAreaOptBerhenti['AREA'];
+                $selected = ($areaOptValBerhenti === $filter_area) ? 'selected' : '';
+                echo '<option value="' . htmlspecialchars($areaOptValBerhenti, ENT_QUOTES, 'UTF-8') . '" ' . $selected . '>' . htmlspecialchars($areaOptValBerhenti, ENT_QUOTES, 'UTF-8') . '</option>';
+            }
+            ?>
+          </select>
+        </div>
+        <div class="col-auto">
           <button type="submit" class="btn btn-danger">Tampilkan</button>
         </div>
         <div class="col-md-4">
@@ -157,6 +198,7 @@ if ($AKSES == 'ASSISTANT') {
           <form method="post" action="proses/broadcast_berhenti.php" id="formBroadcastBerhenti">
             <input type="hidden" name="filter_bulan" value="<?php echo htmlspecialchars($filter_bulan); ?>">
             <input type="hidden" name="filter_tahun" value="<?php echo htmlspecialchars($filter_tahun); ?>">
+            <input type="hidden" name="filter_area" value="<?php echo htmlspecialchars($filter_area); ?>">
             <div class="mb-3">
               <label for="pesan_broadcast" class="form-label">Pesan Broadcast</label>
               <textarea class="form-control" id="pesan_broadcast" name="pesan_broadcast" rows="4" required placeholder="Masukkan pesan iklan yang akan dikirim..."></textarea>
@@ -238,7 +280,7 @@ if ($AKSES == 'ASSISTANT') {
           <div id="berhentiLazyLoadIndicator" class="spinner-border spinner-border-sm text-primary d-none" role="status"><span class="visually-hidden">Loading...</span></div>
           <span id="berhentiLazyLoadStatusText" class="text-secondary text-xs"></span>
         </div>
-        <div id="berhentiLazyMeta" class="d-none" data-page="<?php echo (int)$berhentiPage; ?>" data-total-pages="<?php echo (int)$berhentiTotalPages; ?>"></div>
+        <div id="berhentiLazyMeta" class="d-none" data-page="<?php echo (int)$berhentiPage; ?>" data-total-pages="<?php echo (int)$berhentiTotalPages; ?>" data-row-count="<?php echo (int)($result ? mysqli_num_rows($result) : 0); ?>"></div>
         <?php if ($berhentiPage < $berhentiTotalPages): ?>
         <script>
         (function() {
@@ -298,12 +340,70 @@ if ($AKSES == 'ASSISTANT') {
 
             // Dipakai search box supaya pencarian mencakup semua data, bukan cuma
             // yang kebetulan sudah ke-scroll.
+            //
+            // SENGAJA TIDAK pakai appendNextPage() (loncat <?php echo (int)$berhentiPageSize; ?>
+            // baris/round-trip) di sini -- kalau filter bulan/tahun "Semua" dan
+            // datanya banyak, itu bisa jadi RATUSAN round-trip sekuensial yang
+            // masing2 ikut nge-render ULANG seluruh halaman (header/sidebar), jadi
+            // dari sisi user pencarian kelihatan cuma "muter-muter"/loading tanpa
+            // pernah selesai. Di sini pakai batch besar (500 baris/round-trip via
+            // parameter off+bsize) supaya cuma perlu sedikit round-trip, berhenti
+            // begitu jumlah baris yang balik < batchSize (tandanya sudah baris
+            // terakhir) -- tidak bergantung pada currentPage/totalPages sama sekali.
             window.berhentiLoadAllRemaining = function() {
-                function step() {
-                    if (currentPage >= totalPages) return Promise.resolve();
-                    return appendNextPage().then(step);
+                if (currentPage >= totalPages) return Promise.resolve();
+
+                var batchSize = 500;
+                var offsetLoaded = currentPage * <?php echo (int)$berhentiPageSize; ?>;
+
+                function buildBatchUrl(offset) {
+                    var url = new URL(window.location.href);
+                    url.searchParams.delete('ppage');
+                    url.searchParams.set('off', String(offset));
+                    url.searchParams.set('bsize', String(batchSize));
+                    return url.toString();
                 }
-                return step();
+
+                function stepBatch() {
+                    return fetch(buildBatchUrl(offsetLoaded), { method: 'GET', credentials: 'same-origin' })
+                        .then(function(res) { return res.text(); })
+                        .then(function(html) {
+                            var doc = new DOMParser().parseFromString(html, 'text/html');
+                            var newTableBody = doc.getElementById('berhentiTableBody');
+                            var newMeta = doc.getElementById('berhentiLazyMeta');
+                            if (!newTableBody) throw new Error('Gagal memuat data');
+
+                            var newSentinel = newTableBody.querySelector('#berhentiLazySentinel');
+                            if (newSentinel) newSentinel.remove();
+                            tableBody.insertAdjacentHTML('beforeend', newTableBody.innerHTML);
+                            tableBody.appendChild(sentinelRow);
+
+                            var rowCount = newMeta ? parseInt(newMeta.getAttribute('data-row-count'), 10) : 0;
+                            if (isNaN(rowCount)) rowCount = 0;
+                            offsetLoaded += rowCount;
+
+                            if (rowCount < batchSize) {
+                                // Baris yang balik lebih sedikit dari batchSize -- sudah
+                                // sampai data terakhir, tidak perlu round-trip lagi.
+                                currentPage = totalPages;
+                                return;
+                            }
+                            return stepBatch();
+                        });
+                }
+
+                isLoading = true;
+                if (lazyWrap) lazyWrap.classList.remove('d-none');
+                if (lazyIndicator) lazyIndicator.classList.remove('d-none');
+
+                return stepBatch()
+                    .catch(function(err) { console.error('Gagal memuat semua data pelanggan berhenti utk pencarian:', err); })
+                    .finally(function() {
+                        isLoading = false;
+                        updateStatusText();
+                        if (lazyIndicator) lazyIndicator.classList.add('d-none');
+                        if (currentPage >= totalPages && lazyWrap) lazyWrap.classList.add('d-none');
+                    });
             };
 
             var observer = new IntersectionObserver(function(entries) {

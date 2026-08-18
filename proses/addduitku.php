@@ -24,7 +24,13 @@ $dk_pajak = $_POST['dk_pajak'] ?? '';
 // input admin. Kolom bhps_uso di DB dibiarkan ada (tidak dihapus).
 $dk_bhps_uso = '0';
 $authMode = $_POST['dk_auth_mode'] ?? 'RADIUS MODE';
-$pemilik = $_SESSION['USERNAME'] ?? '';
+// Pakai $ceknama (owner), bukan $_SESSION['USERNAME'], karena semua query
+// tampilan/list Duitku di paymentset.php & lookup runtime di portal_bayar.php
+// memfilter pemilik=$ceknama. Kalau yang mengisi form adalah akun
+// ASSISTANT/sub-user, $_SESSION['USERNAME'] beda dari $ceknama sehingga data
+// tersimpan tapi tidak pernah muncul/dipakai, dan nama file callback yang
+// disalin tidak cocok dengan $callbackUrl (yang sudah benar pakai $ceknama).
+$pemilik = $ceknama ?? '';
 
 
  $domain=$config['domain'];

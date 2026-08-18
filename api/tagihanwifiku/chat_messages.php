@@ -19,6 +19,14 @@ if ($sender === '') {
     twk_response(422, ['success' => false, 'message' => 'Identitas chat pelanggan tidak valid.']);
 }
 
+// Harus sama persis dengan resolusi receiver_id di chat_send.php (PEMILIK pelanggan,
+// bukan literal 'admin') supaya pesan yang baru dikirim/diterima tetap konsisten
+// ke-load di thread yang sama.
+$receiverIdentity = trim((string)($pelanggan['PEMILIK'] ?? ''));
+if ($receiverIdentity === '') {
+    $receiverIdentity = 'admin';
+}
+
 $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 80;
 if ($limit <= 0 || $limit > 200) {
     $limit = 80;
@@ -27,13 +35,13 @@ if ($limit <= 0 || $limit > 200) {
 $messages = [];
 $sql = "SELECT id, sender_id, receiver_id, message, timestamp, is_read, reply_to_id, reply_to_text
         FROM messages
-        WHERE (sender_id = ? AND receiver_id = 'admin')
-           OR (sender_id = 'admin' AND receiver_id = ?)
+        WHERE (sender_id = ? AND receiver_id = ?)
+           OR (sender_id = ? AND receiver_id = ?)
         ORDER BY timestamp ASC
         LIMIT ?";
 $stmt = mysqli_prepare($conn, $sql);
 if ($stmt) {
-    mysqli_stmt_bind_param($stmt, 'ssi', $sender, $sender, $limit);
+    mysqli_stmt_bind_param($stmt, 'ssssi', $sender, $receiverIdentity, $receiverIdentity, $sender, $limit);
     mysqli_stmt_execute($stmt);
     $res = mysqli_stmt_get_result($stmt);
     while ($res && ($row = mysqli_fetch_assoc($res))) {
@@ -53,9 +61,9 @@ if ($stmt) {
     mysqli_stmt_close($stmt);
 }
 
-$markRead = mysqli_prepare($conn, "UPDATE messages SET is_read = 1 WHERE sender_id = 'admin' AND receiver_id = ? AND is_read = 0");
+$markRead = mysqli_prepare($conn, "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0");
 if ($markRead) {
-    mysqli_stmt_bind_param($markRead, 's', $sender);
+    mysqli_stmt_bind_param($markRead, 'ss', $receiverIdentity, $sender);
     mysqli_stmt_execute($markRead);
     mysqli_stmt_close($markRead);
 }

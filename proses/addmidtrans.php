@@ -15,7 +15,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $bhps_uso = '0';
     $default_auth_mode = $_POST['mt_auth_mode'] ?? 'API MODE';
    
-    $pemilik = $_SESSION['USERNAME'] ?? '';
+    // Pakai $ceknama (owner), bukan $_SESSION['USERNAME'], karena semua query
+    // tampilan/list Midtrans di paymentset.php & lookup runtime di portal_bayar.php
+    // memfilter pemilik=$ceknama. Kalau yang mengisi form adalah akun
+    // ASSISTANT/sub-user, $_SESSION['USERNAME'] beda dari $ceknama sehingga data
+    // tersimpan tapi tidak pernah muncul/dipakai, dan nama file callback yang
+    // disalin tidak cocok dengan $callback (yang sudah benar pakai $ceknama).
+    $pemilik = $ceknama ?? '';
 
     $domain = $config['domain'];
     $callback = "https://$domain/crm/billing/callbackmidtrans/callback_midtrans_$ceknama.php";

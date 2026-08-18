@@ -48,12 +48,22 @@ $stmt->close();
 // device di server gowa, mis. "hanif").
 $deviceId = trim((string)$sender);
 
-// Ambil daftar nowa pelanggan berhenti
-$current_user_id = isset($_SESSION['id']) ? (int)$_SESSION['id'] : 0;
-$queryServerId = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE user_id = $current_user_id");
+// Ambil daftar nowa pelanggan berhenti -- scope ke pemilik server milik user
+// yang login, dan kalau ASSISTANT dibatasi lagi ke AREA yang di-assign (pola
+// sama seperti daftar_pelanggan_berhenti.php).
 $userServerIds = [];
-while($row = mysqli_fetch_assoc($queryServerId)) {
-    $userServerIds[] = "'".$row['PEMILIK']."'";
+if ($AKSES === 'ASSISTANT') {
+    if (isset($area_list) && trim((string)$area_list) !== '') {
+        $queryServerId = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE AREA IN ($area_list)");
+        while ($row = mysqli_fetch_assoc($queryServerId)) {
+            $userServerIds[] = "'".$row['PEMILIK']."'";
+        }
+    }
+} else {
+    $queryServerId = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE user_id = $current_user_id");
+    while ($row = mysqli_fetch_assoc($queryServerId)) {
+        $userServerIds[] = "'".$row['PEMILIK']."'";
+    }
 }
 $userServerList = count($userServerIds) > 0 ? implode(",", $userServerIds) : "''";
 

@@ -1,5 +1,6 @@
 <?php
 require 'cek-sesi.php'; // pastikan $ceknama didefinisikan
+require_once __DIR__ . '/logo_color_helper.php';
 
 // === Konfigurasi ===
 // Ditulis langsung ke folder terpusat dokumen/logo/ (sejajar crm/, diakses via URL /dokumen/logo/...)
@@ -64,7 +65,9 @@ if ($imginfo === false) {
 }
 
 // === Sanitasi nama user ===
-$sanitized = preg_replace('/[^a-zA-Z0-9_-]/', '_', ($ceknama ?? 'user'));
+// $logo_owner_key = username assistant sendiri kalau dia sudah boleh & sedang
+// upload logo sendiri, selain itu username owner (lihat cek-sesi.php).
+$sanitized = preg_replace('/[^a-zA-Z0-9_-]/', '_', ($logo_owner_key ?? $ceknama ?? 'user'));
 // Selalu simpan sebagai .png (dikonversi jika perlu) supaya konsisten dengan semua
 // tempat yang mencari logo di "uploads/profile-{username}.png" (struk, header, dsb).
 $targetExt = 'png';
@@ -98,6 +101,13 @@ if (function_exists('imagecreatefromstring')) {
 } else {
     // fallback: GD tidak tersedia, langsung pindahkan file
     move_uploaded_file($file['tmp_name'], $target_file);
+}
+
+// === Hitung & simpan warna tema dari logo baru ini, khusus akun ini
+// ($logo_owner_key dari cek-sesi.php) -- dipakai header.php sbg --primary-color/
+// --secondary-color, gantikan config.json global lama. ===
+if (file_exists($target_file)) {
+    logoColorExtractAndSave($logo_owner_key ?? $ceknama, $target_file);
 }
 
 // === Set permission aman ===

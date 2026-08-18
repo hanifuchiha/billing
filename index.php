@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../dokumen_folder_helper.php';
 include 'koneksidb.php';
 session_start();
 $favicon_file = dirname(__DIR__, 2) . '/logobilling.png';
@@ -18,7 +19,9 @@ $brand_param = isset($_GET['brand']) ? trim((string)$_GET['brand']) : '';
 if (!empty($brand_param)) {
   $brand_username = preg_replace('/[^a-zA-Z0-9_\-]/', '', $brand_param);
   // Ambil user tanpa filter STATUS — semua user boleh punya halaman branded
-  $stmt_brand = $conn->prepare("SELECT USERNAME, inisial, domain, STATUS FROM `user` WHERE USERNAME = ? LIMIT 1");
+  // (termasuk ASSISTANT/reseller, supaya masing-masing bisa punya link login
+  // sendiri dengan logo sendiri kalau sudah upload -- lihat "grup" di bawah).
+  $stmt_brand = $conn->prepare("SELECT USERNAME, inisial, domain, STATUS, grup FROM `user` WHERE USERNAME = ? LIMIT 1");
   $stmt_brand->bind_param("s", $brand_username);
   $stmt_brand->execute();
   $res_brand = $stmt_brand->get_result();
@@ -30,6 +33,19 @@ if (!empty($brand_param)) {
     // <img>/<link> harus pakai URL web /dokumen/logo/..., bukan path filesystem.
     $brand_logo_abs = __DIR__ . '/../../dokumen/logo/profile-' . $brand_user['USERNAME'] . '.png';
     $brand_logo_rel = file_exists($brand_logo_abs) ? ('/dokumen/logo/profile-' . $brand_user['USERNAME'] . '.png') : '';
+    // Kalau yang dibuka link ASSISTANT dan dia belum pernah upload logo sendiri,
+    // coba dulu logo OWNER-nya sebelum jatuh ke logo.png generik.
+    if (empty($brand_logo_rel) && (string)$brand_user['STATUS'] === 'ASSISTANT' && !empty($brand_user['grup'])) {
+      $stmt_owner = $conn->prepare("SELECT USERNAME FROM `user` WHERE id = ? LIMIT 1");
+      $stmt_owner->bind_param("i", $brand_user['grup']);
+      $stmt_owner->execute();
+      $res_owner = $stmt_owner->get_result();
+      if ($res_owner->num_rows > 0) {
+        $brand_owner_row = $res_owner->fetch_assoc();
+        $owner_logo_abs = __DIR__ . '/../../dokumen/logo/profile-' . $brand_owner_row['USERNAME'] . '.png';
+        $brand_logo_rel = file_exists($owner_logo_abs) ? ('/dokumen/logo/profile-' . $brand_owner_row['USERNAME'] . '.png') : '';
+      }
+    }
     if (empty($brand_logo_rel)) {
       $fallback_abs = __DIR__ . '/../../dokumen/logo/logo.png';
       $brand_logo_rel = file_exists($fallback_abs) ? '/dokumen/logo/logo.png' : '';
@@ -59,6 +75,17 @@ if (!empty($brand_param)) {
           $_SESSION['NOWA']     = $row2['NOWA'];
           $_SESSION['server']   = $row2['server'];
           $_SESSION['status']   = "login";
+
+          // Generate/perbarui file cron per-akun (cek_tagihan_harian_<akun>.php dkk)
+          // begitu login berhasil -- sebelumnya cuma tergenerate kalau admin pernah
+          // buka menu Notifikasi minimal sekali, jadi cron system_setting.php bisa
+          // menunjuk ke file yang belum pernah ada. Halaman branded ini hanya utk
+          // login owner (bukan assistant), jadi langsung pakai USERNAME-nya sendiri.
+          if ((string)($row2['STATUS'] ?? '') !== 'ASSISTANT') {
+            require_once __DIR__ . '/notifbot/notif_cron_files_helper.php';
+            notifCronFilesGenerate($row2['USERNAME']);
+          }
+
           header("Location: dashboard.php");
           exit;
         } else {
@@ -486,6 +513,28 @@ if ((string)$row['STATUS'] === 'ASSISTANT') {
         $_SESSION['NOWA'] = $row['NOWA'];
         $_SESSION['server'] = $row['server'];
         $_SESSION['status'] = "login";
+
+        // Generate/perbarui file cron per-akun (cek_tagihan_harian_<akun>.php dkk)
+        // begitu login berhasil -- sebelumnya cuma tergenerate kalau admin pernah
+        // buka menu Notifikasi minimal sekali, jadi cron system_setting.php bisa
+        // menunjuk ke file yang belum pernah ada. File cron ini per OWNER (bukan
+        // per assistant), jadi kalau yang login assistant, resolve dulu ke
+        // username owner-nya (kolom grup -> id owner) sebelum generate.
+        require_once __DIR__ . '/notifbot/notif_cron_files_helper.php';
+        $cronFilesUsername = $row['USERNAME'];
+        $cronFilesActor = $row['USERNAME'];
+        if ((string)$row['STATUS'] === 'ASSISTANT' && !empty($row['grup'])) {
+            $ownerRowStmt = $conn->prepare("SELECT USERNAME FROM user WHERE id = ?");
+            $ownerRowStmt->bind_param("i", $row['grup']);
+            $ownerRowStmt->execute();
+            $ownerRowResult = $ownerRowStmt->get_result();
+            if ($ownerRowResult && ($ownerRow = $ownerRowResult->fetch_assoc())) {
+                $cronFilesUsername = $ownerRow['USERNAME'];
+            }
+            $ownerRowStmt->close();
+        }
+        notifCronFilesGenerate($cronFilesUsername, $cronFilesActor);
+
         header("Location: " . $landing_page);
         exit();
       } else {

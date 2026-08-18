@@ -1,6 +1,32 @@
 
 <?php
 include '../cek-sesi.php';
+
+// Toggle "btn_trx_lihat_bukti" (Pengaturan User > Tombol Individual ASSISTANT,
+// halaman Transaction) -- endpoint ini dipanggil via fetch() dari dashboard.php
+// (widget Transaksi Harian) tanpa require header.php, jadi $ui_visibility_settings
+// tidak pernah tersedia dan pengecekan harus diulang manual server-side, sama
+// persis dengan pola di customertransation.php.
+$dtBisaLihatBukti = true;
+if ($AKSES === 'ASSISTANT') {
+    $dtBuktiSettingsUsername = !empty($asistant_name) ? $asistant_name : $ceknama;
+    $dtBuktiSafeUsername = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$dtBuktiSettingsUsername);
+    $dtBisaLihatBukti = false; // default ASSISTANT: sembunyikan, kecuali toggle diaktifkan
+    if ($dtBuktiSafeUsername !== '') {
+        $dtBuktiSettingsFile = __DIR__ . '/../settings/dashboard-cards-' . $dtBuktiSafeUsername . '.json';
+        if (is_file($dtBuktiSettingsFile)) {
+            $dtBuktiDecoded = json_decode((string)@file_get_contents($dtBuktiSettingsFile), true);
+            if (is_array($dtBuktiDecoded) && array_key_exists('btn_trx_lihat_bukti', $dtBuktiDecoded)) {
+                $dtBisaLihatBukti = (bool)$dtBuktiDecoded['btn_trx_lihat_bukti'];
+            } else {
+                $dtBisaLihatBukti = true; // key belum pernah disimpan -> default true
+            }
+        } else {
+            $dtBisaLihatBukti = true; // belum pernah ada file settings -> default true
+        }
+    }
+}
+
 setlocale(LC_TIME, 'id_ID.UTF-8', 'Indonesian_indonesia.1252');
 $tgl = strftime('%A, %d %B %Y', strtotime(date('Y-m-d')));
 $today = date('Y-m-d');
@@ -49,8 +75,8 @@ function get_last_success_payment_map(mysqli $conn, array $idpelList): array
 
         $map[$idpel] = [
             'last_bayar' => (string)($row['TANGGALBAYAR'] ?? ''),
-            'last_bukti' => (string)($row['BUKTI'] ?? ''),
-            'last_bukti_image_url' => resolve_bukti_image_url($row['BUKTI'] ?? '', $row['METODE_BAYAR'] ?? ''),
+            'last_bukti' => $GLOBALS['dtBisaLihatBukti'] ? (string)($row['BUKTI'] ?? '') : '',
+            'last_bukti_image_url' => $GLOBALS['dtBisaLihatBukti'] ? resolve_bukti_image_url($row['BUKTI'] ?? '', $row['METODE_BAYAR'] ?? '') : '',
         ];
     }
 
@@ -144,13 +170,13 @@ if (!empty($server_data)) {
         while ($d = mysqli_fetch_assoc($q)) {
             $status = strtolower($d['STATUS']) == 'berhasil' ? 'berhasil' : (strtolower($d['STATUS']) == 'konfirmasi' ? 'konfirmasi' : 'permintaan');
             $metode_bayar = isset($d['METODE_BAYAR']) ? $d['METODE_BAYAR'] : '';
-            $bukti_image_url = resolve_bukti_image_url($d['BUKTI'] ?? '', $metode_bayar);
+            $bukti_image_url = $dtBisaLihatBukti ? resolve_bukti_image_url($d['BUKTI'] ?? '', $metode_bayar) : '';
             $items[] = [
                 'status' => $status,
                 'nama' => $d['NAMA'],
                 'harga' => $d['HARGA'],
                 'idpel' => $d['IDPEL'],
-                'bukti' => $d['BUKTI'],
+                'bukti' => $dtBisaLihatBukti ? $d['BUKTI'] : '',
                 'metode_bayar' => $metode_bayar,
                 'bukti_image_url' => $bukti_image_url,
                 'tanggal' => $d['TANGGALBAYAR'],

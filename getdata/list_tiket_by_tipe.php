@@ -51,8 +51,21 @@ function buildKeteranganLengkap(string $text): string
     $kendala = extractTicketField($text, ['KENDALA']);
     if ($kendala !== '') $parts[] = $kendala;
 
-    if (!empty($parts)) return implode(' | ', $parts);
-    return trim($text);
+    $summary = !empty($parts) ? implode(' | ', $parts) : trim($text);
+
+    // Tiket ODP konsolidasi (cron_maintenance_ticket.php, "ODP mati total")
+    // menyertakan daftar per-pelanggan (nama/IDPEL/status ONLINE/OFFLINE/
+    // EXPIRED) di blok "DAFTAR PELANGGAN:" -- SEBELUMNYA hilang total di modal
+    // edit ini karena parser di atas cuma tahu 4 field tunggal (ODP/JUMLAH
+    // PELANGGAN/ALAMAT/KENDALA), tidak pernah baca blok multi-baris ini.
+    if (preg_match('/DAFTAR PELANGGAN:\s*\n((?:-.*(?:\n|$))+)/i', $text, $mDaftar)) {
+        $daftarPelanggan = trim($mDaftar[1]);
+        if ($daftarPelanggan !== '') {
+            $summary .= "\n\nDaftar Pelanggan:\n" . $daftarPelanggan;
+        }
+    }
+
+    return $summary;
 }
 
 $connBilling = isset($conn) ? $conn : null;

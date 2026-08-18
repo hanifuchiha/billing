@@ -316,28 +316,10 @@ $API = new RouterosAPI();
 
 $servers = [];
 if ($current_user_id) {
-  if ($AKSES == 'ASSISTANT') {
-    if (!empty($area_list_JSON)) {
-      $assigned_ids = json_decode($area_list_JSON, true);
-      if (is_array($assigned_ids) && !empty($assigned_ids)) {
-        $id_in = implode(",", array_map('intval', $assigned_ids));
-        $sql = "SELECT * FROM server WHERE id IN ($id_in)";
-      } else {
-        $sql = "SELECT * FROM server WHERE 1=0";
-      }
-    } elseif (!empty($area_list)) {
-      $sql = "SELECT * FROM server WHERE AREA IN ($area_list)";
-    } else {
-      $sql = "SELECT * FROM server WHERE 1=0";
-    }
-  } else {
-    $sql = "SELECT * FROM server WHERE user_id = $current_user_id";
-  }
+  $sql = "SELECT * FROM server WHERE user_id = $current_user_id";
   $query = mysqli_query($conn, $sql);
-  if ($query) {
-    while ($data = mysqli_fetch_array($query)) {
-      $servers[] = $data;
-    }
+  while ($data = mysqli_fetch_array($query)) {
+    $servers[] = $data;
   }
 }
 
@@ -545,19 +527,7 @@ if($selected_ip){
 
           if ($current_user_id) {
             if ($AKSES == 'ASSISTANT') {
-              if (!empty($area_list_JSON)) {
-                $assigned_ids = json_decode($area_list_JSON, true);
-                if (is_array($assigned_ids) && !empty($assigned_ids)) {
-                  $id_in = implode(",", array_map('intval', $assigned_ids));
-                  $sql = "SELECT * FROM server WHERE id IN ($id_in)";
-                } else {
-                  $sql = "SELECT * FROM server WHERE 1=0";
-                }
-              } elseif (!empty($area_list)) {
-                $sql = "SELECT * FROM server WHERE AREA IN ($area_list)";
-              } else {
-                $sql = "SELECT * FROM server WHERE 1=0";
-              }
+              $sql = "SELECT * FROM server WHERE AREA IN ($area_list)";
             } else {
               $sql = "SELECT * FROM server WHERE user_id = $current_user_id";
             }

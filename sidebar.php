@@ -10,6 +10,7 @@ date_default_timezone_set('Asia/Jakarta');
 $is_teknisi_only = ($AKSES === 'ASSISTANT' && is_array($akses_menu) && count($akses_menu) === 1 && in_array('Ticket_manager', $akses_menu));
 $can_assistant_dashboard = ($AKSES !== 'ASSISTANT') || (is_array($akses_menu) && in_array('Dasbor', $akses_menu));
 $can_assistant_livechat = ($AKSES !== 'ASSISTANT') || (is_array($akses_menu) && in_array('Live_Chat', $akses_menu));
+$can_assistant_callcenter = ($AKSES !== 'ASSISTANT') || (is_array($akses_menu) && in_array('CS_Call_Center', $akses_menu));
 $sidebar_ticket_source = isset($ticket_management_source) ? strtolower(trim((string)$ticket_management_source)) : 'tiket_manager';
 if (!in_array($sidebar_ticket_source, ['tiket_manager', 'joblist'], true)) {
   $sidebar_ticket_source = 'tiket_manager';
@@ -20,7 +21,10 @@ $theme_storage_key = 'billing_sidebar_theme_' . preg_replace('/[^a-zA-Z0-9_\-]/'
 
 $url_scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $url_host = isset($_SERVER['HTTP_HOST']) ? trim((string)$_SERVER['HTTP_HOST']) : '';
-$brand_owner = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$ceknama);
+// Assistant yang login pakai username-nya SENDIRI di ?brand= (bukan selalu
+// owner) -- supaya link "LOGIN Billing anda" konsisten dgn logo masing-masing
+// akun (lihat $logo_owner_key di cek-sesi.php & card "Link Login Anda" di user.php).
+$brand_owner = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($logo_owner_key ?? $ceknama));
 $brand_query = $brand_owner !== '' ? ('?brand=' . rawurlencode($brand_owner)) : '';
 
 if ($url_host !== '') {
@@ -29,11 +33,13 @@ if ($url_host !== '') {
   $link_pelanggan_anda = $base_public_url . '/crm/billing/broadband/portallogin.php' . $brand_query;
   $link_login_anda = $base_public_url . '/crm/billing/index.php' . $brand_query;
   $link_login_hotspot_anda = $base_public_url . '/crm/login/index.html?server=' . rawurlencode($brand_owner !== '' ? $brand_owner : 'FIBERQ');
+  $link_corporate_anda = $base_public_url . '/crm/billing/corporate_portal/login.php' . $brand_query;
 } else {
   $link_pendaftaran_anda = '../mitra/pendaftaran_bot.php' . $brand_query;
   $link_pelanggan_anda = '../billing/broadband/portallogin.php' . $brand_query;
   $link_login_anda = '../billing/index.php' . $brand_query;
   $link_login_hotspot_anda = '../login/index.html?server=' . rawurlencode($brand_owner !== '' ? $brand_owner : 'FIBERQ');
+  $link_corporate_anda = '../billing/corporate_portal/login.php' . $brand_query;
 }
 
 if (!function_exists('load_ui_visibility_settings')) {
@@ -92,6 +98,11 @@ if (!function_exists('load_ui_visibility_settings')) {
       'btn_notif_save_dynamic' => true,
       'btn_notif_save_invoice' => true,
       'btn_notif_modal_save' => true,
+      'btn_linkanda_pendaftaran' => true,
+      'btn_linkanda_pelanggan' => true,
+      'btn_linkanda_login_billing' => true,
+      'btn_linkanda_login_hotspot' => true,
+      'btn_linkanda_corporate' => true,
     ];
 
     $safe_username = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$username);
@@ -354,25 +365,40 @@ if ($expired_at) {
       </div>
       <div class="modal-body">
         <div class="d-grid gap-2">
+          <?php if (($AKSES !== 'ASSISTANT') || !empty($ui_visibility_settings['btn_linkanda_pendaftaran'] ?? null)): ?>
           <a class="btn btn-outline-primary text-start" href="<?= htmlspecialchars($link_pendaftaran_anda, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer">
             <i class="fas fa-link me-2"></i>Link untuk Pendaftaran pelanggan Baru
           </a>
           <button type="button" class="btn btn-sm btn-light border quick-link-copy-btn link-anda-copy-btn" data-copy-url="<?= htmlspecialchars($link_pendaftaran_anda, ENT_QUOTES, 'UTF-8'); ?>">Copy URL Pendaftaran</button>
+          <?php endif; ?>
 
+          <?php if (($AKSES !== 'ASSISTANT') || !empty($ui_visibility_settings['btn_linkanda_pelanggan'] ?? null)): ?>
           <a class="btn btn-outline-primary text-start" href="<?= htmlspecialchars($link_pelanggan_anda, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer">
             <i class="fas fa-users me-2"></i>Link untuk Login menu Pelanggan
           </a>
           <button type="button" class="btn btn-sm btn-light border quick-link-copy-btn link-anda-copy-btn" data-copy-url="<?= htmlspecialchars($link_pelanggan_anda, ENT_QUOTES, 'UTF-8'); ?>">Copy URL Pelanggan</button>
+          <?php endif; ?>
 
+          <?php if (($AKSES !== 'ASSISTANT') || !empty($ui_visibility_settings['btn_linkanda_login_billing'] ?? null)): ?>
           <a class="btn btn-outline-primary text-start" href="<?= htmlspecialchars($link_login_anda, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer">
             <i class="fas fa-sign-in-alt me-2"></i>Link LOGIN Billing anda
           </a>
           <button type="button" class="btn btn-sm btn-light border quick-link-copy-btn link-anda-copy-btn" data-copy-url="<?= htmlspecialchars($link_login_anda, ENT_QUOTES, 'UTF-8'); ?>">Copy URL LOGIN Billing</button>
+          <?php endif; ?>
 
+          <?php if (($AKSES !== 'ASSISTANT') || !empty($ui_visibility_settings['btn_linkanda_login_hotspot'] ?? null)): ?>
           <a class="btn btn-outline-primary text-start" href="<?= htmlspecialchars($link_login_hotspot_anda, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer">
             <i class="fas fa-wifi me-2"></i>Link LOGIN Hotspot pelanggan anda
           </a>
           <button type="button" class="btn btn-sm btn-light border quick-link-copy-btn link-anda-copy-btn" data-copy-url="<?= htmlspecialchars($link_login_hotspot_anda, ENT_QUOTES, 'UTF-8'); ?>">Copy URL LOGIN Hotspot</button>
+          <?php endif; ?>
+
+          <?php if (($AKSES !== 'ASSISTANT') || !empty($ui_visibility_settings['btn_linkanda_corporate'] ?? null)): ?>
+          <a class="btn btn-outline-primary text-start" href="<?= htmlspecialchars($link_corporate_anda, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" rel="noopener noreferrer">
+            <i class="fas fa-building me-2"></i>Link LOGIN Portal Corporate
+          </a>
+          <button type="button" class="btn btn-sm btn-light border quick-link-copy-btn link-anda-copy-btn" data-copy-url="<?= htmlspecialchars($link_corporate_anda, ENT_QUOTES, 'UTF-8'); ?>">Copy URL Portal Corporate</button>
+          <?php endif; ?>
         </div>
       </div>
     </div>
@@ -402,9 +428,16 @@ if ($expired_at) {
 
 <?php
 // Logo terpusat di dokumen/logo/ (sejajar crm/). $logo_file = path filesystem
-// untuk file_exists(), $logo_path = URL web untuk <img src>.
-$logo_file = __DIR__ . "/../../dokumen/logo/profile-$ceknama.png";
-$logo_path = "/dokumen/logo/profile-$ceknama.png";
+// untuk file_exists(), $logo_path = URL web untuk <img src>. Assistant yang
+// sudah upload logo sendiri (toggle btn_logo_billing_sendiri) dicoba lebih
+// dulu lewat $logo_owner_key (dari cek-sesi.php), fallback ke logo owner.
+$logo_file = __DIR__ . "/../../dokumen/logo/profile-$logo_owner_key.png";
+$logo_path = "/dokumen/logo/profile-$logo_owner_key.png";
+
+if (!file_exists($logo_file)) {
+  $logo_file = __DIR__ . "/../../dokumen/logo/profile-$ceknama.png";
+  $logo_path = "/dokumen/logo/profile-$ceknama.png";
+}
 
 // Kalau logo tidak ada, pakai default
 if (!file_exists($logo_file)) {
@@ -1804,19 +1837,17 @@ if (!file_exists($logo_file)) {
       <h6 class="ps-4 ms-2 text-uppercase text-xs font-weight-bolder opacity-6">Jobdesk</h6>
     </li>
 
-<?php if (($AKSES == "USER" || $AKSES == "ADMIN") || ($AKSES == "ASSISTANT" && $can_assistant_livechat)) { ?>
+
+<?php if (($AKSES == "USER" || $AKSES == "ADMIN") || ($AKSES == "ASSISTANT" && $can_assistant_callcenter)) { ?>
     <li class="nav-item">
-      <a class="nav-link <?php if($current_file=='livechat.php') echo 'active'; ?>" href="../billing/livechat.php">
+      <a class="nav-link <?php if($current_file=='cs_call_center.php') echo 'active'; ?>" href="../billing/cs_call_center.php">
         <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
-          <i class="fas fa-comments text-dark"></i>
+          <i class="fas fa-headset text-dark"></i>
         </div>
-        <span class="nav-link-text ms-1">Live Chat</span>
+        <span class="nav-link-text ms-1">CS Call Center</span>
       </a>
     </li>
 <?php } ?>
-
-
-
 
 
 <?php if ($show_ticket_manager_menu && ($AKSES != "ASSISTANT" || (is_array($akses_menu) && in_array('Ticket_manager', $akses_menu)))) { ?>
@@ -2242,7 +2273,95 @@ if(is_array($akses_menu) && in_array('Vpn_Connection', $akses_menu)){
       </li>
             <?php
           }
-          
+
+      }
+      ?>
+
+      <li class="nav-item mt-3">
+        <h6 class="ps-4 ms-2 text-uppercase text-xs font-weight-bolder opacity-6">Static IP menu</h6>
+      </li>
+
+<?php if ($AKSES != "ASSISTANT") { ?>
+      <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='tablesstaticip.php') echo 'active'; ?>" href="../billing/tablesstaticip.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-network-wired text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Customer Static IP</span>
+        </a>
+      </li>
+<?php }
+      else
+      {
+          if(is_array($akses_menu) && in_array('Customer_StaticIP', $akses_menu)){
+            ?>
+              <li class="nav-item">
+        <a class="nav-link  " href="../billing/tablesstaticip.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-network-wired text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Customer Static IP</span>
+        </a>
+      </li>
+            <?php
+          }
+
+      }
+      ?>
+
+<?php if ($AKSES != "ASSISTANT") { ?>
+      <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='packagesstaticip.php') echo 'active'; ?>" href="../billing/packagesstaticip.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-box-open text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Paket Static IP</span>
+        </a>
+      </li>
+<?php }
+      else
+      {
+          if(is_array($akses_menu) && in_array('Packages_StaticIP', $akses_menu)){
+            ?>
+         <li class="nav-item">
+        <a class="nav-link  " href="../billing/packagesstaticip.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-box-open text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Paket Static IP</span>
+        </a>
+      </li>
+            <?php
+          }
+
+      }
+      ?>
+
+<?php if ($AKSES != "ASSISTANT") { ?>
+      <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='staticippool.php') echo 'active'; ?>" href="../billing/staticippool.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-map-signs text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">IP Pool Static</span>
+        </a>
+      </li>
+<?php }
+      else
+      {
+          if(is_array($akses_menu) && in_array('Pool_StaticIP', $akses_menu)){
+            ?>
+         <li class="nav-item">
+        <a class="nav-link  " href="../billing/staticippool.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-map-signs text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">IP Pool Static</span>
+        </a>
+      </li>
+            <?php
+          }
+
       }
       ?>
 
@@ -2374,7 +2493,123 @@ if(is_array($akses_menu) && in_array('Vpn_Connection', $akses_menu)){
       </li>
             <?php
           }
-          
+
+      }
+      ?>
+
+      <li class="nav-item mt-3">
+        <h6 class="ps-4 ms-2 text-uppercase text-xs font-weight-bolder opacity-6">Corporate menu</h6>
+      </li>
+
+<?php if ($AKSES != "ASSISTANT") { ?>
+      <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='corporate.php') echo 'active'; ?>" href="../billing/corporate.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-building text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Customer Corporate</span>
+        </a>
+      </li>
+<?php }
+      else
+      {
+          if(is_array($akses_menu) && in_array('Corporate_Customer', $akses_menu)){
+            ?>
+              <li class="nav-item">
+        <a class="nav-link  " href="../billing/corporate.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-building text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Customer Corporate</span>
+        </a>
+      </li>
+            <?php
+          }
+
+      }
+      ?>
+
+<?php if ($AKSES != "ASSISTANT") { ?>
+      <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='paket_corporate.php') echo 'active'; ?>" href="../billing/paket_corporate.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-box text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Paket Corporate</span>
+        </a>
+      </li>
+<?php }
+      else
+      {
+          if(is_array($akses_menu) && in_array('Corporate_Paket', $akses_menu)){
+            ?>
+              <li class="nav-item">
+        <a class="nav-link  " href="../billing/paket_corporate.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-box text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Paket Corporate</span>
+        </a>
+      </li>
+            <?php
+          }
+
+      }
+      ?>
+
+<?php if ($AKSES != "ASSISTANT") { ?>
+      <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='transaksicorporate.php') echo 'active'; ?>" href="../billing/transaksicorporate.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-file-invoice-dollar text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Transaksi Corporate</span>
+        </a>
+      </li>
+<?php }
+      else
+      {
+          if(is_array($akses_menu) && in_array('Corporate_Transaksi', $akses_menu)){
+            ?>
+         <li class="nav-item">
+        <a class="nav-link  " href="../billing/transaksicorporate.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-file-invoice-dollar text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Transaksi Corporate</span>
+        </a>
+      </li>
+            <?php
+          }
+
+      }
+      ?>
+
+<?php if ($AKSES != "ASSISTANT") { ?>
+      <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='corporate_portal_setting.php') echo 'active'; ?>" href="../billing/corporate_portal_setting.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-sliders-h text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Pengaturan Portal Corporate</span>
+        </a>
+      </li>
+<?php }
+      else
+      {
+          if(is_array($akses_menu) && in_array('Corporate_Portal_Setting', $akses_menu)){
+            ?>
+         <li class="nav-item">
+        <a class="nav-link  " href="../billing/corporate_portal_setting.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-sliders-h text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Pengaturan Portal Corporate</span>
+        </a>
+      </li>
+            <?php
+          }
+
       }
       ?>
 
@@ -2673,6 +2908,17 @@ if(is_array($akses_menu) && in_array('Vpn_Connection', $akses_menu)){
       <li class="nav-item mt-3">
         <h6 class="ps-4 ms-2 text-uppercase text-xs font-weight-bolder opacity-6">Akun & Pengaturan</h6>
       </li>
+
+<?php if ($AKSES == "USER" || $AKSES == "ADMIN") { ?>
+      <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='livechat_setting.php') echo 'active'; ?>" href="../billing/livechat_setting.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-robot text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Pengaturan Live Chat</span>
+        </a>
+      </li>
+<?php } ?>
 
 <?php if ($AKSES != "ASSISTANT") { ?>
       <li class="nav-item">
@@ -3117,6 +3363,14 @@ if(is_array($akses_menu) && in_array('Vpn_Connection', $akses_menu)){
           <span class="nav-link-text ms-1">OTP Sign Up Billing</span>
         </a>
       </li>
+      <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='webrtc_turn_settings.php') echo 'active'; ?>" href="../billing/webrtc_turn_settings.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-phone-volume text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Server TURN/STUN (Call)</span>
+        </a>
+      </li>
     <li class="nav-item">
         <a class="nav-link <?php if($current_file=='index.php' && strpos($_SERVER['REQUEST_URI'], '/panel/') !== false) echo 'active'; ?>" href="../panel/">
           <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
@@ -3453,10 +3707,31 @@ document.addEventListener('DOMContentLoaded', function() {
 
           <!-- Tab Content -->
           <div class="tab-content" id="liveChatTabContent">
+            <!-- Catatan Kejadian Panel -- ringkasan per jam (24 jam terakhir) dari
+                 SEMUA pesan masuk pelanggan (Live Chat + WA bot), dibuat AI pakai
+                 config yang sama dgn Pengaturan AI Bot Live Chat. Tujuannya supaya
+                 owner yang baru buka billing lagi bisa cepat tahu kabar/keluhan/
+                 laporan selama tidak online, tanpa harus baca ulang semua chat. -->
+            <div class="tab-pane fade" id="modal-kejadian-panel" role="tabpanel" aria-labelledby="modal-kejadian-tab">
+              <div style="padding:16px; height:100%; overflow-y:auto;">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                  <h6 class="mb-0"><i class="fas fa-clock-rotate-left"></i> Catatan Kejadian &mdash; 24 Jam Terakhir</h6>
+                  <button type="button" id="refreshKejadianBtn" class="btn btn-sm btn-outline-secondary">
+                    <i class="fas fa-rotate"></i> Muat Ulang
+                  </button>
+                </div>
+                <small class="text-muted d-block mb-3">Ringkasan otomatis per jam dari pesan masuk pelanggan (Live Chat &amp; WhatsApp Bot) -- keluhan, laporan, atau kejadian apapun.</small>
+                <div id="catatanKejadianList"><div class="text-center text-muted p-4">Klik tab ini utk memuat ringkasan...</div></div>
+              </div>
+            </div>
+
             <!-- Live Chat Panel -->
             <div class="tab-pane fade show active" id="modal-livechat-panel" role="tabpanel" aria-labelledby="modal-livechat-tab">
-              <iframe src="<?php 
+              <iframe src="<?php
                 if ($AKSES == 'ADMIN') {
+                    // admin=admin: lihat komentar identik di livechat.php - akun ADMIN
+                    // adalah master admin, pelanggan miliknya sendiri tersimpan dgn
+                    // PEMILIK='admin', jadi "admin" di sini sudah identitas tenant asli.
                     echo $config['URL'] . '/crm/chat/index.php?admin=admin';
                 } else {
                     echo $config['URL'] . '/crm/chat/index.php?admin=' . urlencode($ceknama);
@@ -3509,6 +3784,11 @@ document.addEventListener('DOMContentLoaded', function() {
    <!-- Tabs Navigation -->
           <div class="border-bottom">
             <ul class="nav nav-tabs mb-0" role="tablist" id="liveChatTabs" style="display: flex; flex-wrap: nowrap; overflow-x: auto;">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="modal-kejadian-tab" data-tab-target="#modal-kejadian-panel" type="button" role="tab" aria-controls="modal-kejadian-panel" aria-selected="false">
+                  <i class="fas fa-clock-rotate-left"></i> Catatan Kejadian
+                </button>
+              </li>
               <li class="nav-item" role="presentation">
                 <button class="nav-link active" id="modal-livechat-tab" data-tab-target="#modal-livechat-panel" type="button" role="tab" aria-controls="modal-livechat-panel" aria-selected="true">
                   <i class="fas fa-headset"></i> Live Chat
@@ -4132,6 +4412,67 @@ document.addEventListener('DOMContentLoaded', function() {
           activateTabManually(this);
         });
       });
+
+      // Tab "Catatan Kejadian" -- muat ringkasan sekali per buka (lazy), bisa
+      // dimuat ulang manual lewat tombol "Muat Ulang" di dalam panel.
+      (function () {
+        const kejadianTab = document.getElementById('modal-kejadian-tab');
+        const listEl = document.getElementById('catatanKejadianList');
+        const refreshBtn = document.getElementById('refreshKejadianBtn');
+        if (!kejadianTab || !listEl) return;
+
+        let kejadianLoaded = false;
+
+        function escapeHtml(text) {
+          const div = document.createElement('div');
+          div.textContent = text == null ? '' : String(text);
+          return div.innerHTML;
+        }
+
+        function loadKejadian() {
+          listEl.innerHTML = '<div class="text-center text-muted p-4"><i class="fas fa-spinner fa-spin"></i> Memuat ringkasan...</div>';
+          fetch('../chat/get_hourly_digest.php?pemilik=' + encodeURIComponent(LIVECHAT_ADMIN_PARAM) + '&_=' + Date.now(), { cache: 'no-store' })
+            .then((r) => r.json())
+            .then((data) => {
+              kejadianLoaded = true;
+              if (!data.success) {
+                listEl.innerHTML = '<div class="alert alert-warning">' + escapeHtml(data.message || 'Gagal memuat.') + '</div>';
+                return;
+              }
+              const digest = data.digest || [];
+              if (digest.length === 0) {
+                listEl.innerHTML = '<div class="text-center text-muted p-4">Belum ada pesan masuk dalam 24 jam terakhir.</div>';
+                return;
+              }
+              let html = '';
+              digest.forEach((d) => {
+                const badge = d.is_current_hour
+                  ? '<span class="badge bg-warning text-dark">Jam berjalan</span>'
+                  : '<span class="badge bg-secondary">' + d.message_count + ' pesan</span>';
+                const summaryHtml = escapeHtml(d.summary || '').replace(/\n/g, '<br>');
+                html += '<div class="card mb-2"><div class="card-body py-2">'
+                  + '<div class="d-flex justify-content-between align-items-center mb-1">'
+                  + '<strong>' + escapeHtml(d.date_label) + ' &middot; ' + escapeHtml(d.hour_label) + '</strong>'
+                  + badge
+                  + '</div>'
+                  + '<div style="font-size:.9em; white-space:normal;">' + summaryHtml + '</div>'
+                  + '</div></div>';
+              });
+              listEl.innerHTML = html;
+            })
+            .catch(() => {
+              kejadianLoaded = true;
+              listEl.innerHTML = '<div class="alert alert-danger">Gagal menghubungi server.</div>';
+            });
+        }
+
+        kejadianTab.addEventListener('click', function () {
+          if (!kejadianLoaded) loadKejadian();
+        });
+        if (refreshBtn) {
+          refreshBtn.addEventListener('click', function () { loadKejadian(); });
+        }
+      })();
 
       document.getElementById('liveChatModal').addEventListener('shown.bs.modal', function() {
         const activeTab = document.querySelector('#liveChatTabs [data-tab-target].active');

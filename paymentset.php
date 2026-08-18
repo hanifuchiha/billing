@@ -499,15 +499,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['simpan_invoice_genera
         }
 
         if ($domain_runtime !== '' && function_exists('shell_exec')) {
-            // Cron Fixed Due Date -- jadwal generate ("Mulai Tanggal"/scheduleMode)
-            // tetap dilakukan DI DALAM invoice_generator_penagihan_*.php sendiri
-            // (lihat $fixedDueDateInRange), bukan lewat field hari di crontab.
+            // Kedua cron (Fixed Due Date & Rolling/Monthversary) SELALU jalan
+            // harian di crontab (jam/menit di atas) -- keputusan "apakah SUDAH
+            // waktunya generate" sepenuhnya dihitung DI DALAM script masing-masing
+            // via setting "days_before_due" (Terbit H- sblm jatuh tempo), SATU
+            // setting yang sama dipakai kedua mode. Field jadwal kalender lama
+            // (schedule/start_day, "Mode Jadwal"/"Mulai Tanggal") sudah tidak
+            // dipakai lagi oleh invoice_generator_penagihan_*.php.
             $invoice_cron_job = "$invoice_generate_minute $invoice_generate_hour * * * curl $domain_runtime/crm/billing/notifbot/notifphp/invoice_generator_penagihan_$username.php > /dev/null 2>&1";
-
-            // Cron Rolling & Monthversary -- SELALU harian, terlepas dari Mode
-            // Jadwal/Mulai Tanggal (itu punya Fixed Due Date). Tiap pelanggan
-            // digenerate sendiri N hari sebelum jatuh tempo masing-masing (setting
-            // days_before_due, dibaca DI DALAM invoice_generator_rolling_monthversary_*.php).
             $invoice_cron_job_rm = "$invoice_generate_minute $invoice_generate_hour * * * curl $domain_runtime/crm/billing/notifbot/notifphp/invoice_generator_rolling_monthversary_$username.php > /dev/null 2>&1";
 
             $current_crontab_wwwdata = shell_exec('crontab -u www-data -l 2>&1');
@@ -1466,7 +1465,44 @@ $has_dompetx = payment_gateway_table_has_row($conn, 'dompetx', $ceknama);
             </ul>
         </div>
 
-        
+        <?php
+        // WAN IP server billing -- sama utk SEMUA payment gateway di bawah (bukan
+        // per-gateway), krn ini IP outbound yg dipakai server saat curl ke API
+        // gateway manapun. Ditampilkan supaya admin tinggal copy-paste ke kolom
+        // IP Whitelist di dashboard masing-masing gateway (kalau gatewaynya
+        // mewajibkan whitelist IP, mis. beberapa mode Xendit/Midtrans/Duitku).
+        function paymentset_get_wan_ip(): string
+        {
+            $ch = curl_init('https://api.ipify.org');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_TIMEOUT => 5,
+                CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
+            ]);
+            $ip = curl_exec($ch);
+            $error = curl_error($ch);
+            curl_close($ch);
+            if ($error || !is_string($ip) || !filter_var(trim($ip), FILTER_VALIDATE_IP)) {
+                return '';
+            }
+            return trim($ip);
+        }
+        $paymentset_wan_ip = paymentset_get_wan_ip();
+        ?>
+        <div class="card-body pb-0">
+            <div class="d-flex align-items-center flex-wrap gap-2 mb-0 p-3" style="font-size: 0.95em; background-color: #fff3cd; border-left: 4px solid var(--orange); border-radius: 6px;">
+                <i class="fas fa-network-wired" style="color: var(--orange);"></i>
+                <span><strong>WAN IP server billing ini:</strong></span>
+                <?php if ($paymentset_wan_ip !== ''): ?>
+                    <code id="paymentsetWanIp" style="font-size: 1.15em; font-weight: 700; background: #212529; color: #fff; padding: 3px 10px; border-radius: 4px;"><?php echo htmlspecialchars($paymentset_wan_ip); ?></code>
+                    <button type="button" class="btn btn-sm btn-dark" onclick="navigator.clipboard.writeText('<?php echo htmlspecialchars($paymentset_wan_ip, ENT_QUOTES); ?>'); this.textContent='Tersalin!'; setTimeout(() => this.textContent='Salin', 1500);">Salin</button>
+                    <span class="text-muted">-- pakai IP ini kalau payment gateway (Xendit/Midtrans/Duitku/dll) mewajibkan IP Whitelist di dashboard mereka.</span>
+                <?php else: ?>
+                    <span class="text-muted">Gagal mengambil WAN IP (server tidak bisa akses api.ipify.org). Coba muat ulang halaman.</span>
+                <?php endif; ?>
+            </div>
+        </div>
+
         <div class="card-body tab-content">
             <div id="manualBank" class="active">
                 <h6 style="font-size: 0.95em; font-weight: 600;">Pembayaran Manual Bank</h6>
@@ -3034,26 +3070,15 @@ if (!empty($paymentset_messages)) {
                     </div>
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label d-block">Mode Jadwal</label>
-                    <div class="form-check form-switch m-0">
-                        <input class="form-check-input" type="checkbox" id="paymentset_invoice_generate_daily" name="invoice_generate_daily" <?php echo $invoice_generate_schedule === 'daily' ? 'checked' : ''; ?>>
-                        <label class="form-check-label" for="paymentset_invoice_generate_daily">Setiap hari</label>
-                    </div>
-                </div>
-                <div class="col-md-2" id="paymentset_invoice_start_day_wrapper">
-                    <label class="form-label" for="paymentset_invoice_generate_start_day">Mulai Tanggal</label>
-                    <input type="number" min="1" max="31" class="form-control" id="paymentset_invoice_generate_start_day" name="invoice_generate_start_day" value="<?php echo (int)$invoice_generate_start_day; ?>">
-                </div>
-                <div class="col-md-2">
-                    <label class="form-label" for="paymentset_invoice_generate_hour">Jam</label>
+                    <label class="form-label" for="paymentset_invoice_generate_hour">Jam Cron Jalan</label>
                     <input type="number" min="0" max="23" class="form-control" id="paymentset_invoice_generate_hour" name="invoice_generate_hour" value="<?php echo (int)$invoice_generate_hour; ?>">
                 </div>
-                <div class="col-md-2">
-                    <label class="form-label" for="paymentset_invoice_generate_minute">Menit</label>
+                <div class="col-md-3">
+                    <label class="form-label" for="paymentset_invoice_generate_minute">Menit Cron Jalan</label>
                     <input type="number" min="0" max="59" class="form-control" id="paymentset_invoice_generate_minute" name="invoice_generate_minute" value="<?php echo (int)$invoice_generate_minute; ?>">
                 </div>
                 <div class="col-md-3">
-                    <label class="form-label" for="paymentset_invoice_generate_days_before_due">Terbit H- sblm jatuh tempo (Monthversary/Rolling)</label>
+                    <label class="form-label" for="paymentset_invoice_generate_days_before_due">Terbit H- sblm jatuh tempo</label>
                     <input type="number" min="0" max="30" class="form-control" id="paymentset_invoice_generate_days_before_due" name="invoice_generate_days_before_due" value="<?php echo (int)$invoice_generate_days_before_due; ?>">
                 </div>
                 <div class="col-md-3">
@@ -3061,7 +3086,7 @@ if (!empty($paymentset_messages)) {
                 </div>
             </div>
             <div class="form-text mt-2">
-                "Mulai Tanggal"/"Mode Jadwal" berlaku untuk pelanggan <b>Fixed Due Date</b> (jadwal kalender sama utk semua). Field <b>"Terbit H- sebelum jatuh tempo"</b> khusus utk pelanggan <b>Monthversary</b> &amp; <b>Rolling</b> -- invoice PENAGIHAN mereka digenerate N hari sebelum tanggal jatuh tempo MASING-MASING pelanggan, terlepas dari Mode Jadwal/Mulai Tanggal di atas. Jika mode harian aktif, field Mulai Tanggal akan otomatis nonaktif.
+                Cron jalan tiap hari jam:menit di atas, lalu cek per-pelanggan: invoice PENAGIHAN cuma diterbitkan begitu sisa hari ke tanggal jatuh tempo <= <b>"Terbit H- sblm jatuh tempo"</b>. Berlaku SAMA utk ketiga tipe tempo -- <b>Fixed Due Date</b> (jatuh tempo = tanggal "jatuh_tempo" di Konfigurasi Fixed Due Date, sama utk semua pelanggan) maupun <b>Monthversary</b> &amp; <b>Rolling</b> (jatuh tempo per-pelanggan masing-masing). Invoice yang kadung terbit lebih awal dari H- ini (sisa hari masih lebih banyak dari setting) otomatis dibersihkan oleh cron tanpa mengganggu tagihan yang sudah dekat/lewat jatuh tempo.
             </div>
         </form>
     </div>
@@ -3078,19 +3103,6 @@ if (!empty($paymentset_messages)) {
     document.addEventListener('DOMContentLoaded', function() {
         const tabs = document.querySelectorAll('#paymentTabs .nav-link');
         const contents = document.querySelectorAll('.tab-content > div');
-        const invoiceDailyToggle = document.getElementById('paymentset_invoice_generate_daily');
-        const invoiceStartDayWrapper = document.getElementById('paymentset_invoice_start_day_wrapper');
-        const invoiceStartDayInput = document.getElementById('paymentset_invoice_generate_start_day');
-
-        if (invoiceDailyToggle && invoiceStartDayWrapper && invoiceStartDayInput) {
-            const syncInvoiceUi = function() {
-                const isDaily = invoiceDailyToggle.checked;
-                invoiceStartDayInput.disabled = isDaily;
-                invoiceStartDayWrapper.style.opacity = isDaily ? '0.55' : '1';
-            };
-            invoiceDailyToggle.addEventListener('change', syncInvoiceUi);
-            syncInvoiceUi();
-        }
 
         tabs.forEach(tab => {
             tab.addEventListener('click', function(e) {

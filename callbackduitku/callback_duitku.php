@@ -8,6 +8,7 @@ require "../notifbot/phpmailer/classes/class.phpmailer.php";
 require_once '../notifbot/bot_selector_helper.php';
 require_once __DIR__ . '/../radius_sync_lib.php';
 require_once __DIR__ . '/../notifbot/notifphp/tagihan_status_lib.php';
+require_once __DIR__ . '/../notifbot/notif_template_helper.php';
 
 ///////////////////////////////TANGGAL INDONESIA/////////////////////////////////////
 // ================= Fungsi =================
@@ -493,7 +494,9 @@ if (!in_array($PAKET, ["TOPUP", "TOPUP_MITRA"])) {
 
                 // $session = $botname;
                 $to = $WHATSAPPELANGGAN;
-                $text = "[INI ADALAH PESAN OTOMATIS]\n*PEMBAYARAN BERHASIL*\n\nHai bpk/ibu $NAMAPELANGGAN \nPembayaran anda Telah kami terima.\n\n\n\nDengan detail :\n- ID Pelanggan : $USERNAMETRANASAKSI \n- Nama Pelanggan : $NAMAPELANGGAN \n- Paket langganan : $PAKETPELANGGAN \n- No Whatsapp : $WHATSAPPELANGGAN \n- E-mail : $EMAILPELANGGAN \n- Alamat : $ALAMATPELANGGAN \n\n\nData transaksi :\n- Periode pengunaan : $periode\n- Tanggal bayar : $tanggalbayar\n- Status INTERNET : AKTIF\n- Status Pembayaran : $cekstatus \n- Nominal Bayar : $amount \n- No Ref : $invoiceref \n- Id pelanggan : $USERNAMETRANASAKSI \n- Metode pembayaran : $payment_method \n- Kode metode : $payment_method_code\n\nDownload bukti pembayaran : https://quenbytekniksejahtera.com/crm/billing/riwayatTransaction.php?idpel=$USERNAMETRANASAKSI\n\nPastikan modem Anda dalam keadaan menyala normal dan tidak ada lampu indikator merah (LOS).\n\nJika dalam waktu 1 jam setelah notifikasi ini internet belum aktif,Silakan hubungi kami, atau cabut dan pasang kembali adaptor listrik modem Anda untuk mempercepat proses aktivasi.\n\nDemikian yang dapat kami sampaikan, terima kasih \n\nTerima kasih telah mempercayai kami dalam kebutuhan internet Anda\nSalam $BRANDPELANGGAN WIFI";
+                $linkBukti = "Download bukti pembayaran : https://quenbytekniksejahtera.com/crm/billing/riwayatTransaction.php?idpel=$USERNAMETRANASAKSI";
+                $pembayaranBerhasilTemplate = notifTemplateGetPembayaranBerhasil($username);
+                $text = notifTemplateReplaceVars($pembayaranBerhasilTemplate, get_defined_vars());
 
                 $session = $botname; // Nama sesi yang telah Anda buat
 
@@ -979,7 +982,9 @@ echo "OK";
                     $notification_sent = true;
 
                     $to = $WHATSAPPELANGGAN;
-                    $text = "[INI ADALAH PESAN OTOMATIS]\n*PEMBAYARAN BERHASIL*\n\nHai bpk/ibu $NAMAPELANGGAN \nPembayaran anda Telah kami terima.\n\n\n\nDengan detail :\n- ID Pelanggan : $USERNAMETRANASAKSI \n- Nama Pelanggan : $NAMAPELANGGAN \n- Paket langganan : $PAKETPELANGGAN \n- No Whatsapp : $WHATSAPPELANGGAN \n- E-mail : $EMAILPELANGGAN \n- Alamat : $ALAMATPELANGGAN \n\n\nData transaksi :\n- Periode pengunaan : $periode\n- Tanggal bayar : $tanggalbayar\n- Status INTERNET : AKTIF\n- Status Pembayaran : $cekstatus \n- Nominal Bayar : $amount \n- No Ref : $invoiceref \n- Id pelanggan : $USERNAMETRANASAKSI \n- Metode pembayaran : $payment_method \n- Kode metode : $payment_method_code\n\nDownload bukti pembayaran : https://quenbytekniksejahtera.com/mybilling/cetakbukti.php?invoice=$invoiceref\n\nPastikan modem Anda dalam keadaan menyala normal dan tidak ada lampu indikator merah (LOS).\n\nJika dalam waktu 1 jam setelah notifikasi ini internet belum aktif,Silakan hubungi kami, atau cabut dan pasang kembali adaptor listrik modem Anda untuk mempercepat proses aktivasi.\n\nDemikian yang dapat kami sampaikan, terima kasih \n\nTerima kasih telah mempercayai kami dalam kebutuhan internet Anda\nSalam $BRANDPELANGGAN";
+                    $linkBukti = "Download bukti pembayaran : https://quenbytekniksejahtera.com/mybilling/cetakbukti.php?invoice=$invoiceref";
+                    $pembayaranBerhasilTemplate = notifTemplateGetPembayaranBerhasil($username);
+                    $text = notifTemplateReplaceVars($pembayaranBerhasilTemplate, get_defined_vars());
 
                     // Nomor tujuan dan pesan
                     $phone = "$to@s.whatsapp.net"; // Format: nomor@s.whatsapp.net

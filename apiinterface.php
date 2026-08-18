@@ -1311,8 +1311,27 @@ switch ($type) {
         $paket = $row['PAKET'];
         $area = $row['AREA'];
         $pemilik = $row['PEMILIK'];
+
+        // Pagar "paket masih dipakai" -- sebelumnya TIDAK ADA di sini (padahal
+        // proses/deletepackages.php punya). Menghapus /ppp/profile yang masih
+        // direferensikan /ppp/secret meninggalkan referensi menggantung: kolom
+        // profile secret pelanggan berubah jadi "*15"/unknown di Winbox maupun
+        // saat dibaca lewat API.
+        $paketEscDel = mysqli_real_escape_string($conn, $paket);
+        $pemilikEscDel = mysqli_real_escape_string($conn, $pemilik);
+        $areaEscDel = mysqli_real_escape_string($conn, $area);
+        $cekPakai = mysqli_query($conn, "SELECT COUNT(*) AS jumlah FROM pelanggan
+                                         WHERE PAKET = '$paketEscDel'
+                                           AND PEMILIK = '$pemilikEscDel'
+                                           AND AREA = '$areaEscDel'");
+        $rowPakai = $cekPakai ? mysqli_fetch_assoc($cekPakai) : ['jumlah' => 0];
+        if ((int) $rowPakai['jumlah'] > 0) {
+            sendJsonResponse(['error' => 'Package still used by ' . (int) $rowPakai['jumlah'] . ' customer(s)'], 409);
+        }
+
         // Hapus dari MikroTik
         require '../routeros_api.class.php';
+        require_once __DIR__ . '/proses/paket_profile_helpers.php';
         $API = new RouterosAPI();
         $sql_servers = "SELECT * FROM server WHERE AREA = '$area' AND PEMILIK = '$pemilik'";
         $query_servers = mysqli_query($conn, $sql_servers);
@@ -1320,6 +1339,15 @@ switch ($type) {
             $host = $server_row['IP'];
             $password = $server_row['PASSWORD'];
             if ($API->connect($host, $pemilik, $password)) {
+                // Pagar kedua, di router: bisa saja ada secret yang tidak
+                // tercatat di tabel pelanggan (mis. pelanggan berhenti yang
+                // secret-nya masih tertinggal) tapi masih memakai profile ini.
+                $stillUsed = mikrotikCountSecretsUsingProfile($API, $paket);
+                if ($stillUsed > 0) {
+                    $API->disconnect();
+                    sendJsonResponse(['error' => 'Package still used by ' . $stillUsed . ' PPP secret(s) on router ' . $host], 409);
+                }
+
                 // Hapus PPP Profile
                 $profiles = $API->comm("/ppp/profile/print", ["?name" => $paket]);
                 foreach ($profiles as $p) {

@@ -55,6 +55,12 @@ $default_jobs = [
         'script_path' => 'getdata/server-cache-background.php',
         'interval_minutes' => 5,
         'description' => 'Server Ping Status'
+    ],
+    [
+        'job_name' => 'repair_dangling_pppoe',
+        'script_path' => 'getdata/cron_repair_dangling_pppoe_profile.php',
+        'interval_minutes' => 60,
+        'description' => 'Perbaiki otomatis PPP Profile pelanggan yang jadi referensi menggantung ("*15"/unknown)'
     ]
 ];
 

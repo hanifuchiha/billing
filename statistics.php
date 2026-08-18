@@ -587,10 +587,24 @@ $trx_tanggal_expr_t = "STR_TO_DATE(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
         return ['month' => (int)$monthMap[$monthName], 'year' => $year];
       };
 
+      // BUG (fixed, sama persis dgn pelanggan_menunggak.php::getFirstDueDateForPrabayarFixedByLastUsage()):
+      // $usageValue = PENGUNAAN transaksi BERHASIL TERAKHIR (periode yang SUDAH
+      // DIBAYAR), bukan yang belum dibayar. SEBELUMNYA function ini balikin jatuh
+      // tempo dari bulan/tahun $usageValue APA ADANYA (bulan yang sudah lunas)
+      // sbg "jatuh tempo pertama yang belum dibayar" -- akibatnya cek siklus
+      // pertama langsung ketemu pembayaran & bulan_nunggak selalu ke-floor ke 1,
+      // "Nunggak 2 Bulan+" jadi tidak pernah akurat utk prabayar+Fixed Due Date.
+      // Jatuh tempo PERTAMA yang belum dibayar = 1 bulan SETELAH periode lunas ini.
       $getFirstDueFixedByUsage = function ($usageValue, $fixedDay) use ($parseIndoMonthYear, $buildMonthlyDate) {
         $parsed = $parseIndoMonthYear((string)$usageValue);
         if (!$parsed) return null;
-        return $buildMonthlyDate((int)$parsed['year'], (int)$parsed['month'], (int)$fixedDay);
+        $dueMonth = (int)$parsed['month'] + 1;
+        $dueYear = (int)$parsed['year'];
+        if ($dueMonth > 12) {
+          $dueMonth = 1;
+          $dueYear++;
+        }
+        return $buildMonthlyDate($dueYear, $dueMonth, (int)$fixedDay);
       };
 
       $getReferenceDate = function ($row) {
@@ -737,8 +751,39 @@ $trx_tanggal_expr_t = "STR_TO_DATE(TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
           $statsTanggalPasangRow = trim((string)($row['TANGGALPASANG'] ?? ''));
           $statsTodayTsBaru = strtotime($today);
           $statsPasangTsBaru = strtotime($statsTanggalPasangRow);
+          // BUG (fixed, sama persis dgn pelanggan_menunggak.php): bulan_nunggak
+          // SEBELUMNYA di-hardcode ke 1 di sini apapun yang terjadi -- padahal
+          // pelanggan prabayar yang TIDAK PERNAH tercatat bayar (last_paid
+          // kosong) bisa saja sudah terpasang berbulan-bulan lalu. Hitung siklus
+          // SUNGGUHAN sejak TANGGALPASANG (walk maju per siklus, cek pembayaran
+          // BERHASIL tiap siklus), bukan cuma asumsikan 1.
           if ($statsTanggalPasangRow !== '' && $statsTodayTsBaru !== false && $statsPasangTsBaru !== false) {
             $bulanTunggak = 1;
+            $statsIdpelNeverPaid = (string)($row['IDPEL'] ?? '');
+            if ($statsIdpelNeverPaid !== '') {
+              $cursor = $statsTanggalPasangRow;
+              $count = 0;
+              $foundPayment = false;
+              $safety = 0;
+              while (strtotime($cursor) !== false && strtotime($cursor) <= $statsTodayTsBaru && $safety < 600) {
+                $safety++;
+                $cycleEnd = $getNextDue($row, $cursor, $fixedDueDateDay);
+                if (empty($cycleEnd) || strtotime($cycleEnd) === false) {
+                  break;
+                }
+                if ($hasSuccessfulPaymentInPeriod($statsIdpelNeverPaid, $cursor, $cycleEnd)) {
+                  $foundPayment = true;
+                  break;
+                }
+                $count++;
+                $cursor = $cycleEnd;
+              }
+              if ($foundPayment) {
+                $bulanTunggak = 0;
+              } elseif ($count >= 1) {
+                $bulanTunggak = $count;
+              }
+            }
           }
         } elseif ($shouldCount($row, $today)) {
           $reference = $getReferenceDate($row);

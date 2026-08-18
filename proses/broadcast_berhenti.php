@@ -40,6 +40,10 @@ $deviceId = trim((string)$sender);
 // Ambil filter bulan & tahun dari POST (dari form), atau session sebagai fallback
 $filter_bulan = isset($_POST['filter_bulan']) ? $_POST['filter_bulan'] : (isset($_SESSION['filter_bulan']) ? $_SESSION['filter_bulan'] : date('m'));
 $filter_tahun = isset($_POST['filter_tahun']) ? $_POST['filter_tahun'] : (isset($_SESSION['filter_tahun']) ? $_SESSION['filter_tahun'] : date('Y'));
+$filter_area = isset($_POST['filter_area']) ? trim((string)$_POST['filter_area']) : (isset($_SESSION['filter_area']) ? (string)$_SESSION['filter_area'] : 'all');
+if ($filter_area === '') {
+    $filter_area = 'all';
+}
 
 ?>
 
@@ -71,7 +75,7 @@ $filter_tahun = isset($_POST['filter_tahun']) ? $_POST['filter_tahun'] : (isset(
           <!-- Info Filter -->
           <div class="alert alert-info">
             <h6><i class="fas fa-filter me-2"></i>Filter yang Digunakan:</h6>
-            <p class="mb-0">Bulan: <strong><?php echo $filter_bulan; ?></strong> | Tahun: <strong><?php echo $filter_tahun; ?></strong></p>
+            <p class="mb-0">Bulan: <strong><?php echo $filter_bulan; ?></strong> | Tahun: <strong><?php echo $filter_tahun; ?></strong> | Area: <strong><?php echo $filter_area === 'all' ? 'Semua Area' : htmlspecialchars($filter_area); ?></strong></p>
           </div>
 
           <!-- Debug Info -->
@@ -84,12 +88,23 @@ $filter_tahun = isset($_POST['filter_tahun']) ? $_POST['filter_tahun'] : (isset(
                 <div class="card-body">
                   <code style="font-size: 12px; word-break: break-all;">
                     <?php
-                    // Ambil daftar nowa pelanggan berhenti
-                    $current_user_id = isset($_SESSION['id']) ? (int)$_SESSION['id'] : 0;
-                    $queryServerId = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE user_id = $current_user_id");
+                    // Ambil daftar nowa pelanggan berhenti -- scope ke pemilik server milik
+                    // user yang login, dan kalau ASSISTANT dibatasi lagi ke AREA yang
+                    // di-assign (pola sama seperti daftar_pelanggan_berhenti.php). Filter
+                    // Area dari dropdown (kalau dipilih) diterapkan sama persis di sini,
+                    // supaya penerima broadcast konsisten dengan yang tampil di daftar.
+                    $areaScopeSqlBerhentiBroadcast = ($AKSES === 'ASSISTANT' && isset($area_list) && trim((string)$area_list) !== '')
+                        ? "AREA IN ($area_list)"
+                        : "user_id = " . (int)$current_user_id;
+                    if ($filter_area !== 'all') {
+                        $areaScopeSqlBerhentiBroadcast .= " AND AREA = '" . mysqli_real_escape_string($conn, $filter_area) . "'";
+                    }
                     $userServerIds = [];
-                    while($row = mysqli_fetch_assoc($queryServerId)) {
-                        $userServerIds[] = "'".$row['PEMILIK']."'";
+                    $queryServerId = mysqli_query($conn, "SELECT DISTINCT PEMILIK FROM server WHERE $areaScopeSqlBerhentiBroadcast");
+                    if ($queryServerId) {
+                        while ($row = mysqli_fetch_assoc($queryServerId)) {
+                            $userServerIds[] = "'".$row['PEMILIK']."'";
+                        }
                     }
                     $userServerList = count($userServerIds) > 0 ? implode(",", $userServerIds) : "''";
 

@@ -440,6 +440,7 @@ document.addEventListener("DOMContentLoaded", function() {
                                         $query = "SELECT id, PAKET FROM paket WHERE PEMILIK IN ($server_list)";
                                         $result = mysqli_query($conn, $query);
                                         $paketFilterRows = reseller_filter_rows($conn, reseller_collect_rows($result), 'broadband');
+                                        $paketFilterRows = paketVisibilityFilterRows($paketFilterRows, $assistant_hidden_paket_broadband, 'PAKET');
                                         $paketFilterSeen = [];
                                         foreach ($paketFilterRows as $row) {
                                             $paketshow = htmlspecialchars($row['PAKET'], ENT_QUOTES, 'UTF-8');
@@ -1348,6 +1349,7 @@ if($AKSES=='USER')
                                                                         $query = "SELECT * FROM paket WHERE `PEMILIK` = '$server' AND `AREA` = '$area'";
                                                                         $result = mysqli_query($conn, $query);
                                                                         $editPaketRows = reseller_filter_rows($conn, reseller_collect_rows($result), 'broadband');
+                                                                        $editPaketRows = paketVisibilityFilterRows($editPaketRows, $assistant_hidden_paket_broadband, 'PAKET');
 
                                                                         if (count($editPaketRows) > 0) {
                                                                             echo '<option value="">-- Pilih Packages --</option>';

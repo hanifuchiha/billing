@@ -383,7 +383,57 @@ if ($action === 'approve') {
     $stmt_upd->execute();
     $stmt_upd->close();
 
-    echo json_encode(['success' => true, 'message' => 'Provisioning ' . $prov['idpel'] . ' berhasil di-approve dan ditambahkan ke pelanggan aktif']);
+    // Kirim notif WA "Notifikasi Registrasi Pelanggan Baru" (Notification
+    // Setting) -- SEBELUMNYA hanya terkirim kalau pelanggan ditambah manual
+    // lewat addcustomer.php, sama sekali tidak pernah terkirim utk pelanggan
+    // yang masuk lewat approve provisioning (padahal sudah aktif di tabel
+    // pelanggan). Pakai template & pola kirim WA yang SAMA persis dgn
+    // addcustomer.php (via helper notif_template_helper.php), scope ke
+      // $prov['server_pemilik'] (tenant pemilik server, BUKAN $ceknama yang
+    // approve -- bisa saja ASSISTANT yang approve utk server tenant lain).
+    // Gagal kirim TIDAK menggagalkan approve (approve pelanggan sudah pasti
+    // berhasil di atas), tapi HARUS dicatat -- sebelumnya try/catch di sini
+    // menelan SEMUA error diam-diam (termasuk kegagalan biasa spt bot belum
+    // dikonfigurasi/NOWA kosong), jadi tidak ada cara tahu kenapa notif tidak
+    // terkirim. Sekarang hasilnya di-log ke error_log() PHP & diikutkan di
+    // response JSON (field notif_registrasi) supaya kelihatan dari Network tab.
+    $notifRegistrasiDebug = ['attempted' => false];
+    try {
+        require_once __DIR__ . '/notifbot/notif_template_helper.php';
+        $configForNotif = file_exists(__DIR__ . '/config.json') ? json_decode(file_get_contents(__DIR__ . '/config.json'), true) : [];
+        $registrasiTemplate = notifTemplateGetSection((string)$prov['server_pemilik'], 'REGISTRASI');
+        $registrasiVars = [
+            'customerID' => (string)$prov['idpel'],
+            'customerName' => (string)$prov['nama'],
+            'packages' => (string)$prov['paket'],
+            'tanggalpasang' => (string)$prov['tanggal_pasang'],
+            'passwordPPPOE' => (string)$prov['password_pppoe'],
+            'whatsappedit' => (string)$prov['nowa'],
+            'email' => (string)$prov['email'],
+            'address' => (string)$prov['alamat'],
+            'BRAND' => (string)($prov['server_brand'] ?? ''),
+            'odp' => (string)($prov['odp'] ?? ''),
+            'area' => (string)$prov['area'],
+            'coordinates' => (string)($prov['tikor'] ?? ''),
+            'URL' => (string)($configForNotif['domain'] ?? ''),
+            'sales' => (string)($prov['sales'] ?? ''),
+        ];
+        $registrasiMessage = notifTemplateReplaceVars($registrasiTemplate, $registrasiVars);
+        $notifResult = notifSendWhatsappViaBot($conn, (string)$prov['server_pemilik'], (string)$prov['nowa'], $registrasiMessage, 'pendaftaran');
+        $notifRegistrasiDebug = [
+            'attempted' => true,
+            'pemilik' => (string)$prov['server_pemilik'],
+            'nowa' => (string)$prov['nowa'],
+            'success' => (bool)($notifResult['success'] ?? false),
+            'message' => (string)($notifResult['message'] ?? ''),
+        ];
+        error_log('[provisioning approve] Notif registrasi ' . $prov['idpel'] . ': ' . json_encode($notifRegistrasiDebug));
+    } catch (\Throwable $eNotifRegistrasi) {
+        $notifRegistrasiDebug = ['attempted' => true, 'success' => false, 'message' => 'Exception: ' . $eNotifRegistrasi->getMessage()];
+        error_log('[provisioning approve] Notif registrasi ' . $prov['idpel'] . ' EXCEPTION: ' . $eNotifRegistrasi->getMessage());
+    }
+
+    echo json_encode(['success' => true, 'message' => 'Provisioning ' . $prov['idpel'] . ' berhasil di-approve dan ditambahkan ke pelanggan aktif', 'notif_registrasi' => $notifRegistrasiDebug]);
     exit;
 }
 

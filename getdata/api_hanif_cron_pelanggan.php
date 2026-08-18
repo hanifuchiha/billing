@@ -150,8 +150,6 @@ $summary = [
     'customers_failed' => 0,
     'sites_created' => 0,
     'sites_create_failed' => 0,
-    'sites_renamed' => 0,
-    'sites_rename_failed' => 0,
     'transaksi_synced' => 0,
     'transaksi_failed' => 0,
     'transaksi_skipped_missing_bukti' => 0,
@@ -282,87 +280,6 @@ function resolveSite(string $area, array $remoteSiteByName, array $overrideMap):
     }
 
     return null;
-}
-
-function remoteSiteKey(string $source, int $idSite): string
-{
-    return strtolower(trim($source)) . ':' . $idSite;
-}
-
-function normalizeRemoteSite(array $site, string $fallbackName = ''): ?array
-{
-    $idSite = (int)($site['site_ref_id'] ?? ($site['id_site'] ?? ($site['id'] ?? 0)));
-    if ($idSite <= 0) {
-        return null;
-    }
-
-    return [
-        'source' => (string)($site['source'] ?? 'site'),
-        'id_site' => $idSite,
-        'site_name' => (string)($site['site_name'] ?? ($site['nama_site'] ?? $fallbackName)),
-    ];
-}
-
-function resolveSiteFromStoredRef(array $row, ?array $existingRemote, array $remoteSiteById): ?array
-{
-    $source = trim((string)($row['KEUANGAN_SITE_SOURCE'] ?? 'site'));
-    if ($source === '') {
-        $source = 'site';
-    }
-
-    $idSite = (int)($row['KEUANGAN_SITE_REF_ID'] ?? 0);
-    if ($idSite <= 0 && $existingRemote) {
-        $idSite = (int)($existingRemote['site_ref_id'] ?? ($existingRemote['site']['site_ref_id'] ?? 0));
-        $source = (string)($existingRemote['site_source'] ?? ($existingRemote['site']['source'] ?? $source));
-    }
-    if ($idSite <= 0) {
-        return null;
-    }
-
-    $key = remoteSiteKey($source, $idSite);
-    if (isset($remoteSiteById[$key])) {
-        return $remoteSiteById[$key];
-    }
-
-    return [
-        'source' => $source,
-        'id_site' => $idSite,
-        'site_name' => trim((string)($row['AREA'] ?? '')),
-    ];
-}
-
-function syncRemoteSiteNameIfNeeded(array $site, array $row, array &$summary): array
-{
-    $areaName = trim((string)($row['AREA'] ?? ''));
-    $currentName = trim((string)($site['site_name'] ?? ''));
-    $source = strtolower(trim((string)($site['source'] ?? 'site')));
-    $idSite = (int)($site['id_site'] ?? 0);
-
-    if ($areaName === '' || $idSite <= 0 || $source !== 'site' || $currentName === $areaName) {
-        return $site;
-    }
-
-    $payload = [
-        'id' => $idSite,
-        'nama_site' => $areaName,
-        'alamat' => (string)($row['ALAMAT'] ?? ''),
-        'koordinat' => (string)($row['TIKOR'] ?? ''),
-        'pic_penanggung_jawab' => (string)($row['sales'] ?? ($row['PEMILIK'] ?? '')),
-        'no_kontak' => (string)($row['NOWA'] ?? ''),
-        'keterangan' => 'Diubah otomatis oleh cron sync CRM dari nama lama: ' . $currentName,
-    ];
-
-    $resp = keuHttpRequest('POST', KEU_AREA_SITE_ENDPOINT, $payload);
-    if (in_array($resp['http_code'], [200, 201], true) && !empty($resp['json']['ok'])) {
-        $summary['sites_renamed']++;
-        syncLog("Site id=$idSite di keuangan di-rename dari '$currentName' menjadi '$areaName' mengikuti AREA billing.");
-        $site['site_name'] = $areaName;
-        return $site;
-    }
-
-    $summary['sites_rename_failed']++;
-    syncLog("WARNING: gagal rename site id=$idSite dari '$currentName' ke '$areaName'. HTTP {$resp['http_code']} - " . ($resp['json']['message'] ?? $resp['error']));
-    return $site;
 }
 
 function buildCustomerPayload(array $row, array $site): array
@@ -983,27 +900,16 @@ foreach ($remoteCustomers as $rc) {
 }
 
 $remoteSiteByName = [];
-$remoteSiteById = [];
 foreach ($remoteSitesList as $rs) {
     $sn = trim((string)($rs['site_name'] ?? ''));
     if ($sn !== '') {
         $remoteSiteByName[$sn] = $rs;
-    }
-    $normalized = normalizeRemoteSite($rs, $sn);
-    if ($normalized) {
-        $remoteSiteById[remoteSiteKey($normalized['source'], (int)$normalized['id_site'])] = $normalized;
     }
 }
 foreach ($remoteCustomers as $rc) {
     $siteObj = $rc['site'] ?? null;
     if (is_array($siteObj) && !empty($siteObj['site_name'])) {
         $remoteSiteByName[$siteObj['site_name']] = $siteObj;
-    }
-    if (is_array($siteObj)) {
-        $normalized = normalizeRemoteSite($siteObj, (string)($siteObj['site_name'] ?? ''));
-        if ($normalized) {
-            $remoteSiteById[remoteSiteKey($normalized['source'], (int)$normalized['id_site'])] = $normalized;
-        }
     }
 }
 
@@ -1047,14 +953,7 @@ if (!$resPelanggan) {
             continue;
         }
 
-        $existingRemote = $remoteByIdpel[$idpel] ?? null;
-        $site = resolveSiteFromStoredRef($row, $existingRemote, $remoteSiteById);
-        if ($site) {
-            $site = syncRemoteSiteNameIfNeeded($site, $row, $summary);
-        }
-        if (!$site || empty($site['id_site'])) {
-            $site = resolveSite((string)($row['AREA'] ?? ''), $remoteSiteByName, $overrideMap);
-        }
+        $site = resolveSite((string)($row['AREA'] ?? ''), $remoteSiteByName, $overrideMap);
 
         if (!$site || empty($site['id_site'])) {
             $areaName = trim((string)($row['AREA'] ?? ''));
@@ -1066,7 +965,6 @@ if (!$resPelanggan) {
                         'site_ref_id' => $newSite['id_site'],
                         'site_name' => $newSite['site_name'],
                     ];
-                    $remoteSiteById[remoteSiteKey($newSite['source'], (int)$newSite['id_site'])] = $newSite;
                     $remoteSiteByName[$areaName] = $remoteSiteByName[$newSite['site_name']];
                     $site = $newSite;
                 }
@@ -1093,6 +991,7 @@ if (!$resPelanggan) {
         $payload = buildCustomerPayload($row, $site);
         $payloadHash = md5(json_encode($payload, JSON_UNESCAPED_UNICODE));
 
+        $existingRemote = $remoteByIdpel[$idpel] ?? null;
         $keuanganId = !empty($row['KEUANGAN_ID']) ? (int)$row['KEUANGAN_ID'] : null;
 
         if ($keuanganId === null && $existingRemote) {

@@ -1106,6 +1106,11 @@ window.addEventListener('DOMContentLoaded', function() {
                     <div>Ganti Nama /<br>Password WiFi</div>
                 </a>
             </div>
+            <button type="button" class="cc-call-btn d-none" id="btnOpenCall" title="Telepon CS"
+                style="width:100%; margin-top:10px; padding:14px 10px; border-radius:14px; background:linear-gradient(135deg,#43a047,#2e7d32); box-shadow:0 4px 12px rgba(67,160,71,.35); color:#fff; border:none; font-weight:600; font-size:13px; display:flex; align-items:center; justify-content:center; gap:8px;">
+                <i class="bi bi-telephone-fill" style="font-size:18px;"></i>
+                <span>Telepon CS</span>
+            </button>
         </div>
                <script>
 try {
@@ -1748,5 +1753,7 @@ try {
             <div>Profile</div>
         </a>
     </div>
+
+    <?php include 'cs_call_widget.php'; ?>
 </body>
 </html>

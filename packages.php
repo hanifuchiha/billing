@@ -23,6 +23,11 @@ radiusEnsurePaketProfileSourceColumn($conn);
 // melekat ke paket, otomatis memotong tagihan tiap invoice dibuat.
 require_once __DIR__ . '/reseller_helper.php';
 paketDiskonPermanenEnsureColumns($conn);
+
+// Bootstrap kolom paket.TIPE_LAYANAN (menu Paket Static IP terpisah) --
+// dibutuhkan supaya query listing di bawah bisa mengecualikan paket Static IP.
+require_once __DIR__ . '/staticip_helper.php';
+staticipEnsureSchema($conn);
 ?>
 
 <!-- Cache control meta tags for performance optimization -->
@@ -574,10 +579,12 @@ Dari pool yang terdaftar di menu POOL
                           $userServerIds[] = "'" . $row['PEMILIK'] . "'";
                       }
                       $userServerList = count($userServerIds) > 0 ? implode(",", $userServerIds) : "''";
-                      $sql = "SELECT * FROM paket WHERE `PEMILIK` IN ($userServerList)";
+                      // Paket Static IP (menu Paket Static IP terpisah) tidak boleh nyampur
+                      // ke listing Packages Broadband biasa ini.
+                      $sql = "SELECT * FROM paket WHERE `PEMILIK` IN ($userServerList) AND (`TIPE_LAYANAN` IS NULL OR `TIPE_LAYANAN` != 'PPPOE_STATIC')";
                   } else {
                       // Untuk ASSISTANT, tetap gunakan $area_list
-                      $sql = "SELECT * FROM paket WHERE `AREA` IN ($area_list)";
+                      $sql = "SELECT * FROM paket WHERE `AREA` IN ($area_list) AND (`TIPE_LAYANAN` IS NULL OR `TIPE_LAYANAN` != 'PPPOE_STATIC')";
                   }
                   $query = mysqli_query($conn, $sql);
                   $rawPaketRows = reseller_collect_rows($query);

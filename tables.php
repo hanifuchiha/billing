@@ -2576,6 +2576,17 @@ echo implode("\n", $shareLines);
                                 var selectElement = document.getElementById(selectId);
                                 if (!selectElement || !window.Choices) return;
 
+                                // Simpan nilai yang lagi aktif di <select> ASLI (dari atribut
+                                // `selected` yang PHP render, atau dari pilihan user sebelumnya)
+                                // SEBELUM Choices.js membungkusnya -- SEBELUMNYA data/filter hasil
+                                // pencarian sudah benar (backend baca $_REQUEST dgn benar), tapi
+                                // tampilan dropdown Choices.js tidak ikut menunjukkan pilihan itu.
+                                // Choices.js kadang gagal deteksi `selected` sendiri saat instance
+                                // BARU dibuat dari select yang optionnya banyak/dinamis -- paksa
+                                // sinkron eksplisit lewat setChoiceByValue() di bawah supaya tidak
+                                // bergantung ke auto-detect internalnya.
+                                var currentValue = selectElement.value || '';
+
                                 if (window.tablesSelectChoices[selectId]) {
                                     window.tablesSelectChoices[selectId].destroy();
                                 }
@@ -2588,6 +2599,14 @@ echo implode("\n", $shareLines);
                                     noResultsText: 'Data tidak ditemukan',
                                     noChoicesText: 'Tidak ada pilihan'
                                 });
+
+                                if (currentValue !== '') {
+                                    try {
+                                        window.tablesSelectChoices[selectId].setChoiceByValue(currentValue);
+                                    } catch (e) {
+                                        console.warn('Gagal sinkron pilihan Choices.js utk #' + selectId, e);
+                                    }
+                                }
                             }
 
                             document.addEventListener('DOMContentLoaded', function() {
@@ -2621,6 +2640,12 @@ echo implode("\n", $shareLines);
                                 const areaInput = document.getElementById('area');
                                 const area = areaInput ? (areaInput.value || '').trim() : '';
                                 if (!odpSelect) return;
+                                // Simpan pilihan ODP yang lagi aktif SEBELUM dropdown ditimpa --
+                                // SEBELUMNYA nilai ini hilang begitu saja tiap kali dropdown
+                                // di-refresh (baik krn ganti server, maupun otomatis saat halaman
+                                // dimuat ulang dgn server yang sudah terpilih sebelumnya), krn
+                                // endpoint get_odp.php tidak pernah diberi tahu pilihan aktifnya.
+                                const currentOdpValue = odpSelect.value || '';
                                 if (!server || server === '' || !area) {
                                     // Jika server/area belum dipilih, kembalikan ke daftar awal (semua ODP milik user).
                                     odpSelect.innerHTML = window.tablesInitialOdpHtml || '<option value="">Pilih KODE ODP</option>';
@@ -2629,7 +2654,7 @@ echo implode("\n", $shareLines);
                                     }
                                     return;
                                 }
-                                fetch('getdata/get_odp.php?server=' + encodeURIComponent(server) + '&area=' + encodeURIComponent(area))
+                                fetch('getdata/get_odp.php?server=' + encodeURIComponent(server) + '&area=' + encodeURIComponent(area) + '&selected=' + encodeURIComponent(currentOdpValue))
                                     .then(resp => resp.text())
                                     .then(html => {
                                         odpSelect.innerHTML = html;

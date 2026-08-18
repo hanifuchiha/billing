@@ -129,22 +129,14 @@ if (isset($_POST['toggle_cron'])) {
 $cron_status = getCronStatus();
 
 // ================= Fungsi =================
+require_once __DIR__ . '/radius_status_helper.php';
+
+// getFreeradiusPID() dulu didefinisikan lokal di sini (beda logic dari card
+// "Layanan Radius" di dashboard.php) -- sekarang delegasi ke helper bersama
+// radiusGetFreeradiusPID() supaya halaman ini & dashboard SELALU sinkron.
 function getFreeradiusPID() {
-    // Coba pakai pidof
-    $pid = trim(shell_exec("pidof freeradius"));
-    if($pid != '') return (int)$pid;
-
-    // Alternatif pakai systemctl
-    $output = shell_exec("systemctl show -p MainPID freeradius");
-    if (preg_match('/MainPID=(\d+)/', trim($output), $m)) {
-        return (int)$m[1];
-    }
-
-    // Alternatif pakai pgrep
-    $pid = trim(shell_exec("pgrep -f 'freeradius -X'"));
-    if($pid != '') return (int)$pid;
-
-    return 0;
+    $pid = radiusGetFreeradiusPID();
+    return $pid === null ? 0 : $pid;
 }
 
 function cleanupDuplicateFiles() {
@@ -925,8 +917,11 @@ function toggleSelectAll(source) {
 
 <!-- ====== FreeRADIUS Request Log ====== -->
 <div class="card mb-3">
-    <div class="card-header bg-primary">
+    <div class="card-header bg-primary d-flex justify-content-between align-items-center">
         <h3 class="mb-0">FreeRADIUS Request Log</h3>
+        <button type="button" class="btn btn-sm btn-outline-light" id="btnClearRadiusLog">
+            <i class="fas fa-trash-alt"></i> Clear Log
+        </button>
     </div>
     <div class="card-body">
         <div class="mb-2">
@@ -997,6 +992,25 @@ function toggleSelectAll(source) {
         // Load pertama kali & auto-refresh setiap 20 detik
         loadLog();
         setInterval(loadLog, 20000);
+
+        // ================== Clear Log ==================
+        document.getElementById('btnClearRadiusLog').addEventListener('click', function() {
+            if (!confirm('Kosongkan seluruh FreeRADIUS Request Log? Riwayat yang sudah tersimpan tidak bisa dikembalikan.')) return;
+            const btn = this;
+            btn.disabled = true;
+            fetch('radiuscontrol/clear_radius_log.php', { method: 'POST' })
+                .then(resp => resp.json())
+                .then(res => {
+                    if (!res.success) {
+                        alert(res.message || 'Gagal mengosongkan log.');
+                        return;
+                    }
+                    document.getElementById('log-body').innerHTML = '<tr><td colspan="9" class="text-center">Log sudah dikosongkan.</td></tr>';
+                    loadLog();
+                })
+                .catch(() => alert('Gagal menghubungi server untuk mengosongkan log.'))
+                .finally(() => { btn.disabled = false; });
+        });
         </script>
     </div>
 </div>

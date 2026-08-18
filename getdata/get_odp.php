@@ -3,6 +3,12 @@ include '../cek-sesi.php'; // Pastikan koneksi ke database sudah benar
 // Ambil brand dan area dari GET
 $pemilik = isset($_GET['server']) ? mysqli_real_escape_string($conn, $_GET['server']) : '';
 $area = isset($_GET['area']) ? mysqli_real_escape_string($conn, $_GET['area']) : '';
+// Dropdown ODP di tables.php di-refresh ulang lewat endpoint ini setiap kali
+// server dipilih ATAU halaman dimuat ulang dengan server yang sudah terpilih
+// sebelumnya -- SEBELUMNYA endpoint ini tidak pernah tahu ODP mana yang lagi
+// aktif, jadi opsi yang di-generate TIDAK PERNAH ada yang 'selected', bikin
+// dropdown selalu balik ke "-- Pilih ODP --" walau pengguna sudah pernah pilih.
+$selectedOdp = isset($_GET['selected']) ? trim((string)$_GET['selected']) : '';
 
 // Pastikan tabel relasi odp_server ada (multi-product per ODP)
 $tbl_check = mysqli_query($conn, "SHOW TABLES LIKE 'odp_server'");
@@ -68,13 +74,14 @@ if ($pemilik && $area) {
                 $group_lain[] = $row;
             }
         }
-        $render_group = function($label, $rows) {
+        $render_group = function($label, $rows) use ($selectedOdp) {
             if (empty($rows)) {
                 return;
             }
             echo '<optgroup label="' . htmlspecialchars($label) . '">';
             foreach ($rows as $row) {
-                echo '<option value="' . htmlspecialchars($row['KODE']) . '">' . htmlspecialchars($row['KODE']) . ' ( ' . htmlspecialchars($row['NAME']) . ' )</option>';
+                $isSel = ($selectedOdp !== '' && strcasecmp($selectedOdp, (string)$row['KODE']) === 0) ? ' selected' : '';
+                echo '<option value="' . htmlspecialchars($row['KODE']) . '"' . $isSel . '>' . htmlspecialchars($row['KODE']) . ' ( ' . htmlspecialchars($row['NAME']) . ' )</option>';
             }
             echo '</optgroup>';
         };
@@ -88,7 +95,7 @@ if ($pemilik && $area) {
         $render_group('ODP-JUMPER', $group_jumper);
         $render_group('ODP-RASIO', $group_rasio);
         $render_group('LAIN NYA', $group_lain);
-        echo "<option  value='SEMUA'>ALL ODP</option>";
+        echo "<option value='SEMUA'" . (strcasecmp($selectedOdp, 'SEMUA') === 0 ? ' selected' : '') . ">ALL ODP</option>";
     } else {
         echo "<option disabled value=''>Tidak ada ODP $pemilik $area tersedia</option>";
     }

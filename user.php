@@ -120,8 +120,15 @@ require 'header.php'; ?>
        <?php
         // Logo terpusat di dokumen/logo/ (sejajar crm/). $profile_picture_file = path
         // filesystem untuk file_exists(), $profile_picture = URL web untuk <img src>.
-        $profile_picture_file = __DIR__ . "/../../dokumen/logo/profile-$ceknama.png";
-        $profile_picture = "/dokumen/logo/profile-$ceknama.png";
+        // Assistant yg sudah upload logo sendiri dicoba lebih dulu ($logo_owner_key),
+        // fallback ke logo owner ($ceknama), fallback lagi ke logo.png global.
+        $profile_picture_file = __DIR__ . "/../../dokumen/logo/profile-$logo_owner_key.png";
+        $profile_picture = "/dokumen/logo/profile-$logo_owner_key.png";
+
+        if (!file_exists($profile_picture_file) || strtolower(pathinfo($profile_picture_file, PATHINFO_EXTENSION)) !== 'png') {
+            $profile_picture_file = __DIR__ . "/../../dokumen/logo/profile-$ceknama.png";
+            $profile_picture = "/dokumen/logo/profile-$ceknama.png";
+        }
 
         // Pastikan file harus PNG
         if (!file_exists($profile_picture_file) || strtolower(pathinfo($profile_picture_file, PATHINFO_EXTENSION)) !== 'png') {
@@ -258,6 +265,8 @@ require 'header.php'; ?>
           'btn_trx_download_pdf' => true,
           'btn_trx_hapus' => true,
           'btn_trx_adjust_tanggal' => true,
+          'btn_trx_lihat_bukti' => true,
+          'btn_trx_lihat_paket' => true,
           'buttons_diskon' => true,
           'btn_diskon_simpan' => true,
           'btn_diskon_nonaktifkan' => true,
@@ -268,6 +277,12 @@ require 'header.php'; ?>
           'buttons_struk_setting' => true,
           'btn_struk_simpan' => true,
           'btn_struk_logo' => true,
+          'btn_logo_billing_sendiri' => true,
+          'btn_linkanda_pendaftaran' => true,
+          'btn_linkanda_pelanggan' => true,
+          'btn_linkanda_login_billing' => true,
+          'btn_linkanda_login_hotspot' => true,
+          'btn_linkanda_corporate' => true,
           'buttons_mitra' => true,
           'btn_mitra_tambah' => true,
           'btn_mitra_edit' => true,
@@ -327,6 +342,28 @@ require 'header.php'; ?>
           'btn_telegram_test' => true,
           'btn_telegram_hapus' => true,
           'btn_telegram_save_penerima' => true,
+          'buttons_corporate' => true,
+          'btn_corp_tambah' => true,
+          'btn_corp_edit' => true,
+          'btn_corp_kontrak' => true,
+          'btn_corp_layanan' => true,
+          'btn_corp_invoice' => true,
+          'btn_corp_hapus' => true,
+          'buttons_corporate_kontrak' => true,
+          'btn_corpkontrak_tambah' => true,
+          'btn_corpkontrak_hapus' => true,
+          'buttons_corporate_layanan' => true,
+          'btn_corplayanan_tambah' => true,
+          'btn_corplayanan_edit' => true,
+          'btn_corplayanan_isolir' => true,
+          'btn_corplayanan_hapus' => true,
+          'buttons_transaksicorporate' => true,
+          'btn_trxcorp_tambah' => true,
+          'btn_trxcorp_bayar' => true,
+          'btn_trxcorp_cetak' => true,
+          'btn_trxcorp_hapus' => true,
+          'buttons_corporate_portal_setting' => true,
+          'btn_corppl_simpan' => true,
           'quick_actions' => true,
           'chart_pembayaran' => true,
           'transaksi_harian' => true,
@@ -468,6 +505,8 @@ require 'header.php'; ?>
           'btn_trx_download_pdf' => 'Tombol: Transaction Download PDF Struk',
           'btn_trx_hapus' => 'Tombol: Transaction Hapus',
           'btn_trx_adjust_tanggal' => 'Tombol: Transaction Penyesuaian Tanggal Bayar & Jatuh Tempo (Excel)',
+          'btn_trx_lihat_bukti' => 'Tombol: Transaction Lihat Foto Bukti Pembayaran',
+          'btn_trx_lihat_paket' => 'Tombol: Transaction Lihat Nama Paket (jika tidak dicentang, kolom Paket disembunyikan di daftar Transaksi & Export PDF/Excel)',
           'buttons_diskon' => '🔘 Tombol Diskon',
           'btn_diskon_simpan' => 'Tombol: Diskon Simpan',
           'btn_diskon_nonaktifkan' => 'Tombol: Diskon Nonaktifkan',
@@ -478,6 +517,12 @@ require 'header.php'; ?>
           'buttons_struk_setting' => '🔘 Tombol Pengaturan Struk',
           'btn_struk_simpan' => 'Tombol: Struk Simpan Pengaturan',
           'btn_struk_logo' => 'Tombol: Struk Upload/Hapus Logo',
+          'btn_logo_billing_sendiri' => 'Tombol: Upload/Hapus Logo Billing Sendiri (di halaman Akun Saya, terpisah dari logo owner)',
+          'btn_linkanda_pendaftaran' => 'Tombol: LINK ANDA - Link Pendaftaran Pelanggan Baru',
+          'btn_linkanda_pelanggan' => 'Tombol: LINK ANDA - Link Login Menu Pelanggan',
+          'btn_linkanda_login_billing' => 'Tombol: LINK ANDA - Link LOGIN Billing',
+          'btn_linkanda_login_hotspot' => 'Tombol: LINK ANDA - Link LOGIN Hotspot Pelanggan',
+          'btn_linkanda_corporate' => 'Tombol: LINK ANDA - Link LOGIN Portal Corporate',
           'buttons_mitra' => '🔘 Tombol Mitra Accounts',
           'btn_mitra_tambah' => 'Tombol: Mitra Tambah',
           'btn_mitra_edit' => 'Tombol: Mitra Edit',
@@ -537,6 +582,28 @@ require 'header.php'; ?>
           'btn_telegram_test' => 'Tombol: Telegram Bot Test',
           'btn_telegram_hapus' => 'Tombol: Telegram Bot Hapus',
           'btn_telegram_save_penerima' => 'Tombol: Telegram Bot Simpan Penerima Notif',
+          'buttons_corporate' => '🔘 Tombol Customer Corporate',
+          'btn_corp_tambah' => 'Tombol: Corporate Tambah Perusahaan',
+          'btn_corp_edit' => 'Tombol: Corporate Edit Perusahaan',
+          'btn_corp_kontrak' => 'Tombol: Corporate Buka Halaman Kontrak',
+          'btn_corp_layanan' => 'Tombol: Corporate Buka Halaman Layanan',
+          'btn_corp_invoice' => 'Tombol: Corporate Buka Halaman Invoice',
+          'btn_corp_hapus' => 'Tombol: Corporate Hapus Perusahaan',
+          'buttons_corporate_kontrak' => '🔘 Tombol Kontrak Corporate',
+          'btn_corpkontrak_tambah' => 'Tombol: Kontrak Corporate Tambah',
+          'btn_corpkontrak_hapus' => 'Tombol: Kontrak Corporate Hapus',
+          'buttons_corporate_layanan' => '🔘 Tombol Layanan Corporate',
+          'btn_corplayanan_tambah' => 'Tombol: Layanan Corporate Tambah',
+          'btn_corplayanan_edit' => 'Tombol: Layanan Corporate Edit',
+          'btn_corplayanan_isolir' => 'Tombol: Layanan Corporate Isolir/Aktifkan',
+          'btn_corplayanan_hapus' => 'Tombol: Layanan Corporate Hapus',
+          'buttons_transaksicorporate' => '🔘 Tombol Transaksi Corporate',
+          'btn_trxcorp_tambah' => 'Tombol: Transaksi Corporate Buat Invoice',
+          'btn_trxcorp_bayar' => 'Tombol: Transaksi Corporate Catat Bayar',
+          'btn_trxcorp_cetak' => 'Tombol: Transaksi Corporate Cetak Invoice',
+          'btn_trxcorp_hapus' => 'Tombol: Transaksi Corporate Hapus Invoice',
+          'buttons_corporate_portal_setting' => '🔘 Tombol Pengaturan Portal Corporate',
+          'btn_corppl_simpan' => 'Tombol: Pengaturan Portal Corporate Simpan',
           'quick_actions' => 'Quick Actions',
           'chart_pembayaran' => 'Grafik Pembayaran',
           'transaksi_harian' => 'Transaksi Harian',
@@ -608,6 +675,11 @@ require 'header.php'; ?>
             'btn_portal_' => 'Pengaturan Halaman Pelanggan',
             'btn_system_' => 'System Setting',
             'btn_telegram_' => 'Telegram Bot',
+            'btn_corpkontrak_' => 'Kontrak Corporate',
+            'btn_corplayanan_' => 'Layanan Corporate',
+            'btn_trxcorp_' => 'Transaksi Corporate',
+            'btn_corppl_' => 'Pengaturan Portal Corporate',
+            'btn_corp_' => 'Customer Corporate',
           ];
 
           foreach ($prefixMap as $prefix => $label) {
@@ -656,6 +728,10 @@ require 'header.php'; ?>
             'btn_tiket_' => 'ticketing', 'btn_joblist_' => 'ticketing',
             'buttons_wabot' => 'billing', 'buttons_telegram' => 'billing',
             'btn_wabot_' => 'billing', 'btn_telegram_' => 'billing',
+            'buttons_corporate' => 'customer', 'buttons_corporate_kontrak' => 'customer', 'buttons_corporate_layanan' => 'customer',
+            'btn_corpkontrak_' => 'customer', 'btn_corplayanan_' => 'customer', 'btn_corp_' => 'customer',
+            'buttons_transaksicorporate' => 'financial', 'btn_trxcorp_' => 'financial',
+            'buttons_corporate_portal_setting' => 'customer', 'btn_corppl_' => 'customer',
           ];
           foreach ($prefixCategoryMap as $prefix => $cat) {
             if (strpos($key, $prefix) === 0) {
@@ -819,6 +895,15 @@ if(isset($_GET['edit'])){
         } else {
             $user_assigned_telegram_bots = [];
         }
+
+        if(!empty($user_to_edit['assigned_livechat_areas'])) {
+            $user_assigned_livechat_areas = json_decode($user_to_edit['assigned_livechat_areas'], true);
+            if(!is_array($user_assigned_livechat_areas)) {
+                $user_assigned_livechat_areas = [];
+            }
+        } else {
+            $user_assigned_livechat_areas = [];
+        }
     }
 }
 
@@ -842,6 +927,11 @@ if(isset($_POST['add_user'])){
   $reseller_bw_cost2 = isset($_POST['reseller_bw_cost']) ? (float)$_POST['reseller_bw_cost'] : 0;
   $reseller_bw_ppn_percent2 = isset($_POST['reseller_bw_ppn_percent']) ? (float)$_POST['reseller_bw_ppn_percent'] : 11;
   $reseller_bw_bhp_uso2 = isset($_POST['reseller_bw_bhp_uso']) ? (float)$_POST['reseller_bw_bhp_uso'] : 0;
+  $reseller_cost_scheme2 = isset($_POST['reseller_cost_scheme']) ? trim((string)$_POST['reseller_cost_scheme']) : 'bandwidth';
+  if (!in_array($reseller_cost_scheme2, ['bandwidth', 'omset_percent'], true)) {
+    $reseller_cost_scheme2 = 'bandwidth';
+  }
+  $reseller_omset_percent2 = isset($_POST['reseller_omset_percent']) ? (float)$_POST['reseller_omset_percent'] : 0;
 
   $akses_menu = isset($_POST['menu']) && is_array($_POST['menu']) ? $_POST['menu'] : [];
   $akses_menu = array_values(array_unique(array_filter($akses_menu)));
@@ -881,6 +971,9 @@ if(isset($_POST['add_user'])){
   $assigned_telegram_bots = isset($_POST['assigned_telegram_bots']) ? $_POST['assigned_telegram_bots'] : [];
   $assigned_telegram_bots_json = mysqli_real_escape_string($conn, json_encode($assigned_telegram_bots));
 
+  $assigned_livechat_areas = isset($_POST['assigned_livechat_areas']) ? $_POST['assigned_livechat_areas'] : [];
+  $assigned_livechat_areas_json = mysqli_real_escape_string($conn, json_encode($assigned_livechat_areas));
+
 
 
   // Pastikan $inisial dan $expired_at ada
@@ -888,8 +981,9 @@ if(isset($_POST['add_user'])){
 
   $current_user_id = mysqli_real_escape_string($conn, $current_user_id);
 
-  $sql2 = "INSERT INTO user (USERNAME, PASWORD, STATUS, grup, NOWA, saldo, server, assigned_bots, assigned_telegram_bots, domain, inisial, akses, created_at, expired_at, assistant_role, reseller_price_filter_enabled, reseller_bw_cost, reseller_bw_ppn_percent, reseller_bw_bhp_uso)
-      VALUES ('$username2', '$password2', '$status2', '$current_user_id', '$nowa2', $saldo, '$servers_json', '$assigned_bots_json', '$assigned_telegram_bots_json', '$email2', '$inisial', '$akses_json', '$created_at', '$expired_at', '$assistant_role_esc', $reseller_price_filter_enabled2, $reseller_bw_cost2, $reseller_bw_ppn_percent2, $reseller_bw_bhp_uso2)";
+  $reseller_cost_scheme2_esc = mysqli_real_escape_string($conn, $reseller_cost_scheme2);
+  $sql2 = "INSERT INTO user (USERNAME, PASWORD, STATUS, grup, NOWA, saldo, server, assigned_bots, assigned_telegram_bots, assigned_livechat_areas, domain, inisial, akses, created_at, expired_at, assistant_role, reseller_price_filter_enabled, reseller_bw_cost, reseller_bw_ppn_percent, reseller_bw_bhp_uso, reseller_cost_scheme, reseller_omset_percent)
+      VALUES ('$username2', '$password2', '$status2', '$current_user_id', '$nowa2', $saldo, '$servers_json', '$assigned_bots_json', '$assigned_telegram_bots_json', '$assigned_livechat_areas_json', '$email2', '$inisial', '$akses_json', '$created_at', '$expired_at', '$assistant_role_esc', $reseller_price_filter_enabled2, $reseller_bw_cost2, $reseller_bw_ppn_percent2, $reseller_bw_bhp_uso2, '$reseller_cost_scheme2_esc', $reseller_omset_percent2)";
 
   if ($conn->query($sql2) === TRUE) {
     save_dashboard_card_settings($username2, $assistant_dashboard_settings, $dashboard_card_defaults);
@@ -918,6 +1012,12 @@ if(isset($_POST['edit_user'])){
     $reseller_bw_cost2 = isset($_POST['reseller_bw_cost']) ? (float)$_POST['reseller_bw_cost'] : 0;
     $reseller_bw_ppn_percent2 = isset($_POST['reseller_bw_ppn_percent']) ? (float)$_POST['reseller_bw_ppn_percent'] : 11;
     $reseller_bw_bhp_uso2 = isset($_POST['reseller_bw_bhp_uso']) ? (float)$_POST['reseller_bw_bhp_uso'] : 0;
+    $reseller_cost_scheme2 = isset($_POST['reseller_cost_scheme']) ? trim((string)$_POST['reseller_cost_scheme']) : 'bandwidth';
+    if (!in_array($reseller_cost_scheme2, ['bandwidth', 'omset_percent'], true)) {
+      $reseller_cost_scheme2 = 'bandwidth';
+    }
+    $reseller_cost_scheme2_esc = mysqli_real_escape_string($conn, $reseller_cost_scheme2);
+    $reseller_omset_percent2 = isset($_POST['reseller_omset_percent']) ? (float)$_POST['reseller_omset_percent'] : 0;
 
     $akses_menu = isset($_POST['menu']) && is_array($_POST['menu']) ? $_POST['menu'] : [];
     $akses_menu = array_values(array_unique(array_filter($akses_menu)));
@@ -957,6 +1057,9 @@ if(isset($_POST['edit_user'])){
     $assigned_telegram_bots = isset($_POST['assigned_telegram_bots']) ? $_POST['assigned_telegram_bots'] : [];
     $assigned_telegram_bots_json = mysqli_real_escape_string($conn, json_encode($assigned_telegram_bots));
 
+    $assigned_livechat_areas = isset($_POST['assigned_livechat_areas']) ? $_POST['assigned_livechat_areas'] : [];
+    $assigned_livechat_areas_json = mysqli_real_escape_string($conn, json_encode($assigned_livechat_areas));
+
     if(!empty($password2)) {
       $hashed_password = password_hash($password2, PASSWORD_DEFAULT);
       $sql2 = "UPDATE user SET
@@ -968,13 +1071,16 @@ if(isset($_POST['edit_user'])){
           server = '$servers_json',
           assigned_bots = '$assigned_bots_json',
           assigned_telegram_bots = '$assigned_telegram_bots_json',
+          assigned_livechat_areas = '$assigned_livechat_areas_json',
 
           akses = '$akses_json',
           assistant_role = '$assistant_role_esc',
           reseller_price_filter_enabled = $reseller_price_filter_enabled2,
           reseller_bw_cost = $reseller_bw_cost2,
           reseller_bw_ppn_percent = $reseller_bw_ppn_percent2,
-          reseller_bw_bhp_uso = $reseller_bw_bhp_uso2
+          reseller_bw_bhp_uso = $reseller_bw_bhp_uso2,
+          reseller_cost_scheme = '$reseller_cost_scheme2_esc',
+          reseller_omset_percent = $reseller_omset_percent2
           WHERE id = $user_id";
     } else {
       $sql2 = "UPDATE user SET
@@ -985,13 +1091,16 @@ if(isset($_POST['edit_user'])){
           server = '$servers_json',
           assigned_bots = '$assigned_bots_json',
           assigned_telegram_bots = '$assigned_telegram_bots_json',
+          assigned_livechat_areas = '$assigned_livechat_areas_json',
 
           akses = '$akses_json',
           assistant_role = '$assistant_role_esc',
           reseller_price_filter_enabled = $reseller_price_filter_enabled2,
           reseller_bw_cost = $reseller_bw_cost2,
           reseller_bw_ppn_percent = $reseller_bw_ppn_percent2,
-          reseller_bw_bhp_uso = $reseller_bw_bhp_uso2
+          reseller_bw_bhp_uso = $reseller_bw_bhp_uso2,
+          reseller_cost_scheme = '$reseller_cost_scheme2_esc',
+          reseller_omset_percent = $reseller_omset_percent2
           WHERE id = $user_id";
     }
 
@@ -1105,7 +1214,12 @@ if(isset($_POST['save'])){
 
 
             <div class="card-body text-center">
-              <?php if ($AKSES != "ASSISTANT") { ?>
+              <?php
+                // ASSISTANT boleh upload logo sendiri (terpisah dari logo owner) kalau
+                // owner mengaktifkan toggle "btn_logo_billing_sendiri" untuknya.
+                $bisa_upload_logo_sendiri = ($AKSES !== 'ASSISTANT') || !empty($ui_visibility_settings['btn_logo_billing_sendiri'] ?? null);
+              ?>
+              <?php if ($bisa_upload_logo_sendiri) { ?>
                 <label for="fileInput" style="cursor: pointer;">
                   <img src="<?= $profile_picture ?>?v=<?= time() ?>" class="img-fluid" alt="Logo" style="max-height: 120px;">
                   <div class="mt-2 text-muted">📷 Klik untuk upload foto</div>
@@ -1113,9 +1227,11 @@ if(isset($_POST['save'])){
                 <form action="upload.php" method="post" enctype="multipart/form-data" style="display: none;">
                   <input type="file" name="profile_picture" id="fileInput" accept="image/png" onchange="this.form.submit()">
                 </form>
-                <?php if (file_exists(__DIR__ . "/../../dokumen/logo/profile-$ceknama.png")): ?>
+                <?php if ($AKSES === 'ASSISTANT'): ?>
+                  <div class="mt-2"><small class="text-muted">Logo ini khusus akun Anda sendiri, terpisah dari logo owner.</small></div>
+                <?php endif; ?>
+                <?php if (file_exists(__DIR__ . "/../../dokumen/logo/profile-$logo_owner_key.png")): ?>
                   <form action="proses/hapus_logo.php" method="post" class="mt-2">
-                    <input type="hidden" name="ceknama" value="<?= htmlspecialchars($ceknama) ?>">
                     <button type="submit" class="btn btn-danger btn-sm">
                       <i class="fas fa-trash me-1"></i>Hapus Logo
                     </button>
@@ -1129,11 +1245,39 @@ if(isset($_POST['save'])){
         </div>
       </div>
 
+      <?php
+        // Link login branded (?brand=username) -- halaman login yang otomatis
+        // pakai logo & nama akun ini sendiri (owner ATAU assistant, keduanya
+        // baris di tabel user), lihat crm/billing/index.php.
+        $branded_login_scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+        $branded_login_host = $_SERVER['HTTP_HOST'] ?? 'quenbytekniksejahtera.com';
+        $branded_login_username = ($AKSES === 'ASSISTANT' && !empty($asistant_name)) ? $asistant_name : $ceknama;
+        $branded_login_link = $branded_login_scheme . '://' . $branded_login_host . '/crm/billing/index.php?brand=' . urlencode((string)$branded_login_username);
+      ?>
+      <div class="row mb-4">
+        <div class="col-12">
+          <div class="card shadow-sm">
+            <div class="card-header bg-dark text-white">
+              <h5><i class="fas fa-link me-2"></i>Link Login Anda</h5>
+              <small>Halaman login khusus akun ini, otomatis pakai logo Anda sendiri kalau sudah upload</small>
+            </div>
+            <div class="card-body">
+              <div class="input-group">
+                <input type="text" class="form-control" id="brandedLoginLink" value="<?= htmlspecialchars($branded_login_link, ENT_QUOTES, 'UTF-8') ?>" readonly>
+                <button class="btn btn-outline-secondary" type="button" onclick="navigator.clipboard.writeText(document.getElementById('brandedLoginLink').value); this.innerHTML='<i class=\'fas fa-check\'></i> Disalin'; setTimeout(() => this.innerHTML='<i class=\'fas fa-copy\'></i> Salin', 2000);">
+                  <i class="fas fa-copy"></i> Salin
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Profile Form -->
       <div class="card shadow-sm mb-4">
         <div class="card-header bg-secondary text-white">
-         
-          
+
+
             <?php if ($AKSES != "ASSISTANT") { ?>
                <h5><i class="fas fa-edit me-2"></i>Update Profile</h5>
           <small>Edit informasi profil Anda</small>
@@ -1285,7 +1429,7 @@ if(isset($_POST['save'])){
                   <th>Role / Akses</th>
                   <th>Saldo</th>
                   <th>Server</th>
-                  <th>Beban Bandwidth</th>
+                  <th>Beban Reseller</th>
                   <th>Last Login</th>
                   <th>Created At</th>
                   <th>Aksi</th>
@@ -1354,13 +1498,23 @@ if(isset($_POST['save'])){
                       <td><?= $row['server'] ?><br><small><?= $row['area'] ?></small></td>
                       <td>
                         <?php if (in_array($row['assistant_role'] ?? '', ['reseller', 'mitra_isp'], true)):
+                          $row_reseller_scheme = in_array($row['reseller_cost_scheme'] ?? 'bandwidth', ['bandwidth', 'omset_percent'], true)
+                            ? $row['reseller_cost_scheme'] : 'bandwidth';
                           $row_reseller_settings = [
                             'bw_cost' => (float)($row['reseller_bw_cost'] ?? 0),
                             'bw_bhp_uso' => (float)($row['reseller_bw_bhp_uso'] ?? 0),
                             'bw_ppn_percent' => (float)($row['reseller_bw_ppn_percent'] ?? 0),
+                            'cost_scheme' => $row_reseller_scheme,
+                            'omset_percent' => (float)($row['reseller_omset_percent'] ?? 0),
                           ];
+                          $row_reseller_omset = ($row_reseller_scheme === 'omset_percent') ? reseller_omset_bulan_ini($conn, $row['server'] ?? '') : 0.0;
                         ?>
-                          Rp. <?= number_format(reseller_bandwidth_burden($row_reseller_settings), 0, ',', '.') ?>
+                          Rp. <?= number_format(reseller_cost_burden($row_reseller_settings, $row_reseller_omset), 0, ',', '.') ?>
+                          <?php if ($row_reseller_scheme === 'omset_percent'): ?>
+                            <br><small class="text-muted"><?= number_format($row_reseller_settings['omset_percent'], 2, ',', '.') ?>% dari Omset</small>
+                          <?php else: ?>
+                            <br><small class="text-muted">Bandwidth</small>
+                          <?php endif; ?>
                         <?php else: ?>
                           -
                         <?php endif; ?>
@@ -1416,9 +1570,14 @@ if ($server_result && $server_result->num_rows > 0) {
 }
 $servers = array_unique(array_filter($servers));
 
-// Profile picture (logo terpusat di dokumen/logo/, sejajar crm/)
-$profile_picture_file = __DIR__ . "/../../dokumen/logo/profile-$ceknama.png";
-$profile_picture = "/dokumen/logo/profile-$ceknama.png";
+// Profile picture (logo terpusat di dokumen/logo/, sejajar crm/) -- logo
+// sendiri assistant dicoba lebih dulu, fallback ke logo owner lalu logo.png.
+$profile_picture_file = __DIR__ . "/../../dokumen/logo/profile-$logo_owner_key.png";
+$profile_picture = "/dokumen/logo/profile-$logo_owner_key.png";
+if (!file_exists($profile_picture_file) || strtolower(pathinfo($profile_picture_file, PATHINFO_EXTENSION)) !== 'png') {
+    $profile_picture_file = __DIR__ . "/../../dokumen/logo/profile-$ceknama.png";
+    $profile_picture = "/dokumen/logo/profile-$ceknama.png";
+}
 if (!file_exists($profile_picture_file) || strtolower(pathinfo($profile_picture_file, PATHINFO_EXTENSION)) !== 'png') {
     $profile_picture = "/dokumen/logo/logo.png";
 }
@@ -1499,24 +1658,52 @@ if (!file_exists($profile_picture_file) || strtolower(pathinfo($profile_picture_
                     <small class="text-muted d-block mt-1">ASSISTANT wajib menu Dasbor. ASSISTANT TEKNISI wajib menu Ticket Manager. RESELLER dan MITRA ISP hanya bisa melihat paket &amp; harga yang diizinkan akun utama (aturan sama persis).</small>
                   </div>
 
-                  <?php $is_reseller_type_selected = in_array($default_assistant_role, ['reseller', 'mitra_isp'], true); ?>
+                  <?php
+                    $is_reseller_type_selected = in_array($default_assistant_role, ['reseller', 'mitra_isp'], true);
+                    $reseller_scheme_selected = (isset($_GET['edit']) && ($user_to_edit['reseller_cost_scheme'] ?? 'bandwidth') === 'omset_percent') ? 'omset_percent' : 'bandwidth';
+                  ?>
                   <div id="resellerSettingsBlock" class="border rounded p-3 mb-3" style="<?= $is_reseller_type_selected ? '' : 'display:none;' ?>">
                     <h6 class="mb-3"><i class="fas fa-store me-1"></i>Pengaturan RESELLER / MITRA ISP</h6>
-                    <div class="row">
-                      <div class="col-md-4 mb-3">
-                        <label class="form-label">Biaya Bandwidth (Rp)</label>
-                        <input type="number" step="0.01" min="0" name="reseller_bw_cost" class="form-control" value="<?= isset($_GET['edit']) ? htmlspecialchars($user_to_edit['reseller_bw_cost'] ?? 0) : '0' ?>">
+
+                    <div class="mb-3">
+                      <label class="form-label d-block">Skema Biaya</label>
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="reseller_cost_scheme" id="resellerSchemeBandwidth" value="bandwidth" <?= $reseller_scheme_selected === 'bandwidth' ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="resellerSchemeBandwidth">Biaya Bandwidth</label>
                       </div>
-                      <div class="col-md-4 mb-3">
-                        <label class="form-label">BHP USO (Rp)</label>
-                        <input type="number" step="0.01" min="0" name="reseller_bw_bhp_uso" class="form-control" value="<?= isset($_GET['edit']) ? htmlspecialchars($user_to_edit['reseller_bw_bhp_uso'] ?? 0) : '0' ?>">
-                      </div>
-                      <div class="col-md-4 mb-3">
-                        <label class="form-label">PPN (%)</label>
-                        <input type="number" step="0.01" min="0" name="reseller_bw_ppn_percent" class="form-control" value="<?= isset($_GET['edit']) ? htmlspecialchars($user_to_edit['reseller_bw_ppn_percent'] ?? 11) : '11' ?>">
+                      <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="reseller_cost_scheme" id="resellerSchemeOmset" value="omset_percent" <?= $reseller_scheme_selected === 'omset_percent' ? 'checked' : '' ?>>
+                        <label class="form-check-label" for="resellerSchemeOmset">Persentase dari Omset</label>
                       </div>
                     </div>
-                    <small class="text-muted d-block mb-2">Beban Tagihan Bandwidth = (Biaya Bandwidth + BHP USO) &times; (1 + PPN%). Muncul di kartu dashboard reseller.</small>
+
+                    <div id="resellerSchemeBandwidthFields" style="<?= $reseller_scheme_selected === 'bandwidth' ? '' : 'display:none;' ?>">
+                      <div class="row">
+                        <div class="col-md-4 mb-3">
+                          <label class="form-label">Biaya Bandwidth (Rp)</label>
+                          <input type="number" step="0.01" min="0" name="reseller_bw_cost" class="form-control" value="<?= isset($_GET['edit']) ? htmlspecialchars($user_to_edit['reseller_bw_cost'] ?? 0) : '0' ?>">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                          <label class="form-label">BHP USO (Rp)</label>
+                          <input type="number" step="0.01" min="0" name="reseller_bw_bhp_uso" class="form-control" value="<?= isset($_GET['edit']) ? htmlspecialchars($user_to_edit['reseller_bw_bhp_uso'] ?? 0) : '0' ?>">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                          <label class="form-label">PPN (%)</label>
+                          <input type="number" step="0.01" min="0" name="reseller_bw_ppn_percent" class="form-control" value="<?= isset($_GET['edit']) ? htmlspecialchars($user_to_edit['reseller_bw_ppn_percent'] ?? 11) : '11' ?>">
+                        </div>
+                      </div>
+                      <small class="text-muted d-block mb-2">Beban Tagihan Bandwidth = (Biaya Bandwidth + BHP USO) &times; (1 + PPN%). Muncul di kartu dashboard reseller.</small>
+                    </div>
+
+                    <div id="resellerSchemeOmsetFields" style="<?= $reseller_scheme_selected === 'omset_percent' ? '' : 'display:none;' ?>">
+                      <div class="row">
+                        <div class="col-md-4 mb-3">
+                          <label class="form-label">Persentase dari Omset (%)</label>
+                          <input type="number" step="0.01" min="0" max="100" name="reseller_omset_percent" class="form-control" value="<?= isset($_GET['edit']) ? htmlspecialchars($user_to_edit['reseller_omset_percent'] ?? 0) : '0' ?>">
+                        </div>
+                      </div>
+                      <small class="text-muted d-block mb-2">Beban = Persentase &times; Omset Kotor bulan berjalan (transaksi BERHASIL di area yang di-assign). Muncul di kartu dashboard reseller.</small>
+                    </div>
 
                     <div class="form-check form-switch mb-2">
                       <input class="form-check-input" type="checkbox" role="switch" id="resellerPriceFilterEnabled" name="reseller_price_filter_enabled" value="1" <?= (isset($_GET['edit']) && !empty($user_to_edit['reseller_price_filter_enabled'])) ? 'checked' : '' ?>>
@@ -1646,6 +1833,39 @@ if (!file_exists($profile_picture_file) || strtolower(pathinfo($profile_picture_
                       <?php } ?>
                     </div>
                   </div>
+
+                  <div class="mb-3">
+                    <label class="fw-bold"><i class="fas fa-comments me-1"></i>Live Chat: Area Diizinkan</label>
+                    <small class="d-block text-muted mb-2">Kalau tidak ada area yang dicentang, akun ini di menu Live Chat tetap bisa lihat pelanggan sesuai AREA umum yang di-assign ke akun ini (bagian "Server/Area Diizinkan" di atas).</small>
+                    <div class="form-check">
+                      <input type="checkbox" class="form-check-input" id="selectAllLivechatAreas">
+                      <label class="form-check-label fw-bold" for="selectAllLivechatAreas">Select All</label>
+                    </div>
+                    <div id="livechatAreaList" class="border p-2 rounded" style="max-height: 220px; overflow-y: auto;">
+                      <?php
+                      $uniqueLivechatAreas = [];
+                      foreach ($uniqueServers as $srv) {
+                        $areaName = trim((string)($srv['AREA'] ?? ''));
+                        if ($areaName !== '' && !isset($uniqueLivechatAreas[$areaName])) {
+                          $uniqueLivechatAreas[$areaName] = true;
+                        }
+                      }
+                      ksort($uniqueLivechatAreas);
+                      $user_assigned_livechat_areas = isset($user_assigned_livechat_areas) ? $user_assigned_livechat_areas : [];
+                      if (empty($uniqueLivechatAreas)) {
+                        echo '<div class="text-muted small">Belum ada AREA di akun ini.</div>';
+                      }
+                      foreach ($uniqueLivechatAreas as $areaName => $unused) {
+                        $areaChecked = in_array($areaName, $user_assigned_livechat_areas) ? 'checked' : '';
+                        $areaLabel = htmlspecialchars($areaName);
+                        ?>
+                        <div class="form-check">
+                          <input type="checkbox" class="form-check-input livechat-area-checkbox" name='assigned_livechat_areas[]' value="<?= $areaLabel ?>" id="livechat_area_<?= md5($areaName) ?>" <?= $areaChecked ?>>
+                          <label for="livechat_area_<?= md5($areaName) ?>" class="form-check-label"><?= $areaLabel ?></label>
+                        </div>
+                      <?php } ?>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1712,10 +1932,22 @@ if (!file_exists($profile_picture_file) || strtolower(pathinfo($profile_picture_
                           'items' => [
                             'Customer_PPPOE' => 'Customer PPPOE',
                             'Packages_Broadband' => 'Packages Broadband',
+                            'Customer_StaticIP' => 'Customer Static IP',
+                            'Packages_StaticIP' => 'Paket Static IP',
+                            'Pool_StaticIP' => 'IP Pool Static',
                             'Customer_Hotspot' => 'Customer Hotspot',
                             'Packages_Hotspot' => 'Packages Hotspot',
                             'Pelanggan_menunggak' => 'Pelanggan Menunggak',
                             'Pelanggan_berhenti' => 'Pelanggan Berhenti',
+                          ]
+                        ],
+                        // CORPORATE (B2B)
+                        'corporate' => [
+                          'label' => '🏢 CORPORATE (B2B)',
+                          'items' => [
+                            'Corporate_Customer' => 'Customer Corporate',
+                            'Corporate_Transaksi' => 'Transaksi Corporate',
+                            'Corporate_Portal_Setting' => 'Pengaturan Portal Corporate',
                           ]
                         ],
                         // TEKNIS (Financial)
@@ -1801,6 +2033,45 @@ if (!file_exists($profile_picture_file) || strtolower(pathinfo($profile_picture_
                               </label>
                             </div>
                           <?php endforeach; ?>
+                        </div>
+                      <?php endforeach; ?>
+                    </div>
+                  </div>
+
+                  <div class="mb-3">
+                    <label class="fw-bold"><i class="fas fa-boxes-stacked me-1"></i>Hak Akses Paket (Katalog)</label>
+                    <small class="d-block text-muted mb-2">Sembunyikan NAMA PAKET tertentu dari katalog/dropdown pilihan paket yang dilihat assistant ini (Packages, Customer PPPOE/Static IP/Hotspot/Corporate, Import Excel, dll). Murni soal TAMPIL/SEMBUNYI, TIDAK mengubah harga (beda dari Filter Harga RESELLER di atas). ✅ Dicentang = paket itu MUNCUL di katalog assistant ini. ⬜ Tidak dicentang = paket itu disembunyikan total dari semua pilihan/dropdown (pelanggan yang SUDAH pakai paket itu tetap tidak terganggu).</small>
+                    <div class="mb-2">
+                      <input type="text" class="form-control form-control-sm" id="searchPaketVisibility" placeholder="🔍 Cari nama paket...">
+                    </div>
+                    <div class="border p-2 rounded perm-grid" id="paketVisibilityContainer" style="max-height: 300px; overflow-y: auto;">
+                      <?php foreach ($paket_visibility_types as $pv_type => $pv_label): ?>
+                        <div class="menu-category-header general">
+                          <div class="d-flex justify-content-between align-items-center">
+                            <strong class="text-dark">📦 Paket <?= htmlspecialchars($pv_label) ?></strong>
+                            <div>
+                              <button type="button" class="btn btn-outline-primary btn-sm py-0 px-1 paket-visibility-select-all" data-type="<?= $pv_type ?>">Select All</button>
+                              <button type="button" class="btn btn-outline-secondary btn-sm py-0 px-1 paket-visibility-clear-all" data-type="<?= $pv_type ?>">Clear All</button>
+                            </div>
+                          </div>
+                        </div>
+                        <div class="menu-category-items">
+                          <?php
+                            $pv_names = $paket_visibility_all_names[$pv_type];
+                            $pv_hidden = $paket_visibility_hidden_names[$pv_type];
+                          ?>
+                          <?php if (empty($pv_names)): ?>
+                            <div class="text-muted small">Belum ada paket <?= htmlspecialchars($pv_label) ?>.</div>
+                          <?php else: ?>
+                            <?php foreach ($pv_names as $pv_nama):
+                              $pv_checked = !in_array($pv_nama, $pv_hidden, true) ? 'checked' : '';
+                            ?>
+                              <div class="form-check menu-item-checkbox">
+                                <input type="checkbox" name="paket_visible_<?= $pv_type ?>[]" value="<?= htmlspecialchars($pv_nama) ?>" <?= $pv_checked ?> class="form-check-input paket-visibility-checkbox" data-type="<?= $pv_type ?>" id="pvis_<?= $pv_type ?>_<?= md5($pv_nama) ?>">
+                                <label class="form-check-label" for="pvis_<?= $pv_type ?>_<?= md5($pv_nama) ?>"><?= htmlspecialchars($pv_nama) ?></label>
+                              </div>
+                            <?php endforeach; ?>
+                          <?php endif; ?>
                         </div>
                       <?php endforeach; ?>
                     </div>
@@ -2187,6 +2458,24 @@ if (selectAllTelegramBotsEl) {
   });
 }
 
+// Select All for Live Chat Areas
+var selectAllLivechatAreasEl = document.getElementById('selectAllLivechatAreas');
+if (selectAllLivechatAreasEl) {
+  selectAllLivechatAreasEl.addEventListener('change', function() {
+    const isChecked = this.checked;
+    document.querySelectorAll('.livechat-area-checkbox').forEach(cb => {
+      cb.checked = isChecked;
+    });
+  });
+  document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('livechat-area-checkbox')) {
+      const allAreas = document.querySelectorAll('.livechat-area-checkbox');
+      const checkedAreas = document.querySelectorAll('.livechat-area-checkbox:checked');
+      selectAllLivechatAreasEl.checked = allAreas.length > 0 && allAreas.length === checkedAreas.length;
+    }
+  });
+}
+
 // Select All for Menus
 document.getElementById('selectAllMenus').addEventListener('change', function() {
   const isChecked = this.checked;
@@ -2246,6 +2535,19 @@ if (assistantRoleEl) {
   assistantRoleEl.addEventListener('change', toggleResellerSettingsBlock);
 }
 
+function toggleResellerSchemeFields() {
+  const bandwidthRadio = document.getElementById('resellerSchemeBandwidth');
+  const bandwidthFields = document.getElementById('resellerSchemeBandwidthFields');
+  const omsetFields = document.getElementById('resellerSchemeOmsetFields');
+  if (!bandwidthRadio || !bandwidthFields || !omsetFields) return;
+  const isBandwidth = bandwidthRadio.checked;
+  bandwidthFields.style.display = isBandwidth ? '' : 'none';
+  omsetFields.style.display = isBandwidth ? 'none' : '';
+}
+document.querySelectorAll('input[name="reseller_cost_scheme"]').forEach(function(el) {
+  el.addEventListener('change', toggleResellerSchemeFields);
+});
+
 function setAssistantDashboardCards(checkedState) {
   document.querySelectorAll('.dashboard-card-checkbox').forEach(cb => {
     cb.checked = checkedState;
@@ -2265,6 +2567,20 @@ if (assistantDashboardClearAllBtn) {
     setAssistantDashboardCards(false);
   });
 }
+
+// Select All / Clear All per tipe (broadband/hotspot/corporate) utk Hak Akses Paket
+document.querySelectorAll('.paket-visibility-select-all').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    const type = this.getAttribute('data-type');
+    document.querySelectorAll('.paket-visibility-checkbox[data-type="' + type + '"]').forEach(cb => { cb.checked = true; });
+  });
+});
+document.querySelectorAll('.paket-visibility-clear-all').forEach(function(btn) {
+  btn.addEventListener('click', function() {
+    const type = this.getAttribute('data-type');
+    document.querySelectorAll('.paket-visibility-checkbox[data-type="' + type + '"]').forEach(cb => { cb.checked = false; });
+  });
+});
 
 // Select All for Per-Page Buttons
 function setAssistantPageButtons(checkedState) {

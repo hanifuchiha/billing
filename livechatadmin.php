@@ -2,7 +2,12 @@
 <?php
 $chat_scheme = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $chat_host = $_SERVER['HTTP_HOST'] ?? 'quenbytekniksejahtera.com';
-$chat_admin_url = $chat_scheme . '://' . $chat_host . '/crm/chat/index.php?admin=admin';
+// admin=admin + aiscope=static: halaman ini memang khusus superadmin ("Live Chat
+// Super Admin"), pelanggan miliknya sendiri tersimpan dgn PEMILIK='admin' --
+// scope AI Bot-nya tetap 'admin' apa adanya (TIDAK ikut-ikutan tenant pelanggan
+// yg dibuka, beda dgn panel bersama di livechat.php/sidebar.php yg scope-nya
+// dinamis per kontak -- lihat komentar $livechatAiDynamic di crm/chat/index.php).
+$chat_admin_url = $chat_scheme . '://' . $chat_host . '/crm/chat/index.php?admin=admin&aiscope=static';
 ?>
 
 <div class="container-fluid py-4 px-3 px-md-4">

@@ -968,24 +968,51 @@ if ($apiKey && $privateKey && $merchantCode) {
 // ===================================================================
 require_once __DIR__ . '/../notifbot/notifphp/tagihan_status_lib.php';
 $trxDateExprTampil = tagihanBuildTrxDateExpr();
-$tipeTempoTampil = strtolower(trim((string)($pelanggan['TIPE_TEMPO'] ?? '')));
-$isFixedDueDateTampil = !in_array($tipeTempoTampil, ['monthversary', 'mengikuti_tanggal_bayar'], true);
 
-if ($isFixedDueDateTampil) {
-    $todayTsTampil = strtotime(date('Y-m-d'));
-    $dueMonthTsTampil = ((int) date('j', $todayTsTampil) <= (int) ($jatuh_tempo ?? 25))
-        ? $todayTsTampil
-        : strtotime('+1 month', $todayTsTampil);
-    $periodeBerjalanTampil = tagihanResolvePeriodeTercatat(
-        (int) date('n', $dueMonthTsTampil),
-        (int) date('Y', $dueMonthTsTampil),
-        (string) ($periode_tercatat ?? 'berjalan')
+// TIPE_TEMPO-aware, SAMA PERSIS dgn portal_bayar.php ("CARI TAGIHAN PENAGIHAN
+// YANG SEDANG AKTIF") -- SEBELUMNYA satu query generik "ambil PENAGIHAN PALING
+// LAMA" utk SEMUA tipe tempo, jadi kalau pelanggan Rolling/Monthversary punya
+// tunggakan lama yg sudah lewat (mis. Juli) + tagihan periode berjalan (mis.
+// Agustus) barengan, beranda pelanggan nampilin "Tagihan Juli 2026" terus
+// padahal periode aktualnya sudah Agustus.
+$tipeTempoTampilFokus = strtolower(trim((string)($pelanggan['TIPE_TEMPO'] ?? '')));
+$isFixedDueDateTampilFokus = !in_array($tipeTempoTampilFokus, ['monthversary', 'mengikuti_tanggal_bayar'], true);
+
+if ($isFixedDueDateTampilFokus) {
+    $todayTsTampilFokus = strtotime(date('Y-m-d'));
+    $dueMonthTsTampilFokus = ((int) date('j', $todayTsTampilFokus) <= (int) ($jatuh_tempo ?? 25))
+        ? $todayTsTampilFokus
+        : strtotime('+1 month', $todayTsTampilFokus);
+
+    // SEBELUM Awal Tutup Buku: paksa mode 'berjalan' (tampilkan tagihan bulan
+    // aktual/menunggak SEKARANG), TERLEPAS dari setting Periode Tercatat --
+    // supaya beranda tidak "loncat" ke label periode berikutnya lebih awal
+    // dari waktunya. Begitu masuk/lewat Awal Tutup Buku, baru ikut Periode
+    // Tercatat asli sesuai Payment Setting. SAMA PERSIS dgn portal_bayar.php.
+    $tglSkgTutupBukuTampilFokus = (int) date('j', $todayTsTampilFokus);
+    $modePeriodeTampilFokus = ($tglSkgTutupBukuTampilFokus < (int) ($tanggal_awal_tutup_buku ?? 0))
+        ? 'berjalan'
+        : (string) ($periode_tercatat ?? 'berjalan');
+
+    $periodeBerjalanTampilFokus = tagihanResolvePeriodeTercatat(
+        (int) date('n', $dueMonthTsTampilFokus),
+        (int) date('Y', $dueMonthTsTampilFokus),
+        $modePeriodeTampilFokus
     );
     $stmtTampilPenagihan = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND UPPER(STATUS) = 'PENAGIHAN' AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER(?)) ORDER BY id DESC LIMIT 1");
-    $stmtTampilPenagihan->bind_param("ss", $idpel, $periodeBerjalanTampil);
+    $stmtTampilPenagihan->bind_param("ss", $idpel, $periodeBerjalanTampilFokus);
 } else {
-    $stmtTampilPenagihan = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND UPPER(STATUS) = 'PENAGIHAN' ORDER BY $trxDateExprTampil ASC, id ASC LIMIT 1");
-    $stmtTampilPenagihan->bind_param("s", $idpel);
+    // Rolling/Monthversary: SAMA PERSIS dgn portal_bayar.php -- cocokkan ke
+    // BULAN AKTUAL (kalender hari ini) dulu, JANGAN ambil baris PENAGIHAN
+    // paling baru tanpa syarat (bisa kebawa invoice bulan depan yg sudah
+    // digenerate cron lebih awal, padahal belum waktunya ditampilkan).
+    $bulanAktualTampilFokus = tagihanResolvePeriodeTercatat(
+        (int) date('n'),
+        (int) date('Y'),
+        'berjalan'
+    );
+    $stmtTampilPenagihan = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND UPPER(STATUS) = 'PENAGIHAN' AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER(?)) ORDER BY $trxDateExprTampil DESC, id DESC LIMIT 1");
+    $stmtTampilPenagihan->bind_param("ss", $idpel, $bulanAktualTampilFokus);
 }
 $stmtTampilPenagihan->execute();
 $rowTampilPenagihan = $stmtTampilPenagihan->get_result()->fetch_assoc();

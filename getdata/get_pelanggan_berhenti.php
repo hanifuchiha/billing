@@ -1,5 +1,10 @@
 <?php
-require '../koneksidb.php';
+// Butuh sesi login: sebelumnya endpoint ini cuma buka koneksi DB tanpa cek
+// login/otorisasi sama sekali -- siapapun yang tahu/menebak idpel bisa GET
+// data lengkap (termasuk nowa, koordinat GPS, bahkan password) pelanggan
+// berhenti milik tenant/area manapun. Sekarang wajib login + idpel harus
+// milik user/assistant yang sedang login (scope AREA utk assistant).
+require '../cek-sesi.php';
 
 header('Content-Type: application/json');
 
@@ -10,7 +15,25 @@ if (!isset($_GET['idpel'])) {
 
 $idpel = mysqli_real_escape_string($conn, $_GET['idpel']);
 
-$query = "SELECT * FROM pelanggan_berhenti WHERE idpel = '$idpel'";
+// Sama seperti daftar_pelanggan_berhenti.php: scope ke pemilik server milik
+// user yang login, dan kalau ASSISTANT dibatasi lagi ke AREA yang di-assign.
+$userServerIds = [];
+if ($AKSES === 'ASSISTANT') {
+    if (isset($area_list) && trim((string)$area_list) !== '') {
+        $queryServerId = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE AREA IN ($area_list)");
+        while ($rowServer = mysqli_fetch_assoc($queryServerId)) {
+            $userServerIds[] = "'" . $rowServer['PEMILIK'] . "'";
+        }
+    }
+} else {
+    $queryServerId = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE user_id = $current_user_id");
+    while ($rowServer = mysqli_fetch_assoc($queryServerId)) {
+        $userServerIds[] = "'" . $rowServer['PEMILIK'] . "'";
+    }
+}
+$userServerList = count($userServerIds) > 0 ? implode(",", $userServerIds) : "''";
+
+$query = "SELECT * FROM pelanggan_berhenti WHERE idpel = '$idpel' AND pemilik IN ($userServerList)";
 $result = mysqli_query($conn, $query);
 
 if (!$result) {

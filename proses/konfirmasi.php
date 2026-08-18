@@ -1,6 +1,30 @@
 <?php
 require '../cek-sesi.php';
 
+// Toggle "btn_trx_lihat_bukti" (Pengaturan User > Tombol Individual ASSISTANT,
+// halaman Transaction) -- halaman ini tidak require header.php, jadi
+// $ui_visibility_settings tidak pernah tersedia dan pengecekan harus diulang
+// manual server-side, sama persis dengan pola di customertransation.php.
+$kfBisaLihatBukti = true;
+if ($AKSES === 'ASSISTANT') {
+    $kfBuktiSettingsUsername = !empty($asistant_name) ? $asistant_name : $ceknama;
+    $kfBuktiSafeUsername = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$kfBuktiSettingsUsername);
+    $kfBisaLihatBukti = false; // default ASSISTANT: sembunyikan, kecuali toggle diaktifkan
+    if ($kfBuktiSafeUsername !== '') {
+        $kfBuktiSettingsFile = __DIR__ . '/../settings/dashboard-cards-' . $kfBuktiSafeUsername . '.json';
+        if (is_file($kfBuktiSettingsFile)) {
+            $kfBuktiDecoded = json_decode((string)@file_get_contents($kfBuktiSettingsFile), true);
+            if (is_array($kfBuktiDecoded) && array_key_exists('btn_trx_lihat_bukti', $kfBuktiDecoded)) {
+                $kfBisaLihatBukti = (bool)$kfBuktiDecoded['btn_trx_lihat_bukti'];
+            } else {
+                $kfBisaLihatBukti = true; // key belum pernah disimpan -> default true
+            }
+        } else {
+            $kfBisaLihatBukti = true; // belum pernah ada file settings -> default true
+        }
+    }
+}
+
 // === Ambil ID dari GET ===
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if ($id <= 0) {
@@ -300,7 +324,7 @@ $badgeClass = ($status === 'BERHASIL') ? 'bg-success' : ($status === 'KONFIRMASI
             </table>
 
             <h6 class="mt-4 mb-2 fw-bold">Bukti Pembayaran:</h6>
-            <?php if ($adaBukti): ?>
+            <?php if ($adaBukti && $kfBisaLihatBukti): ?>
                 <div class="text-center mb-3">
                     <?php if (pathinfo($buktiFile, PATHINFO_EXTENSION) === 'pdf'): ?>
                         <a href="<?= htmlspecialchars($buktiUrl) ?>" target="_blank" class="btn btn-outline-primary">
@@ -309,6 +333,10 @@ $badgeClass = ($status === 'BERHASIL') ? 'bg-success' : ($status === 'KONFIRMASI
                     <?php else: ?>
                         <img src="<?= htmlspecialchars($buktiUrl) ?>" alt="Bukti Pembayaran" class="bukti-img" onclick="window.open(this.src)">
                     <?php endif; ?>
+                </div>
+            <?php elseif ($adaBukti && !$kfBisaLihatBukti): ?>
+                <div class="alert alert-secondary text-center">
+                    <i class="bi bi-eye-slash"></i> Anda tidak memiliki akses untuk melihat foto bukti pembayaran.
                 </div>
             <?php else: ?>
                 <div class="alert alert-warning text-center">

@@ -6,6 +6,7 @@ require "../notifbot/phpmailer/classes/class.phpmailer.php";
 require_once '../notifbot/bot_selector_helper.php';
 require_once __DIR__ . '/../radius_sync_lib.php';
 require_once __DIR__ . '/../notifbot/notifphp/tagihan_status_lib.php';
+require_once __DIR__ . '/../notifbot/notif_template_helper.php';
 
 // ================= Fungsi =================
 function getFreeradiusPID() {
@@ -75,15 +76,46 @@ $token = $_SERVER['HTTP_X_CALLBACK_TOKEN'] ?? '';
 //     die(json_encode(["status" => "error", "message" => "Invalid token"]));
 // }
 
-// Mapping status dan variabel utama
-$invoiceref = $arr['external_id'] ?? '';
-$cekstatus = ($arr['status'] ?? '') === 'PAID' ? 'PAID' : (($arr['status'] ?? '') === 'PENDING' ? 'PENDING' : 'FAILED');
-$amount = (float)($arr['amount'] ?? 0);
-$payment_method = $arr['payment_method'] ?? '';
-$payment_method_code = $arr['payment_channel'] ?? '';
-$customer_name = $arr['payer_email'] ?? '';
-$customer_phone = $arr['payer_phone'] ?? '';
-$payment_link = $arr['invoice_url'] ?? '';
+// Mapping status dan variabel utama -- Xendit kirim BENTUK PAYLOAD BEDA
+// tergantung jenis pembayaran (Invoice/VA/QRIS langsung, lihat portal_bayar.php
+// cabang xendit_submit yang baru). Normalisasi di sini SEKALI ke variabel yang
+// sudah dipakai di SISA FILE INI apa adanya -- jangan ubah logic di bawah,
+// cukup deteksi bentuk payload & isi variabel yang benar.
+if (isset($arr['account_number']) && isset($arr['bank_code']) && !isset($arr['status'])) {
+    // Virtual Account paid callback (Callback Virtual Account API) -- kemunculan
+    // webhook ini SENDIRI berarti pembayaran sudah diterima, tidak ada field status.
+    $invoiceref = $arr['external_id'] ?? '';
+    $cekstatus = 'PAID';
+    $amount = (float) ($arr['amount'] ?? 0);
+    $payment_method = 'VIRTUAL_ACCOUNT';
+    $payment_method_code = $arr['bank_code'] ?? '';
+    $customer_name = '';
+    $customer_phone = '';
+    $payment_link = '';
+} elseif (($arr['event'] ?? '') === 'qr.payment' || isset($arr['qr_id'])) {
+    // QRIS paid callback (QR Codes API) -- dukung format unified event (data
+    // nested) maupun format raw lama, dua-duanya dipakai Xendit tergantung versi.
+    $qrData = $arr['data'] ?? $arr;
+    $invoiceref = $qrData['reference_id'] ?? $qrData['external_id'] ?? '';
+    $qrStatus = strtoupper((string) ($qrData['status'] ?? ''));
+    $cekstatus = in_array($qrStatus, ['SUCCEEDED', 'PAID'], true) ? 'PAID' : (($qrStatus === 'PENDING') ? 'PENDING' : 'FAILED');
+    $amount = (float) ($qrData['amount'] ?? 0);
+    $payment_method = 'QRIS';
+    $payment_method_code = 'QRIS';
+    $customer_name = '';
+    $customer_phone = '';
+    $payment_link = '';
+} else {
+    // Invoice callback (format lama -- SUDAH jalan production, TIDAK diubah).
+    $invoiceref = $arr['external_id'] ?? '';
+    $cekstatus = ($arr['status'] ?? '') === 'PAID' ? 'PAID' : (($arr['status'] ?? '') === 'PENDING' ? 'PENDING' : 'FAILED');
+    $amount = (float)($arr['amount'] ?? 0);
+    $payment_method = $arr['payment_method'] ?? '';
+    $payment_method_code = $arr['payment_channel'] ?? '';
+    $customer_name = $arr['payer_email'] ?? '';
+    $customer_phone = $arr['payer_phone'] ?? '';
+    $payment_link = $arr['invoice_url'] ?? '';
+}
 
 
 ///////////////////////////DATA USERNAME/////////////////////////////////////////////////////////////
@@ -410,7 +442,9 @@ if ($sekali == 0) {
 
             // $session = $botname;
             $to = $WHATSAPPELANGGAN;
-            $text = "[INI ADALAH PESAN OTOMATIS]\n*PEMBAYARAN BERHASIL*\n\nHai bpk/ibu $NAMAPELANGGAN \nPembayaran anda Telah kami terima.\n\n\n\nDengan detail :\n- ID Pelanggan : $USERNAMETRANASAKSI \n- Nama Pelanggan : $NAMAPELANGGAN \n- Paket langganan : $PAKETPELANGGAN \n- No Whatsapp : $WHATSAPPELANGGAN \n- E-mail : $EMAILPELANGGAN \n- Alamat : $ALAMATPELANGGAN \n\n\nData transaksi :\n- Periode pengunaan : $periode\n- Tanggal bayar : $tanggalbayar\n- Status INTERNET : AKTIF\n- Status Pembayaran : $cekstatus \n- Nominal Bayar : $amount \n- No Ref : $invoiceref \n- Id pelanggan : $USERNAMETRANASAKSI \n- Metode pembayaran : $payment_method \n- Kode metode : $payment_method_code\n\nDownload bukti pembayaran : https://quenbytekniksejahtera.com/crm/billing/riwayatTransaction.php?idpel=$USERNAMETRANASAKSI\n\nPastikan modem Anda dalam keadaan menyala normal dan tidak ada lampu indikator merah (LOS).\n\nJika dalam waktu 1 jam setelah notifikasi ini internet belum aktif,Silakan hubungi kami, atau cabut dan pasang kembali adaptor listrik modem Anda untuk mempercepat proses aktivasi.\n\nDemikian yang dapat kami sampaikan, terima kasih \n\nTerima kasih telah mempercayai kami dalam kebutuhan internet Anda\nSalam $serverarea";
+            $linkBukti = "Download bukti pembayaran : https://quenbytekniksejahtera.com/crm/billing/riwayatTransaction.php?idpel=$USERNAMETRANASAKSI";
+            $pembayaranBerhasilTemplate = notifTemplateGetPembayaranBerhasil($username);
+            $text = notifTemplateReplaceVars($pembayaranBerhasilTemplate, get_defined_vars());
 
             $session = $botname; // Nama sesi yang telah Anda buat
 
@@ -894,7 +928,9 @@ echo "OK";
                     $notification_sent = true;
 
                     $to = $WHATSAPPELANGGAN;
-                    $text = "[INI ADALAH PESAN OTOMATIS]\n*PEMBAYARAN BERHASIL*\n\nHai bpk/ibu $NAMAPELANGGAN \nPembayaran anda Telah kami terima.\n\n\n\nDengan detail :\n- ID Pelanggan : $USERNAMETRANASAKSI \n- Nama Pelanggan : $NAMAPELANGGAN \n- Paket langganan : $PAKETPELANGGAN \n- No Whatsapp : $WHATSAPPELANGGAN \n- E-mail : $EMAILPELANGGAN \n- Alamat : $ALAMATPELANGGAN \n\n\nData transaksi :\n- Periode pengunaan : $periode\n- Tanggal bayar : $tanggalbayar\n- Status INTERNET : AKTIF\n- Status Pembayaran : $cekstatus \n- Nominal Bayar : $amount \n- No Ref : $invoiceref \n- Id pelanggan : $USERNAMETRANASAKSI \n- Metode pembayaran : $payment_method \n- Kode metode : $payment_method_code\n\nDownload bukti pembayaran : https://quenbytekniksejahtera.com/mybilling/cetakbukti.php?invoice=$invoiceref\n\nPastikan modem Anda dalam keadaan menyala normal dan tidak ada lampu indikator merah (LOS).\n\nJika dalam waktu 1 jam setelah notifikasi ini internet belum aktif,Silakan hubungi kami, atau cabut dan pasang kembali adaptor listrik modem Anda untuk mempercepat proses aktivasi.\n\nDemikian yang dapat kami sampaikan, terima kasih \n\nTerima kasih telah mempercayai kami dalam kebutuhan internet Anda\nSalam $BRANDPELANGGAN";
+                    $linkBukti = "Download bukti pembayaran : https://quenbytekniksejahtera.com/mybilling/cetakbukti.php?invoice=$invoiceref";
+                    $pembayaranBerhasilTemplate = notifTemplateGetPembayaranBerhasil($username);
+                    $text = notifTemplateReplaceVars($pembayaranBerhasilTemplate, get_defined_vars());
 
                     // Nomor tujuan dan pesan
                     $phone = "$to@s.whatsapp.net"; // Format: nomor@s.whatsapp.net

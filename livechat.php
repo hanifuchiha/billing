@@ -11,9 +11,16 @@ if ($AKSES == 'ASSISTANT') {
 <?php
 // Fetch all bots owned by this user
 $bots = [];
-if ($AKSES == 'USER' || $AKSES == 'ADMIN') {
+if ($AKSES == 'USER' || $AKSES == 'ADMIN' || $AKSES == 'ASSISTANT') {
     if ($AKSES == 'ADMIN') {
         $sql_bots = "SELECT id, namebot, addressbot, webhook FROM botwa ORDER BY id DESC";
+        $result_bots = mysqli_query($conn, $sql_bots);
+    } elseif ($AKSES == 'ASSISTANT') {
+        // Tab Webhook per-bot cuma boleh nampilin bot yg memang di-assign/
+        // dibuat sendiri assistant ini -- pola sama dgn wabot.php, lihat
+        // notifbot/bot_access_helper.php.
+        $botWhere = botAccessWhereClause($conn, $AKSES, $assigned_bot_ids ?? [], $asistant_name ?? '');
+        $sql_bots = "SELECT id, namebot, addressbot, webhook FROM botwa WHERE pemilik = '" . mysqli_real_escape_string($conn, $ceknama) . "'" . $botWhere . " ORDER BY id DESC";
         $result_bots = mysqli_query($conn, $sql_bots);
     } else {
         $sql_bots = "SELECT id, namebot, addressbot, webhook FROM botwa WHERE pemilik = ? ORDER BY id DESC";
@@ -22,7 +29,7 @@ if ($AKSES == 'USER' || $AKSES == 'ADMIN') {
         $stmt_bots->execute();
         $result_bots = $stmt_bots->get_result();
     }
-    
+
     if ($result_bots && mysqli_num_rows($result_bots) > 0) {
         while ($bot = mysqli_fetch_assoc($result_bots)) {
             $bots[] = $bot;
@@ -31,7 +38,7 @@ if ($AKSES == 'USER' || $AKSES == 'ADMIN') {
 }
 ?>
 
-<?php if ($AKSES == 'USER' || $AKSES == 'ADMIN') { ?>
+<?php if ($AKSES == 'USER' || $AKSES == 'ADMIN' || $AKSES == 'ASSISTANT') { ?>
 <div class="container-fluid py-4">
   <div class="card shadow">
     <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
@@ -69,11 +76,24 @@ if ($AKSES == 'USER' || $AKSES == 'ADMIN') {
       
       <!-- Live Chat Panel -->
       <div class="tab-pane fade show active" id="livechat-panel" role="tabpanel" aria-labelledby="livechat-tab" style="height: 100%;">
-        <iframe src="<?php 
+        <iframe src="<?php
           if ($AKSES == 'ADMIN') {
+              // admin=admin: akun ADMIN adalah master admin pemilik web ini, dan
+              // pelanggan miliknya sendiri tersimpan dgn PEMILIK='admin' (bukan
+              // username login-nya) -- jadi "admin" di sini SUDAH BENAR sbg
+              // identitas tenant asli, dipakai apa adanya oleh crm/chat/index.php
+              // (termasuk utk scope AI Bot Live Chat, lihat livechatAiScopeKey()).
               echo $config['URL'] . '/crm/chat/index.php?admin=admin';
           } else {
-              echo $config['URL'] . '/crm/chat/index.php?admin=' . urlencode($ceknama);
+              $chatUrl = $config['URL'] . '/crm/chat/index.php?admin=' . urlencode($ceknama);
+              if ($AKSES == 'ASSISTANT') {
+                  // Assign Live Chat per-assistant (seperti Bot WA) -- kalau
+                  // assistant ini tidak di-assign AREA spesifik, fallback ke
+                  // area umum dia ($arealist). Lihat livechat_access_helper.php.
+                  $chatAllowedAreas = livechatAccessResolveAreas($AKSES, $assigned_livechat_areas ?? [], $arealist ?? []);
+                  $chatUrl .= '&areas=' . urlencode(json_encode($chatAllowedAreas));
+              }
+              echo $chatUrl;
           }
         ?>" style="width:100%;height:100%;border:0;display:block;margin:0;padding:0;"></iframe>
       </div>

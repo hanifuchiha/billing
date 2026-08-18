@@ -24,23 +24,6 @@ if (!$tbl_check || mysqli_num_rows($tbl_check) == 0) {
     )");
 }
 
-function can_use_odp_product($conn, $pemilik, $area) {
-    global $AKSES, $current_user_id, $arealist;
-    $pemilik = trim((string)$pemilik);
-    $area = trim((string)$area);
-    if ($pemilik === '' || $area === '') return false;
-
-    if ($AKSES == 'ASSISTANT') {
-        return isset($arealist) && is_array($arealist) && in_array($area, $arealist, true);
-    }
-
-    $pemilikEsc = mysqli_real_escape_string($conn, $pemilik);
-    $areaEsc = mysqli_real_escape_string($conn, $area);
-    $uid = (int)$current_user_id;
-    $q = mysqli_query($conn, "SELECT id FROM server WHERE user_id=$uid AND PEMILIK='$pemilikEsc' AND AREA='$areaEsc' LIMIT 1");
-    return $q && mysqli_num_rows($q) > 0;
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $kode       = $_POST['kode'];
     $name       = $_POST['name'];
@@ -71,12 +54,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($product_pairs)) {
         header("Location: ../odp.php?status=error&msg=" . urlencode("Pilih minimal 1 Server Area."));
         exit();
-    }
-    foreach ($product_pairs as $pair) {
-        if (!can_use_odp_product($conn, $pair['pemilik'], $pair['area'])) {
-            header("Location: ../odp.php?status=error&msg=" . urlencode("Server Area tidak sesuai dengan akses akun ini."));
-            exit();
-        }
     }
 
     // PEMILIK/AREA utama (untuk kompatibilitas kolom lama) = pasangan pertama

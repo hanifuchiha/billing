@@ -502,10 +502,29 @@ $brand_query_suffix = '&brand=' . rawurlencode($chat_target);
             color: #666;
             font-size: 16px;
         }
+
+        /* Header bar (tombol call sekarang tombol floating dari cs_call_widget.php) */
+        .chat-top-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            background-color: var(--primary-green);
+            color: #fff;
+            border-radius: 10px 10px 0 0;
+        }
+        .chat-top-header .title { font-weight: bold; font-size: 15px; }
+        .d-none { display: none !important; }
     </style>
 </head>
 <body>
     <div class="container">
+        <div class="chat-top-header">
+            <span class="title"><i class="bi bi-chat-dots me-1"></i>Live Chat</span>
+            <button type="button" class="cc-call-btn d-none" id="btnOpenCall" title="Telepon CS">
+                <i class="bi bi-telephone-fill"></i>
+            </button>
+        </div>
         <!-- Iframe Container -->
         <div class="iframe-container">
             <div class="iframe-wrapper">
@@ -548,5 +567,7 @@ $brand_query_suffix = '&brand=' . rawurlencode($chat_target);
       <div>Profile</div>
     </a>
   </div>
+
+    <?php include 'cs_call_widget.php'; ?>
 </body>
 </html>

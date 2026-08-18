@@ -23,6 +23,16 @@ if (!$ctx) {
 }
 api_require_module_enabled($conn, $pemilik, 'transaksi');
 
+// Reseller/mitra ISP dengan filter harga aktif: HARGA yang dikembalikan API harus ikut harga
+// custom mereka, sama seperti web (Transaction.php) -- sebelumnya endpoint ini selalu kirim
+// HARGA mentah dari kolom DB apa adanya. reseller_effective_harga() baca status reseller dari
+// variabel GLOBAL (diisi cek-sesi.php di web); di sini diisi manual dari hasil resolve auth API.
+require_once '../reseller_helper.php';
+$resellerSettingsTx = reseller_get_settings($conn, $ctx['session_user_id']);
+$GLOBALS['is_reseller'] = in_array($resellerSettingsTx['assistant_role'], ['reseller', 'mitra_isp'], true);
+$GLOBALS['reseller_price_filter_enabled'] = (bool)$resellerSettingsTx['price_filter_enabled'];
+$GLOBALS['reseller_id'] = (int)$ctx['session_user_id'];
+
 // PEMILIK values this account is allowed to read/write transaksi rows for. Falls back to the
 // account's own username when it owns no `server` rows yet (matches the original behaviour).
 $pemilikList = api_allowed_pemilik_list($conn, $ctx);
@@ -157,6 +167,12 @@ switch ($method) {
         $result = mysqli_query($conn, $sql);
         $data = [];
         while ($result && ($row = mysqli_fetch_assoc($result))) {
+            if ($GLOBALS['is_reseller'] && $GLOBALS['reseller_price_filter_enabled'] && !empty($row['PAKET'])) {
+                $effectiveHarga = reseller_effective_harga($conn, $row['PAKET'], $row['PEMILIK'] ?? $pemilik);
+                if ($effectiveHarga > 0) {
+                    $row['HARGA'] = $effectiveHarga;
+                }
+            }
             $data[] = $row;
         }
         api_json(['success' => true, 'data' => $data]);

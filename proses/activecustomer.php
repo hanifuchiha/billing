@@ -491,64 +491,20 @@ function getLastTransaction($idpel)
                                         }
                                 }
 
-                // Jika periode yang dipilih/terdeteksi BUKAN periode berjalan aktif saat ini
-                // (baik periode sebelumnya maupun bulan setelahnya, sesuai setting Periode
-                // Tercatat), hanya update transaksi tanpa aktivasi MikroTik -- koneksi
-                // pelanggan TIDAK disentuh sama sekali.
-                if ($periode !== $periodeBerjalanAktif && !$only_activate_without_transaksi) {
-                    $sql_paket = "SELECT * FROM `paket` WHERE `PAKET` LIKE '%$paket%'";
-                    $query_paket = mysqli_query($conn, $sql_paket);
-                    $paket_data = mysqli_fetch_array($query_paket);
-                    $paketHarga = $is_kompensasi_free ? 0 : ($paket_data['HARGA'] ?? 0);
-
-                    // Gunakan formatter internal agar nama hari/bulan selalu bahasa Indonesia.
-                    // Rolling/Monthversary: pakai tanggal yang dipilih admin (jatuh tempo
-                    // berikutnya otomatis mengikuti tanggal pembayaran ini di siklus berikutnya).
-                    $tanggalbayar = ($is_rolling_atau_monthversary && $tanggal_bayar_manual_valid)
-                        ? tanggal_indo2($tanggal_bayar_manual_input, true)
-                        : tanggal_indo2(date('Y-m-d'), true);
-
-                    $queryCheck = "SELECT `id` FROM `transaksi` WHERE `STATUS` = 'KONFIRMASI' and `IDPEL`='$idpel' LIMIT 1";
-                    $result = $conn->query($queryCheck);
-
-                    if ($result && $result->num_rows > 0) {
-                        $row = $result->fetch_assoc();
-                        $id = $row['id'];
-
-                        $sql = "UPDATE `transaksi`
-                                SET `TANGGALBAYAR` = '$tanggalbayar',
-                                    `PENGUNAAN`   = '$periode',
-                                    `STATUS`      = 'BERHASIL',
-                                    `IDPEL`       = '$idpel',
-                                    `NAMA`        = '$nama',
-                                    `PAKET`       = '$paket',
-                                    `HARGA`       = '$paketHarga',
-                                    `BUKTI`       = '$bukti_db_value_sql',
-                                    `CEK`         = 'Manual admin ($metode_bayar_sql) - non aktifasi',
-                                    `PEMILIK`     = '$user',
-                                    `METODE_BAYAR` = '$metode_bayar_sql',
-                                    `MANUAL_ACTIVE_BY` = '$manual_active_by_sql',
-                                    `MANUAL_ACTIVE_SESSION` = '$manual_active_session_sql'
-                                WHERE `id` = '$id'";
-                    } else {
-                        $sql = "INSERT INTO `transaksi`(`TANGGALBAYAR`,`PENGUNAAN`,`STATUS`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `BUKTI`, `CEK`, `PEMILIK`, `METODE_BAYAR`, `MANUAL_ACTIVE_BY`, `MANUAL_ACTIVE_SESSION`)
-                                VALUES ('$tanggalbayar','$periode','BERHASIL','$idpel','$nama','$paket','$paketHarga','$bukti_db_value_sql','Manual admin ($metode_bayar_sql) - non aktifasi', '$user', '$metode_bayar_sql', '$manual_active_by_sql', '$manual_active_session_sql')";
-                    }
-
-                    if ($conn->query($sql) !== TRUE) {
-                        echo json_encode(["error" => true, "message" => "Gagal simpan transaksi manual active: " . $conn->error . ". Pastikan ALTER tabel transaksi sudah dijalankan."]);
-                        exit;
-                    }
-
-                    $sql_hapus_penagihan = "DELETE FROM `transaksi` WHERE `IDPEL`='$idpel' AND `PENGUNAAN`='$periode' AND UPPER(TRIM(`STATUS`))='PENAGIHAN'";
-                    $conn->query($sql_hapus_penagihan);
-
-                    $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] Manual active non-aktivasi mikrotik untuk $idpel pada periode $periode";
-                    file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
-
-                    echo json_encode(["message" => "? Transaksi periode $periode berhasil diupdate tanpa aktivasi MikroTik (karena bukan periode saat ini)."]);
-                    exit;
-                }
+                // Manual Active SEKARANG disamakan dengan callback payment gateway
+                // (callback_tripay.php dkk): begitu pembayaran dicatat BERHASIL, PASTI
+                // langsung lanjut ke aktivasi Mikrotik/RADIUS di bawah -- TIDAK ADA lagi
+                // syarat "periode yang diinput harus sama dengan periode berjalan hasil
+                // hitung backend". $periode di sini murni LABEL kolom PENGUNAAN (sama
+                // seperti di semua callback), bukan gerbang keputusan connect/tidak.
+                //
+                // Sebelumnya ada gate `$periode !== $periodeBerjalanAktif` yang men-skip
+                // total aktivasi Mikrotik kalau periode mismatch -- dihapus karena
+                // ternyata gampang trigger false-positive: modal Manual Active di
+                // tables.php cuma bisa mem-prefill PERKIRAAN periode berjalan (bisa
+                // meleset dari hitungan backend yang sebenarnya di momen submit), jadi
+                // admin yang secara niat menginput "periode berjalan yang benar" malah
+                // sering ke-skip diam-diam dan pelanggan tidak pernah ter-connect.
 
 
 
@@ -610,7 +566,7 @@ function getLastTransaction($idpel)
 
             if (!$only_activate_without_transaksi) {
             // Cek user dari tabel `user` berdasarkan `server`
-            $sql_paket = "SELECT * FROM `paket` WHERE `PAKET` LIKE '%$paket%'";
+            $sql_paket = "SELECT * FROM `paket` WHERE `PAKET` LIKE '%" . mysqli_real_escape_string($conn, $paket) . "%'";
 
 
             $query_paket = mysqli_query($conn, $sql_paket);
@@ -638,7 +594,14 @@ function getLastTransaction($idpel)
                     
                     
             // Cek dulu apakah ada data dengan STATUS = 'konfirmasi'
-            $queryCheck = "SELECT `id` FROM `transaksi` WHERE `STATUS` = 'KONFIRMASI' and `IDPEL`='$idpel' LIMIT 1";
+            $idpel_sql = mysqli_real_escape_string($conn, $idpel);
+            $nama_sql = mysqli_real_escape_string($conn, $nama);
+            $paket_sql = mysqli_real_escape_string($conn, $paket);
+            $periode_sql = mysqli_real_escape_string($conn, $periode);
+            $tanggalbayar_sql = mysqli_real_escape_string($conn, $tanggalbayar);
+            $paketHarga_sql = mysqli_real_escape_string($conn, $paketHarga);
+
+            $queryCheck = "SELECT `id` FROM `transaksi` WHERE `STATUS` = 'KONFIRMASI' and `IDPEL`='$idpel_sql' LIMIT 1";
             $result = $conn->query($queryCheck);
 
             if ($result && $result->num_rows > 0) {
@@ -646,14 +609,14 @@ function getLastTransaction($idpel)
                 $row = $result->fetch_assoc();
                 $id = $row['id'];
 
-                $sql = "UPDATE `transaksi` 
-                        SET `TANGGALBAYAR` = '$tanggalbayar',
-                            `PENGUNAAN`   = '$periode',
+                $sql = "UPDATE `transaksi`
+                        SET `TANGGALBAYAR` = '$tanggalbayar_sql',
+                            `PENGUNAAN`   = '$periode_sql',
                             `STATUS`      = 'BERHASIL',
-                            `IDPEL`       = '$idpel',
-                            `NAMA`        = '$nama',
-                            `PAKET`       = '$paket',
-                            `HARGA`       = '$paketHarga',
+                            `IDPEL`       = '$idpel_sql',
+                            `NAMA`        = '$nama_sql',
+                            `PAKET`       = '$paket_sql',
+                            `HARGA`       = '$paketHarga_sql',
                             `BUKTI`       = '$bukti_db_value_sql',
                             `CEK`         = 'Manual admin ($metode_bayar_sql)',
                             `PEMILIK`     = '$user',
@@ -665,15 +628,15 @@ function getLastTransaction($idpel)
             } else {
 
                   // Cek dan hapus jika sudah ada data yang sama
-            $cek_sql = "DELETE FROM `transaksi` 
-            WHERE `IDPEL` = '$idpel' 
-              AND `TANGGALBAYAR` = '$tanggalbayar' 
-              AND `PAKET` = '$paket'";
+            $cek_sql = "DELETE FROM `transaksi`
+            WHERE `IDPEL` = '$idpel_sql'
+              AND `TANGGALBAYAR` = '$tanggalbayar_sql'
+              AND `PAKET` = '$paket_sql'";
             $conn->query($cek_sql);
 
                 // Jika tidak ada, lakukan INSERT baru
-        $sql = "INSERT INTO `transaksi`(`TANGGALBAYAR`,`PENGUNAAN`,`STATUS`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `BUKTI`, `CEK`, `PEMILIK`, `METODE_BAYAR`, `MANUAL_ACTIVE_BY`, `MANUAL_ACTIVE_SESSION`) 
-                        VALUES ('$tanggalbayar','$periode','BERHASIL','$idpel','$nama','$paket','$paketHarga','$bukti_db_value_sql','Manual admin ($metode_bayar_sql)', '$user', '$metode_bayar_sql', '$manual_active_by_sql', '$manual_active_session_sql')";
+        $sql = "INSERT INTO `transaksi`(`TANGGALBAYAR`,`PENGUNAAN`,`STATUS`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `BUKTI`, `CEK`, `PEMILIK`, `METODE_BAYAR`, `MANUAL_ACTIVE_BY`, `MANUAL_ACTIVE_SESSION`)
+                        VALUES ('$tanggalbayar_sql','$periode_sql','BERHASIL','$idpel_sql','$nama_sql','$paket_sql','$paketHarga_sql','$bukti_db_value_sql','Manual admin ($metode_bayar_sql)', '$user', '$metode_bayar_sql', '$manual_active_by_sql', '$manual_active_session_sql')";
                 $aksi = 'insert';
             }
 

@@ -16,51 +16,6 @@ if (!$tbl_check || mysqli_num_rows($tbl_check) == 0) {
     )");
 }
 
-function normalize_product_pairs($pairs) {
-    $normalized = [];
-    foreach ($pairs as $pair) {
-        $pemilik = trim((string)($pair['pemilik'] ?? ''));
-        $area = trim((string)($pair['area'] ?? ''));
-        if ($pemilik === '' || $area === '') continue;
-        $normalized[$pemilik . '|' . $area] = true;
-    }
-    $keys = array_keys($normalized);
-    sort($keys, SORT_STRING);
-    return $keys;
-}
-
-function get_odp_relation_pairs($conn, $kode, $fallbackPemilik = '', $fallbackArea = '') {
-    $pairs = [];
-    $kodeEsc = mysqli_real_escape_string($conn, $kode);
-    $qRel = mysqli_query($conn, "SELECT pemilik, area FROM odp_server WHERE odp_kode='$kodeEsc'");
-    if ($qRel) {
-        while ($rel = mysqli_fetch_assoc($qRel)) {
-            $pairs[] = ['pemilik' => $rel['pemilik'], 'area' => $rel['area']];
-        }
-    }
-    if (empty($pairs) && $fallbackPemilik !== '' && $fallbackArea !== '') {
-        $pairs[] = ['pemilik' => $fallbackPemilik, 'area' => $fallbackArea];
-    }
-    return normalize_product_pairs($pairs);
-}
-
-function can_use_odp_product($conn, $pemilik, $area) {
-    global $AKSES, $current_user_id, $arealist;
-    $pemilik = trim((string)$pemilik);
-    $area = trim((string)$area);
-    if ($pemilik === '' || $area === '') return false;
-
-    if ($AKSES == 'ASSISTANT') {
-        return isset($arealist) && is_array($arealist) && in_array($area, $arealist, true);
-    }
-
-    $pemilikEsc = mysqli_real_escape_string($conn, $pemilik);
-    $areaEsc = mysqli_real_escape_string($conn, $area);
-    $uid = (int)$current_user_id;
-    $q = mysqli_query($conn, "SELECT id FROM server WHERE user_id=$uid AND PEMILIK='$pemilikEsc' AND AREA='$areaEsc' LIMIT 1");
-    return $q && mysqli_num_rows($q) > 0;
-}
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $id      = isset($_POST['id'])    ? intval($_POST['id'])                                  : 0;
     $kode    = isset($_POST['kode'])  ? mysqli_real_escape_string($conn, trim($_POST['kode'])) : '';
@@ -117,12 +72,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         header("Location: ../odp.php?status=error&msg=" . urlencode($msg));
         exit();
     }
-    foreach ($product_pairs as $pair) {
-        if (!can_use_odp_product($conn, $pair['pemilik'], $pair['area'])) {
-            header("Location: ../odp.php?status=error&msg=" . urlencode("Server Area tidak sesuai dengan akses akun ini."));
-            exit();
-        }
-    }
 
     // PEMILIK/AREA utama = pasangan pertama (kompatibilitas kolom lama)
     $server = mysqli_real_escape_string($conn, $product_pairs[0]['pemilik']);
@@ -133,35 +82,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $q_brand = mysqli_query($conn, "SELECT BRAND FROM server WHERE PEMILIK='$server' LIMIT 1");
     if ($q_brand && $rb = mysqli_fetch_assoc($q_brand)) { $brand = mysqli_real_escape_string($conn, $rb['BRAND']); }
 
-    // Ambil data lama (untuk update pelanggan & odp_server)
+    // Ambil kode lama (untuk update pelanggan & odp_server)
     $old_kode = '';
-    $old_pemilik = '';
-    $old_area = '';
-    $q_old = mysqli_query($conn, "SELECT KODE, PEMILIK, AREA FROM odp WHERE id=$id");
-    if ($q_old && $r_old = mysqli_fetch_assoc($q_old)) {
-        $old_kode = (string)$r_old['KODE'];
-        $old_pemilik = (string)$r_old['PEMILIK'];
-        $old_area = (string)$r_old['AREA'];
-    } else {
-        header("Location: ../odp.php?status=error&msg=" . urlencode("Data ODP tidak ditemukan."));
-        exit();
-    }
-
-    $submittedRelationKeys = normalize_product_pairs($product_pairs);
-    $targetDuplicateCount = 0;
-    $q_dup = mysqli_query($conn, "SELECT COUNT(*) AS total FROM odp WHERE KODE='$kode' AND id<>$id");
-    if ($q_dup && $r_dup = mysqli_fetch_assoc($q_dup)) {
-        $targetDuplicateCount = (int)($r_dup['total'] ?? 0);
-    }
-
-    if ($targetDuplicateCount > 0) {
-        $existingTargetRelationKeys = get_odp_relation_pairs($conn, $kode, $old_pemilik, $old_area);
-        if ($submittedRelationKeys !== $existingTargetRelationKeys) {
-            $msg = "Kode ODP $kode dipakai lebih dari satu data. Server Area tidak bisa diubah dari form ini karena akan mempengaruhi data lain dengan kode sama. Ubah Kode ODP agar unik dulu.";
-            header("Location: ../odp.php?status=error&msg=" . urlencode($msg));
-            exit();
-        }
-    }
+    $q_old = mysqli_query($conn, "SELECT KODE FROM odp WHERE id=$id");
+    if ($q_old && $r_old = mysqli_fetch_assoc($q_old)) { $old_kode = $r_old['KODE']; }
 
     $sql = "UPDATE odp SET
                 KODE           = '$kode',
@@ -181,27 +105,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             mysqli_query($conn, "UPDATE pelanggan SET ODP='$kode' WHERE ODP='" . mysqli_real_escape_string($conn, $old_kode) . "'");
         }
 
-        // Sinkronkan tabel relasi odp_server. Relasi masih berbasis KODE, jadi jangan
-        // hapus relasi kode yang masih dipakai baris ODP lain.
-        $remainingOldKodeRows = 0;
-        if ($old_kode !== '' && $old_kode !== $kode) {
-            $oldKodeEsc = mysqli_real_escape_string($conn, $old_kode);
-            $q_remaining = mysqli_query($conn, "SELECT COUNT(*) AS total FROM odp WHERE KODE='$oldKodeEsc'");
-            if ($q_remaining && $r_remaining = mysqli_fetch_assoc($q_remaining)) {
-                $remainingOldKodeRows = (int)($r_remaining['total'] ?? 0);
-            }
-            if ($remainingOldKodeRows === 0) {
-                mysqli_query($conn, "DELETE FROM odp_server WHERE odp_kode='$oldKodeEsc'");
-            }
-        }
-
-        if ($targetDuplicateCount === 0) {
+        // Sinkronkan tabel relasi odp_server
+        $kode_del = mysqli_real_escape_string($conn, $old_kode !== '' ? $old_kode : $kode);
+        mysqli_query($conn, "DELETE FROM odp_server WHERE odp_kode='$kode_del'");
+        // Juga hapus dengan kode baru kalau kode berubah
+        if ($old_kode !== $kode) {
             mysqli_query($conn, "DELETE FROM odp_server WHERE odp_kode='$kode'");
-            foreach ($product_pairs as $pair) {
-                $p_ins = mysqli_real_escape_string($conn, $pair['pemilik']);
-                $a_ins = mysqli_real_escape_string($conn, $pair['area']);
-                mysqli_query($conn, "INSERT IGNORE INTO odp_server (odp_kode, pemilik, area) VALUES ('$kode','$p_ins','$a_ins')");
-            }
+        }
+        foreach ($product_pairs as $pair) {
+            $p_ins = mysqli_real_escape_string($conn, $pair['pemilik']);
+            $a_ins = mysqli_real_escape_string($conn, $pair['area']);
+            mysqli_query($conn, "INSERT IGNORE INTO odp_server (odp_kode, pemilik, area) VALUES ('$kode','$p_ins','$a_ins')");
         }
 
         // Upload gambar jika ada

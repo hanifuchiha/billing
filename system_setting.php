@@ -798,6 +798,9 @@ if ($_isAjaxNmsCron) {
 
 $_nmsCronIntervalMinutes = max(1, min(60, (int)($_nmsCronConfigData['interval_minutes'] ?? 5)));
 
+// Pengaturan AI Bot Live Chat SUDAH PINDAH ke halaman tersendiri livechat_setting.php
+// (menu sidebar "Pengaturan Live Chat") -- lihat file itu utk AJAX handler & card-nya.
+
 require 'header.php';
 
 if ($AKSES == 'ASSISTANT') {

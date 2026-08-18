@@ -2,6 +2,31 @@
 require 'cek-sesi.php';
 require_once __DIR__ . '/notifbot/notifphp/tagihan_status_lib.php';
 
+// Toggle "btn_trx_lihat_bukti" (Pengaturan User > Tombol Individual ASSISTANT, halaman
+// Transaction) -- file ini dimuat sebagai <iframe> tanpa require header.php, jadi
+// window.billingUiVisibility (JS) tidak pernah ter-inject di sini dan pengecekan
+// harus diulang manual server-side, baca file JSON yang sama persis dengan yang
+// dipakai load_ui_visibility_settings() di header.php.
+$ctBisaLihatBukti = true;
+if ($AKSES === 'ASSISTANT') {
+    $ctBuktiSettingsUsername = !empty($asistant_name) ? $asistant_name : $ceknama;
+    $ctBuktiSafeUsername = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$ctBuktiSettingsUsername);
+    $ctBisaLihatBukti = false; // default ASSISTANT: sembunyikan, kecuali toggle diaktifkan
+    if ($ctBuktiSafeUsername !== '') {
+        $ctBuktiSettingsFile = __DIR__ . '/settings/dashboard-cards-' . $ctBuktiSafeUsername . '.json';
+        if (is_file($ctBuktiSettingsFile)) {
+            $ctBuktiDecoded = json_decode((string)@file_get_contents($ctBuktiSettingsFile), true);
+            if (is_array($ctBuktiDecoded) && array_key_exists('btn_trx_lihat_bukti', $ctBuktiDecoded)) {
+                $ctBisaLihatBukti = (bool)$ctBuktiDecoded['btn_trx_lihat_bukti'];
+            } else {
+                $ctBisaLihatBukti = true; // key belum pernah disimpan -> default true, sama seperti $defaults di header.php
+            }
+        } else {
+            $ctBisaLihatBukti = true; // belum pernah ada file settings -> default true
+        }
+    }
+}
+
 $idpel = isset($_GET['idpel']) ? mysqli_real_escape_string($conn, $_GET['idpel']) : '';
 
 // Scoping kepemilikan server (pola sama dgn dashboard.php) -- WAJIB, sebelum
@@ -435,7 +460,7 @@ if (!is_string($themeBgColor) || !preg_match('/^#[a-fA-F0-9]{6}$/', $themeBgColo
                     <div class="ct-field">
                         <small>Bukti / REF</small>
                         <strong><?= htmlspecialchars($buktiRaw ?: '-'); ?></strong>
-                        <?php if ($buktiUrl !== ''): ?>
+                        <?php if ($buktiUrl !== '' && $ctBisaLihatBukti): ?>
                             <a href="<?= htmlspecialchars($buktiUrl); ?>" target="_blank" rel="noopener">
                                 <img src="<?= htmlspecialchars($buktiUrl); ?>" alt="Bukti" class="ct-bukti-img" onerror="this.style.display='none'">
                             </a>

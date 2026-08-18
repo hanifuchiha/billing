@@ -731,9 +731,17 @@ if (!function_exists('radiusBuildPppoeReplyAttrs')) {
      * PPP Profile di Mikrotik. Ini SENGAJA supaya paket existing tidak
      * terdampak sampai admin sengaja opt-in.
      */
-    function radiusBuildPppoeReplyAttrs(array $paketRow, bool $sudahBayar, array $globalSettings): array
+    function radiusBuildPppoeReplyAttrs(array $paketRow, bool $sudahBayar, array $globalSettings, string $staticIp = ''): array
     {
         $paketNama = radiusSanitizeAttrValue((string) ($paketRow['PAKET'] ?? ''));
+        // Framed-IP-Address (Customer Static IP) -- atribut RADIUS standar yang
+        // dipahami Mikrotik utk paksa IP tetap ke sesi PPP walau auth via RADIUS
+        // (setara "remote-address" di /ppp/secret API MODE). Dikirim SELALU kalau
+        // $staticIp diisi, tidak peduli sudah/belum bayar, karena ini identitas IP
+        // pelanggan bukan kontrol akses (kontrol akses tetap lewat Mikrotik-Group/
+        // Mikrotik-Address-List seperti biasa).
+        $staticIpTrim = trim($staticIp);
+        $framedIpAttr = ($staticIpTrim !== '') ? ['Framed-IP-Address := ' . $staticIpTrim] : [];
         $addrListExpired = radiusSanitizeAttrValue((string) ($globalSettings['address_list_expired'] ?? 'EXPIRED'));
         $groupValue = $sudahBayar ? $paketNama : $addrListExpired;
 
@@ -781,11 +789,13 @@ if (!function_exists('radiusBuildPppoeReplyAttrs')) {
             // Mikrotik-Rate-Limit, bukan dari profil Mikrotik bernama sama.
             $attrs[] = 'Mikrotik-Group := "' . $groupValue . '"';
 
-            return $attrs;
+            return array_merge($attrs, $framedIpAttr);
         }
 
-        // Fallback: perilaku lama, tidak berubah.
-        return ['Mikrotik-Group := "' . $groupValue . '"'];
+        // Fallback: perilaku lama, tidak berubah (kecuali Framed-IP-Address
+        // kalau $staticIp diisi -- default '' membuat ini backward-compatible
+        // penuh untuk semua caller lama).
+        return array_merge(['Mikrotik-Group := "' . $groupValue . '"'], $framedIpAttr);
     }
 }
 
@@ -798,9 +808,9 @@ if (!function_exists('radiusSyncSingleCustomerNow')) {
      * bekerja kalau entry RADIUS-nya memang sudah ada & benar saat secret
      * lokal hilang.
      */
-    function radiusSyncSingleCustomerNow(string $idpel, string $password, array $paketRow, bool $sudahBayar, array $globalSettings): array
+    function radiusSyncSingleCustomerNow(string $idpel, string $password, array $paketRow, bool $sudahBayar, array $globalSettings, string $staticIp = ''): array
     {
-        $reply = radiusBuildPppoeReplyAttrs($paketRow, $sudahBayar, $globalSettings);
+        $reply = radiusBuildPppoeReplyAttrs($paketRow, $sudahBayar, $globalSettings, $staticIp);
         $result = radiusUpsertUsers([$idpel => ['password' => $password, 'reply' => $reply]]);
         radiusReloadIfChanged(!empty($result['changed']));
         return $result;

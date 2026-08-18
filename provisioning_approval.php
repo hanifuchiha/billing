@@ -621,7 +621,16 @@ function executeAction(customButton) {
         .then(r => r.json())
         .then(data => {
             if (data.success) {
-                alert(data.message);
+                var msg = data.message;
+                // Tampilkan juga status kirim notif WA registrasi (berhasil/
+                // gagal + alasannya) -- SEBELUMNYA admin sama sekali tidak
+                // tahu apakah notif ke pelanggan terkirim atau tidak saat approve.
+                if (data.notif_registrasi && data.notif_registrasi.attempted) {
+                    msg += data.notif_registrasi.success
+                        ? '\n\n✅ Notif WA registrasi berhasil dikirim ke ' + (data.notif_registrasi.nowa || 'pelanggan') + '.'
+                        : '\n\n⚠️ Notif WA registrasi GAGAL terkirim: ' + (data.notif_registrasi.message || 'tidak diketahui penyebabnya');
+                }
+                alert(msg);
                 location.reload();
             } else {
                 alert('Error: ' + (data.message || 'Gagal memproses'));

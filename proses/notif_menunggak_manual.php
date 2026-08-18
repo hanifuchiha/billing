@@ -438,12 +438,20 @@ if ($useTemplate) {
 
 // Substitusi placeholder $NAMA/$IDPEL/dkk di template -- pola sama persis dgn
 // proses/sendinvoice.php (replace_vars + get_defined_vars per-pelanggan).
+// Case-insensitive: template yang ditulis operator kadang pakai huruf besar
+// ($NAMA, mengikuti hint di halaman ini) dan kadang huruf kecil ($nama, mengikuti
+// dokumentasi placeholder di notification.php untuk pesan_dismantle_manual dkk) -
+// dulu cuma huruf besar yang match, jadi $nama/$idpel huruf kecil dibiarkan mentah.
 if (!function_exists('menunggakReplaceTemplateVars')) {
     function menunggakReplaceTemplateVars($template, $vars)
     {
-        return preg_replace_callback('/\$([a-zA-Z0-9_]+)/', function ($m) use ($vars) {
-            $key = $m[1];
-            return array_key_exists($key, $vars) ? (string)$vars[$key] : $m[0];
+        $normalized = [];
+        foreach ($vars as $k => $v) {
+            $normalized[strtoupper($k)] = $v;
+        }
+        return preg_replace_callback('/\$([a-zA-Z0-9_]+)/', function ($m) use ($normalized) {
+            $key = strtoupper($m[1]);
+            return array_key_exists($key, $normalized) ? (string)$normalized[$key] : $m[0];
         }, $template);
     }
 }
@@ -621,21 +629,26 @@ foreach ($targets as $index => $target) {
     $nowaRaw = isset($target['NOWA']) ? (string)$target['NOWA'] : '';
     $nowa = formatWaNumber($nowaRaw);
 
+    // Variabel ini dipakai utk KEDUA mode - mode template maupun pesan manual -
+    // supaya $nama/$idpel/dkk yang diketik operator di kotak pesan manual juga
+    // ikut diganti, bukan cuma di mode template.
+    $tplVars = [
+        'IDPEL' => $idpel,
+        'NAMA' => $nama,
+        'NOWA' => $nowaRaw,
+        'PAKET' => (string)($target['PAKET'] ?? ''),
+        'EMAIL' => (string)($target['EMAIL'] ?? ''),
+        'ALAMAT' => (string)($target['ALAMAT'] ?? ''),
+        'BRAND' => (string)($target['BRAND'] ?? ''),
+        'jatuh_tempo' => (string)($target['TEMPO'] ?? ''),
+        'URL' => rtrim((string)($config['domain'] ?? ''), '/'),
+    ];
+
     if ($useTemplate) {
-        $tplVars = [
-            'IDPEL' => $idpel,
-            'NAMA' => $nama,
-            'NOWA' => $nowaRaw,
-            'PAKET' => (string)($target['PAKET'] ?? ''),
-            'EMAIL' => (string)($target['EMAIL'] ?? ''),
-            'ALAMAT' => (string)($target['ALAMAT'] ?? ''),
-            'BRAND' => (string)($target['BRAND'] ?? ''),
-            'jatuh_tempo' => (string)($target['TEMPO'] ?? ''),
-            'URL' => rtrim((string)($config['domain'] ?? ''), '/'),
-        ];
         $textFinal = menunggakReplaceTemplateVars($templateRemainderManual, $tplVars);
     } else {
-        $textFinal = buildNaturalVariant($pesan, $idpel, $nama);
+        $pesanSubstituted = menunggakReplaceTemplateVars($pesan, $tplVars);
+        $textFinal = buildNaturalVariant($pesanSubstituted, $idpel, $nama);
     }
 
     // Kanal Telegram: dicoba TERLEPAS dari status NOWA -- pelanggan bisa saja

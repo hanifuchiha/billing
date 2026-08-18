@@ -3,45 +3,8 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 require '../cek-sesi.php';
 
-function can_manage_odp_id($conn, $id) {
-    global $AKSES, $current_user_id, $arealist;
-    $id = (int)$id;
-    if ($id <= 0) return false;
-
-    if ($AKSES == 'ASSISTANT') {
-        if (!isset($arealist) || !is_array($arealist) || empty($arealist)) return false;
-        $areas = [];
-        foreach ($arealist as $area) {
-            $areas[] = "'" . mysqli_real_escape_string($conn, $area) . "'";
-        }
-        $areaListSql = implode(',', $areas);
-        $q = mysqli_query($conn, "SELECT o.id FROM odp o WHERE o.id=$id AND (
-            o.AREA IN ($areaListSql) OR EXISTS (
-                SELECT 1 FROM odp_server os WHERE os.odp_kode=o.KODE AND os.area IN ($areaListSql)
-            )
-        ) LIMIT 1");
-        return $q && mysqli_num_rows($q) > 0;
-    }
-
-    $uid = (int)$current_user_id;
-    $q = mysqli_query($conn, "SELECT o.id FROM odp o WHERE o.id=$id AND (
-        EXISTS (SELECT 1 FROM server s WHERE s.user_id=$uid AND s.PEMILIK=o.PEMILIK)
-        OR EXISTS (
-            SELECT 1 FROM odp_server os
-            INNER JOIN server s ON s.PEMILIK=os.pemilik AND s.AREA=os.area
-            WHERE os.odp_kode=o.KODE AND s.user_id=$uid
-        )
-    ) LIMIT 1");
-    return $q && mysqli_num_rows($q) > 0;
-}
-
     if (isset($_POST['id'])) {
         $id = mysqli_real_escape_string($conn, $_POST['id']);
-
-        if (!can_manage_odp_id($conn, $id)) {
-            header("Location: ../odp.php?status=error&msg=" . urlencode("ODP tidak sesuai dengan akses server akun ini."));
-            exit();
-        }
 
         // Ambil nama ODP sebelum hapus untuk log
         $sql_get = "SELECT NAME, KODE FROM odp WHERE id = '$id'";

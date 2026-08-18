@@ -754,7 +754,22 @@ foreach ($pelangganByOdp as $odpKode => $members) {
         $brand   = (string)($sample['BRAND']   ?? '');
         $area    = (string)($sample['AREA']    ?? '');
         $kendala = "ODP mati total - seluruh pelanggan offline ($capInfo)";
-        $data    = "===============\nTiket MAINTENANCE ODP dari billing (OTOMATIS)\n===============\nID PELANGGAN :$ticketKeyOdp\nKODE ODP :$odpKode\nJUMLAH PELANGGAN :$totalMembers\nKENDALA :$kendala";
+
+        // SEBELUMNYA keterangan tiket cuma jumlah pelanggan (summary), teknisi
+        // yang dapat tiket harus buka billing lagi utk tahu SIAPA saja yang
+        // kena. Sekarang ikutkan daftar per-pelanggan (nama, IDPEL, status
+        // online/offline/expired) langsung di keterangan tiket.
+        $memberDetailLines = [];
+        foreach ($members as $mIdpel => $mRow) {
+            $mLk = strtolower($mIdpel);
+            $mStatusLabel = isset($expiredSet[$mIdpel])
+                ? 'EXPIRED'
+                : (!empty($onlineStatus[$mLk]) ? 'ONLINE' : 'OFFLINE');
+            $memberDetailLines[] = '- ' . (string)($mRow['NAMA'] ?? '-') . " ($mIdpel) : $mStatusLabel";
+        }
+
+        $data = "===============\nTiket MAINTENANCE ODP dari billing (OTOMATIS)\n===============\nID PELANGGAN :$ticketKeyOdp\nKODE ODP :$odpKode\nJUMLAH PELANGGAN :$totalMembers\nKENDALA :$kendala\n\nDAFTAR PELANGGAN:\n"
+            . implode("\n", $memberDetailLines);
 
         if ($dryRun) {
             $statCreated++;

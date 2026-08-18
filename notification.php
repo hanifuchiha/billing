@@ -123,6 +123,9 @@ if ($notif_khusus_check->num_rows == 0) {
     if (!in_array('pesan_gangguan_selesai', $columns)) {
         $add_cols[] = "ADD COLUMN pesan_gangguan_selesai TEXT";
     }
+    if (!in_array('pesan_pembayaran_berhasil', $columns)) {
+        $add_cols[] = "ADD COLUMN pesan_pembayaran_berhasil TEXT";
+    }
     if (count($add_cols) > 0) {
         $conn->query("ALTER TABLE notif_khusus " . implode(', ', $add_cols));
     }
@@ -1261,6 +1264,43 @@ if (isset($_POST['simpan_pesan_dismantle_manual'])) {
     }
 }
 
+// Proses simpan pesan pembayaran berhasil (dikirim callback gateway pembayaran)
+if (isset($_POST['simpan_pesan_pembayaran_berhasil'])) {
+    $pesan_pembayaran_berhasil = trim($_POST['pesan_pembayaran_berhasil'] ?? '');
+    $pemilik = isset($ceknama) ? $ceknama : (isset($_POST['pemilik']) ? trim($_POST['pemilik']) : '');
+    if ($pesan_pembayaran_berhasil !== '' && $pemilik !== '') {
+        $stmt = $conn->prepare("SELECT id FROM notif_khusus WHERE pemilik = ?");
+        $stmt->bind_param('s', $pemilik);
+        $stmt->execute();
+        $stmt->store_result();
+        if ($stmt->num_rows > 0) {
+            $stmtu = $conn->prepare("UPDATE notif_khusus SET pesan_pembayaran_berhasil = ? WHERE pemilik = ?");
+            $stmtu->bind_param('ss', $pesan_pembayaran_berhasil, $pemilik);
+            $stmtu->execute();
+            $stmtu->close();
+            $msg = "<div class='alert alert-success'>Pesan pembayaran berhasil diupdate!</div>";
+        } else {
+            $stmti = $conn->prepare("INSERT INTO notif_khusus (pesan_pembayaran_berhasil, pemilik) VALUES (?, ?)");
+            $stmti->bind_param('ss', $pesan_pembayaran_berhasil, $pemilik);
+            $stmti->execute();
+            $stmti->close();
+            $msg = "<div class='alert alert-success'>Pesan pembayaran berhasil disimpan!</div>";
+        }
+        $stmt->close();
+
+        $history_file = "../notifbot/data/history-$ceknama.json";
+        $history = [];
+        if (file_exists($history_file)) {
+            $history = json_decode(file_get_contents($history_file), true);
+        }
+        if (!is_array($history)) $history = [];
+        $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] Menyimpan pesan pembayaran berhasil";
+        file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
+    } else {
+        echo "<div class='alert alert-warning'>Pesan pembayaran berhasil dan pemilik tidak boleh kosong!</div>";
+    }
+}
+
 
 
 
@@ -1281,13 +1321,19 @@ $pesan_reminder_val = '';
 // Tambahan: pesan_gangguan dan pesan_gangguan_selesai (template broadcast.php mode info/selesai)
 $pesan_gangguan_val = '';
 $pesan_gangguan_selesai_val = '';
+// Tambahan: pesan_pembayaran_berhasil (dikirim callback gateway pembayaran)
+$pesan_pembayaran_berhasil_val = '';
 if (!empty($ceknama)) {
-    $stmt = $conn->prepare("SELECT pesan_registrasi, pesan_expired, pesan_reminder, pesan_ketentuan, pesan_disable, pesan_aktif_manual, pesan_remainder_manual, pesan_dismantle_manual, pesan_gangguan, pesan_gangguan_selesai FROM notif_khusus WHERE pemilik = ?");
+    $stmt = $conn->prepare("SELECT pesan_registrasi, pesan_expired, pesan_reminder, pesan_ketentuan, pesan_disable, pesan_aktif_manual, pesan_remainder_manual, pesan_dismantle_manual, pesan_gangguan, pesan_gangguan_selesai, pesan_pembayaran_berhasil FROM notif_khusus WHERE pemilik = ?");
     $stmt->bind_param('s', $ceknama);
     $stmt->execute();
-    $stmt->bind_result($pesan_registrasi_val, $pesan_expired_val, $pesan_reminder_val, $pesan_ketentuan_val, $pesan_disable_val, $pesan_aktif_manual_val, $pesan_remainder_manual_val, $pesan_dismantle_manual_val, $pesan_gangguan_val, $pesan_gangguan_selesai_val);
+    $stmt->bind_result($pesan_registrasi_val, $pesan_expired_val, $pesan_reminder_val, $pesan_ketentuan_val, $pesan_disable_val, $pesan_aktif_manual_val, $pesan_remainder_manual_val, $pesan_dismantle_manual_val, $pesan_gangguan_val, $pesan_gangguan_selesai_val, $pesan_pembayaran_berhasil_val);
     $stmt->fetch();
     $stmt->close();
+}
+if (trim((string)$pesan_pembayaran_berhasil_val) === '') {
+    require_once __DIR__ . '/notifbot/notif_template_helper.php';
+    $pesan_pembayaran_berhasil_val = notifTemplateDefaultPembayaranBerhasil();
 }
 
 
@@ -1475,92 +1521,12 @@ if (isset($_POST['simpan_invoice_generator'])) {
     file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
 }
 
-// Daftar file yang boleh disalin
-$allowFiles = [
-    'hapus_kode_permintaan_bayar.php',
-    'matikan_client_baru.php',
-    'non_aktif_tempo.php',
-    'non_aktif_by_tanggal.php',
-    'cek_tagihan_harian.php',
-    'notif_cek_servernotif.php',
-    'notif_remainder_pembayaran.php',
-    'notif_odp_semua_los.php',
-    'invoice_generator_penagihan.php',
-    'invoice_generator_rolling_monthversary.php',
-    'notif_server_tidak_konek.php',
-    'update_grafik.php'
-];
-
-foreach ($allowFiles as $filename) {
-    $file = $folder . $filename;
-
-    if (!file_exists($file)) {
-        echo "� � File tidak ditemukan: $file<br>";
-        continue;
-    }
-
-    $nameOnly = pathinfo($filename, PATHINFO_FILENAME);
-    $ext = pathinfo($filename, PATHINFO_EXTENSION);
-
-    // Cek apakah nama sudah mengandung username
-    if (preg_match('/_' . preg_quote($username) . '$/', $nameOnly)) {
-        echo "Lewati, sudah ada username di nama file: $filename<br>";
-        continue;
-    }
-
-    $baru = $folder . $nameOnly . '_' . $username . '.' . $ext;
-
-    // Salin jika belum ada, ATAU perbarui jika template lebih baru dari copy
-    $perluSalin = false;
-    if (!file_exists($baru)) {
-        $perluSalin = true;
-    } elseif (filemtime($file) > filemtime($baru)) {
-        $perluSalin = true;
-    }
-
-    if ($perluSalin) {
-        if (copy($file, $baru)) {
-            chmod($baru, 0777);
-            @chown($baru, 'qts');
-            @chgrp($baru, 'www-data');
-            @chgrp($baru, 'qts');
-            // echo "✅ Disalin dan diatur: $baru<br>";
-
-            ///////////////////catatat di log////////////////////
-
-            // Cek apakah sudah pernah dikirim
-            $history_file = "../notifbot/data/history-$username.json";
-            $history = [];
-
-            if (file_exists($history_file)) {
-                $history = json_decode(file_get_contents($history_file), true);
-            }
-
-            // Pastikan format history adalah array
-            if (!is_array($history)) {
-                $history = [];
-            }
-
-
-            $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $username) . " - " . date('Y-m-d H:i:s') . " ] File notifikasi otomatis ($filename) berhasil disalin/diperbarui untuk akun $username";
-            // Simpan ke file history
-            file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
-
-
-
-            ////////////////////////////////////////////////////
-
-
-
-
-
-        } else {
-            echo "� Gagal menyalin: $file<br>";
-        }
-    } else {
-        // echo "ℹ� Sudah ada: $baru<br>";
-    }
-}
+// Generate/perbarui file cron per-akun dari template notifbot/notifphp/*.php --
+// logic aslinya (sebelum diekstrak) ada di sini, sekarang jadi satu sumber
+// bersama notifCronFilesGenerate() (notifbot/notif_cron_files_helper.php) yang
+// juga dipanggil otomatis saat login billing (index.php).
+require_once __DIR__ . '/notifbot/notif_cron_files_helper.php';
+notifCronFilesGenerate($username, !empty($asistant_name) ? $asistant_name : $username);
 
 
 
@@ -2186,6 +2152,43 @@ $URL=$config['URL'];
                                     </div>
                             </div>
                             <button type="submit" class="btn btn-danger" name="simpan_pesan_dismantle_manual">Simpan Pesan Dismantle Manual</button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Form Pesan Pembayaran Berhasil -->
+                <div class="card shadow-lg mt-4">
+                    <div class="card-header bg-success text-white">
+                        <h5 class="mb-0">Simpan Pesan Pembayaran Berhasil (pesan ini dikirim otomatis oleh SEMUA payment gateway saat pembayaran berhasil dikonfirmasi)</h5>
+                    </div>
+                    <div class="card-body">
+                        <form method="post" action="">
+                            <div class="mb-3">
+                                <label for="pesan_pembayaran_berhasil" class="form-label">Pesan Pembayaran Berhasil</label>
+                                <textarea class="form-control" id="pesan_pembayaran_berhasil" name="pesan_pembayaran_berhasil" rows="10" required><?= htmlspecialchars($pesan_pembayaran_berhasil_val ?? '') ?></textarea>
+                                    <small class="text-muted d-block mt-1"><i class="fas fa-database me-1"></i>Disimpan di database: tabel <code>notif_khusus</code>, kolom <code>pesan_pembayaran_berhasil</code>. Kosongkan/reset ke teks default di atas kalau belum pernah diubah.</small>
+                                    <div class="variable-info bg-light p-3 rounded mt-2">
+                                        <b>Variabel yang tersedia untuk pesan pembayaran berhasil:</b><br>
+                                        <ul class="mb-0" style="font-size:0.9em;">
+                                            <li><b>$NAMAPELANGGAN</b> = Nama pelanggan</li>
+                                            <li><b>$USERNAMETRANASAKSI</b> = ID pelanggan</li>
+                                            <li><b>$PAKETPELANGGAN</b> = Paket langganan</li>
+                                            <li><b>$WHATSAPPELANGGAN</b> = Nomor WhatsApp pelanggan</li>
+                                            <li><b>$EMAILPELANGGAN</b> = Email pelanggan</li>
+                                            <li><b>$ALAMATPELANGGAN</b> = Alamat pelanggan</li>
+                                            <li><b>$periode</b> = Periode penggunaan yang dibayar</li>
+                                            <li><b>$tanggalbayar</b> = Tanggal pembayaran</li>
+                                            <li><b>$cekstatus</b> = Status pembayaran dari gateway</li>
+                                            <li><b>$amount</b> = Nominal pembayaran</li>
+                                            <li><b>$invoiceref</b> = Nomor referensi/invoice</li>
+                                            <li><b>$payment_method</b> = Metode pembayaran</li>
+                                            <li><b>$payment_method_code</b> = Kode metode pembayaran</li>
+                                            <li><b>$linkBukti</b> = Baris link download bukti pembayaran</li>
+                                            <li><b>$BRANDPELANGGAN</b> = Nama brand/server pelanggan</li>
+                                        </ul>
+                                    </div>
+                            </div>
+                            <button type="submit" class="btn btn-success" name="simpan_pesan_pembayaran_berhasil">Simpan Pesan Pembayaran Berhasil</button>
                         </form>
                     </div>
                 </div>

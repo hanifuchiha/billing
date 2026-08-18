@@ -134,12 +134,18 @@ if (file_exists($monthversary_setting_file)) {
 // lama dipertahankan utk kasus itu).
 require_once __DIR__ . '/../reminder_settings_helper.php';
 $reminderSettingsRow = reminderSettingsGetRow($conn, $pemilik);
+// Periode Tercatat -- SEBELUMNYA tidak pernah dibaca di sini sama sekali,
+// padahal invoice generator (Transaction.php) & portal pelanggan sudah
+// konsultasi setting ini. Default 'berjalan' kalau belum pernah di-set,
+// sama seperti tempat lain yang baca setting yang sama.
+$periode_tercatat = 'berjalan';
 if ($reminderSettingsRow && !empty($reminderSettingsRow['fixed_due_date_configured'])) {
     $jatuh_tempo_hari         = (int)$reminderSettingsRow['jatuh_tempo'];
     $hari_sebelum             = (int)$reminderSettingsRow['hari_sebelum'];
     $tanggal_awal_tutup_buku  = (int)$reminderSettingsRow['tanggal_awal_tutup_buku'];
     $tanggal_akhir_tutup_buku = (int)$reminderSettingsRow['tanggal_akhir_tutup_buku'];
-    echo "Konfigurasi reminder dimuat dari database: jatuh_tempo hari ke-$jatuh_tempo_hari, tutup buku $tanggal_awal_tutup_buku–$tanggal_akhir_tutup_buku\n";
+    $periode_tercatat         = ($reminderSettingsRow['periode_tercatat'] ?? 'berjalan') === 'berikutnya' ? 'berikutnya' : 'berjalan';
+    echo "Konfigurasi reminder dimuat dari database: jatuh_tempo hari ke-$jatuh_tempo_hari, tutup buku $tanggal_awal_tutup_buku–$tanggal_akhir_tutup_buku, periode tercatat: $periode_tercatat\n";
 } else {
     echo "[PERINGATAN] Akun belum pernah setting Fixed Due Date, menggunakan nilai default.\n";
 }
@@ -868,18 +874,25 @@ function getFirstDueDateFixed(string $referenceDate, int $fixedDueDay): ?string
     if (empty($referenceDate) || strtotime($referenceDate) === false) return null;
     $refTs = strtotime($referenceDate);
     // Untuk mode fixed tempo, due pertama selalu di bulan berikutnya.
-    $nextMonthTs = strtotime('+1 month', $refTs);
-    $year = (int)date('Y', $nextMonthTs);
-    $month = (int)date('m', $nextMonthTs);
+    // FIX: JANGAN strtotime('+1 month', $refTs) langsung -- kalau $referenceDate
+    // tanggal 29/30/31 dan bulan berikutnya lebih pendek (mis. 31 Jan -> +1 month
+    // = 3 Maret, BUKAN Februari), PHP overflow ke bulan sesudahnya lagi, bikin
+    // pelanggan dapat "bonus" sebulan sebelum ditagih/diisolir. Hitung nomor
+    // bulan/tahun langsung (aman dari overflow tanggal), baru +1.
+    $year = (int)date('Y', $refTs);
+    $month = (int)date('n', $refTs) + 1;
+    if ($month > 12) { $month = 1; $year++; }
     return buildMonthlyDateLocal($year, $month, $fixedDueDay);
 }
 
 function getNextDueDateFixed(string $currentDueDate, int $fixedDueDay): ?string
 {
     if (empty($currentDueDate) || strtotime($currentDueDate) === false) return null;
-    $nextMonthTs = strtotime('+1 month', strtotime($currentDueDate));
-    $year = (int)date('Y', $nextMonthTs);
-    $month = (int)date('m', $nextMonthTs);
+    // Fix overflow sama seperti getFirstDueDateFixed() di atas.
+    $curTs = strtotime($currentDueDate);
+    $year = (int)date('Y', $curTs);
+    $month = (int)date('n', $curTs) + 1;
+    if ($month > 12) { $month = 1; $year++; }
     return buildMonthlyDateLocal($year, $month, $fixedDueDay);
 }
 
@@ -949,6 +962,36 @@ $periode_saat_ini = periodeTagihanAktif(
 );
 
 echo "Periode saat ini (sesuai setting): $periode_saat_ini\n";
+
+// ===================================================================
+// LABEL PERIODE UNTUK CEK "SUDAH BAYAR PERIODE AKTIF" (dipakai utk
+// AKTIFKAN/pulihkan profile) -- HARUS SAMA PERSIS dengan rumus yang
+// dipakai saat invoice benar-benar ditulis (Transaction.php / portal
+// pelanggan), BUKAN $periode_saat_ini di atas (itu dari tutup-buku
+// lama, cuma dipakai utk teks log/komentar Mikrotik, bukan lagi utk
+// keputusan aktifkan). SEBELUMNYA satu-satunya sumber ($periode_saat_ini)
+// dipakai utk SEMUA tipe tempo & bisa TIDAK PERNAH match dgn PENGUNAAN
+// invoice asli (Awal/Akhir Tutup Buku vs Jatuh Tempo Hari + Periode
+// Tercatat adalah 2 rumus beda) -- akibatnya pelanggan yang sudah bayar
+// bisa tetap EXPIRED krn pengecekan "ada transaksi periode aktif" tidak
+// pernah ketemu. Fixed Due Date & Rolling/Monthversary py rumus beda:
+$dueMonthTsPeriodeAktifCron = ($tglHariIni <= $jatuh_tempo_hari)
+    ? strtotime($hari_ini)
+    : strtotime('+1 month', strtotime($hari_ini));
+$modePeriodeAktifCron = ($tglHariIni < $tanggal_awal_tutup_buku)
+    ? 'berjalan'
+    : $periode_tercatat;
+$periodeAktifFixedDueDate = tagihanResolvePeriodeTercatat(
+    (int) date('n', $dueMonthTsPeriodeAktifCron),
+    (int) date('Y', $dueMonthTsPeriodeAktifCron),
+    $modePeriodeAktifCron
+);
+$periodeAktifRollingMonthversary = tagihanResolvePeriodeTercatat(
+    (int) date('n', strtotime($hari_ini)),
+    (int) date('Y', strtotime($hari_ini)),
+    'berjalan'
+);
+echo "Periode aktif utk cek pembayaran -- Fixed Due Date: $periodeAktifFixedDueDate | Rolling/Monthversary: $periodeAktifRollingMonthversary\n";
 
 // Rekap hasil
 $statistik = [
@@ -1043,8 +1086,6 @@ while ($server = mysqli_fetch_array($query_server)) {
 
     $lastPaymentMap = getLastPaymentsBulk($conn, $customerIds);
     $lastPaidUsageMap = getLastPaidUsageMapBulk($conn, $customerIds);
-    $paidPeriodMap = getPaidPeriodMapBulk($conn, $customerIds, $periode_saat_ini);
-    $paidPeriodDetailMap = getPaidPeriodDetailMapBulk($conn, $customerIds, $periode_saat_ini);
     $firstPaymentMap = getFirstAndCountPaymentsBulk($conn, $customerIds);
 
     // Track IDPEL yang belum bayar di server ini untuk final verification
@@ -1074,18 +1115,48 @@ while ($server = mysqli_fetch_array($query_server)) {
         }
         $TEMPO        = $pel['TEMPO']; // date Y-m-d (expiry date untuk mengikuti_tanggal_tempo)
         $targetProfilePaket = trim((string)$PAKET);
-        $adaTransaksiPeriodeAktif = isset($paidPeriodMap[$IDPEL]);
-        $paidPeriodDetail = $paidPeriodDetailMap[$IDPEL] ?? [
-            'penggunaan' => $periode_saat_ini,
-            'tanggal_bayar' => '',
-        ];
-        $tanggalBayarPeriodeAktif = trim((string)($paidPeriodDetail['tanggal_bayar'] ?? ''));
-        $penggunaanPeriodeAktif = trim((string)($paidPeriodDetail['penggunaan'] ?? $periode_saat_ini));
 
         // Ambil pembayaran terakhir sekali per pelanggan untuk ditampilkan di laporan.
         $waktu_terakhir_bayar = $lastPaymentMap[$IDPEL] ?? null;
         $penggunaan_terakhir_berhasil = trim((string)($lastPaidUsageMap[$IDPEL] ?? ''));
         $pembayaran_terakhir_display = $waktu_terakhir_bayar ?: '-';
+
+        // ============================================================
+        //  SYARAT "LAYAK DIPULIHKAN" (utk AKTIFKAN ulang profile yang lagi
+        //  EXPIRED setelah pelanggan bayar) -- $layakDipulihkan
+        // ============================================================
+        //  RUMUS LAMA (SUDAH DIBUANG, JANGAN DIPAKAI LAGI): cocokkan label
+        //  PENGUNAAN pembayaran terakhir ke label periode hasil PROYEKSI
+        //  "+1 bulan begitu hari-ini > jatuh_tempo_hari" ($periodeAktifFixedDueDate /
+        //  $periodeAktifRollingMonthversary, lihat definisinya di atas). Proyeksi
+        //  itu memang benar dipakai utk cari label INVOICE BERIKUTNYA yang belum
+        //  tentu ada (lihat tagihanFallbackPeriodeLabel()), TAPI begitu hari ini
+        //  lewat jatuh_tempo_hari, label proyeksinya ikut lompat ke bulan DEPAN --
+        //  sementara pembayaran pelanggan yang BARU SAJA melunasi tunggakan
+        //  labelnya masih bulan yang BARU LEWAT (bulan yang tunggakannya baru
+        //  dilunasi). Dua-duanya TIDAK PERNAH match, jadi restore GAGAL TERUS
+        //  untuk skenario paling umum: pelanggan telat bayar lalu melunasi
+        //  (EXPIRED sendiri kan baru terjadi SETELAH jatuh tempo lewat, jadi hari
+        //  ini hampir selalu sudah lewat jatuh_tempo_hari saat mereka bayar).
+        //  Bukti nyata bug ini: laporan cron "Sudah bayar: 94, Profile
+        //  dipulihkan: 0" -- 94 pelanggan sudah bayar tapi TIDAK SATU PUN profile
+        //  MikroTik-nya ikut dipulihkan.
+        //
+        //  RUMUS BARU: tidak lagi cocokkan label bulan sama sekali. Cukup 2 syarat:
+        //   1. $belum_bayar sudah FALSE (dihitung per cabang TIPE_TEMPO di bawah,
+        //      berbasis TANGGAL bukan label -- rumus ini SUDAH diselaraskan &
+        //      dipercaya sama seperti pelanggan_menunggak.php).
+        //   2. Pelanggan PERNAH punya minimal 1 pembayaran BERHASIL yang tercatat
+        //      ($waktu_terakhir_bayar tidak kosong) -- ini SEMATA-MATA supaya
+        //      pelanggan yang BARU PASANG dan BELUM PERNAH BAYAR SAMA SEKALI
+        //      (cuma masih dalam masa tenggang prabayar) tidak ikut ke-restore
+        //      cuma gara-gara "belum dianggap menunggak".
+        $periodeAktifUntukPelangganIni = ($TIPE_TEMPO === 'mengikuti_tanggal_tempo')
+            ? $periodeAktifFixedDueDate
+            : $periodeAktifRollingMonthversary;
+        $layakDipulihkan = ($waktu_terakhir_bayar !== null && $waktu_terakhir_bayar !== '');
+        $tanggalBayarPeriodeAktif = $layakDipulihkan ? (string)$waktu_terakhir_bayar : '';
+        $penggunaanPeriodeAktif = $penggunaan_terakhir_berhasil !== '' ? $penggunaan_terakhir_berhasil : $periodeAktifUntukPelangganIni;
 
         // Lewati jika paket FREE atau FASUM non-promo (harga <= 0)
         if (stripos($PAKET, 'FREE') !== false) {
@@ -1145,7 +1216,7 @@ while ($server = mysqli_fetch_array($query_server)) {
 
                 if (strtotime($batasIsolirBaru) > strtotime($hari_ini)) {
                     $statistik['sudah_bayar']++;
-                    if ($adaTransaksiPeriodeAktif) {
+                    if ($layakDipulihkan) {
                         $layakPulihkanProfile = true;
                         $alasanPemulihan = "Masih dalam waktu tunggu prabayar sejak pasang $TANGGALPASANG";
                     }
@@ -1156,7 +1227,7 @@ while ($server = mysqli_fetch_array($query_server)) {
             } elseif (isSamePeriodAsTodayLocal($TANGGALPASANG, $hari_ini) || isSamePeriodAsTodayLocal($referenceDate, $hari_ini)) {
                 // Baru pasang atau baru bayar bulan ini → belum dihitung menunggak
                 $statistik['sudah_bayar']++;
-                if ($adaTransaksiPeriodeAktif) {
+                if ($layakDipulihkan) {
                     $layakPulihkanProfile = true;
                     $alasanPemulihan = "Bayar/pasang bulan ini, transaksi periode $periode_saat_ini berhasil";
                 }
@@ -1167,7 +1238,7 @@ while ($server = mysqli_fetch_array($query_server)) {
                 if (strtotime($firstDueDate) > strtotime($hari_ini)) {
                     // Jatuh tempo belum lewat
                     $statistik['sudah_bayar']++;
-                    if ($adaTransaksiPeriodeAktif) {
+                    if ($layakDipulihkan) {
                         $layakPulihkanProfile = true;
                         $alasanPemulihan = "Jatuh tempo $firstDueDate belum lewat dan sudah ada transaksi periode $periode_saat_ini";
                     }
@@ -1178,7 +1249,7 @@ while ($server = mysqli_fetch_array($query_server)) {
                         $keterangan  = "Terakhir bayar: $referenceDate | Jatuh tempo: $firstDueDate | Nunggak: $bulanTunggak bulan";
                     } else {
                         $statistik['sudah_bayar']++;
-                        if ($adaTransaksiPeriodeAktif) {
+                        if ($layakDipulihkan) {
                             $layakPulihkanProfile = true;
                             $alasanPemulihan = "Transaksi periode $periode_saat_ini sudah berhasil";
                         }
@@ -1281,7 +1352,7 @@ while ($server = mysqli_fetch_array($query_server)) {
 
                 if (strtotime($batasIsolirBaru) > strtotime($hari_ini)) {
                     $statistik['sudah_bayar']++;
-                    if ($adaTransaksiPeriodeAktif) {
+                    if ($layakDipulihkan) {
                         $layakPulihkanProfile = true;
                         $alasanPemulihan = "Masih dalam waktu tunggu prabayar sejak pasang $TANGGALPASANG";
                     }
@@ -1292,7 +1363,7 @@ while ($server = mysqli_fetch_array($query_server)) {
             } elseif (isSamePeriodAsTodayLocal($TANGGALPASANG, $hari_ini) || isSamePeriodAsTodayLocal($referenceDate, $hari_ini)) {
                 // Baru pasang atau baru bayar bulan ini → belum dihitung menunggak
                 $statistik['sudah_bayar']++;
-                if ($adaTransaksiPeriodeAktif) {
+                if ($layakDipulihkan) {
                     $layakPulihkanProfile = true;
                     $alasanPemulihan = "Bayar/pasang bulan ini, transaksi periode $periode_saat_ini berhasil";
                 }
@@ -1310,7 +1381,7 @@ while ($server = mysqli_fetch_array($query_server)) {
                 if (empty($firstDueDate) || strtotime($firstDueDate) > strtotime($hari_ini)) {
                     // Jatuh tempo belum lewat
                     $statistik['sudah_bayar']++;
-                    if ($adaTransaksiPeriodeAktif) {
+                    if ($layakDipulihkan) {
                         $layakPulihkanProfile = true;
                         $alasanPemulihan = "Jatuh tempo " . ($firstDueDate ?? '-') . " belum lewat dan sudah ada transaksi periode $periode_saat_ini";
                     }
@@ -1321,7 +1392,7 @@ while ($server = mysqli_fetch_array($query_server)) {
                         $keterangan  = "Terakhir bayar: $referenceDate | Jatuh tempo: $firstDueDate | Nunggak: $bulanTunggak bulan";
                     } else {
                         $statistik['sudah_bayar']++;
-                        if ($adaTransaksiPeriodeAktif) {
+                        if ($layakDipulihkan) {
                             $layakPulihkanProfile = true;
                             $alasanPemulihan = "Transaksi periode $periode_saat_ini sudah berhasil";
                         }
@@ -1447,8 +1518,18 @@ while ($server = mysqli_fetch_array($query_server)) {
             // berikutnya jatuh tempo jadi tgl 14, bukan tetap tgl 10). Kolom
             // TANGGAL_MONTHVERSARY yang sudah dikunci di atas TIDAK diubah --
             // ini cuma override utk perhitungan due date siklus berjalan.
+            // FIX: SEBELUMNYA overwrite $anchorDay TANPA SYARAT arah, jadi
+            // bayar CEPAT (mis. anchor tgl 10, dibayar tgl 8) ikut memundurkan
+            // anchor ke tgl 8 -- bertentangan dgn aturan bisnis "tidak dihukum
+            // krn bayar cepat" yang SUDAH benar diterapkan di tagihanHitung
+            // JatuhTempoBerikutnya()/tagihanHitungStatus() (tagihan_status_lib.php,
+            // dipakai tables.php/dashboard). Sekarang ASIMETRIS sama persis dgn
+            // lib itu: anchor cuma MAJU kalau bayar TELAT, tidak pernah mundur.
             if ($monthversary_follow_last_payment && $waktu_terakhir_bayar) {
-                $anchorDay = (int) date('j', strtotime($referenceDate));
+                $lastPaymentDay = (int) date('j', strtotime($referenceDate));
+                if ($lastPaymentDay > $anchorDay) {
+                    $anchorDay = $lastPaymentDay;
+                }
             }
 
             if ($TIPE_BAYAR === 'prabayar' && empty($waktu_terakhir_bayar)) {
@@ -1465,7 +1546,7 @@ while ($server = mysqli_fetch_array($query_server)) {
 
                 if (strtotime($batasIsolirBaru) > strtotime($hari_ini)) {
                     $statistik['sudah_bayar']++;
-                    if ($adaTransaksiPeriodeAktif) {
+                    if ($layakDipulihkan) {
                         $layakPulihkanProfile = true;
                         $alasanPemulihan = "Masih dalam waktu tunggu prabayar sejak pasang $TANGGALPASANG";
                     }
@@ -1476,7 +1557,7 @@ while ($server = mysqli_fetch_array($query_server)) {
             } elseif (isSamePeriodAsTodayLocal($TANGGALPASANG, $hari_ini) || isSamePeriodAsTodayLocal($referenceDate, $hari_ini)) {
                 // Baru pasang atau baru bayar bulan ini → belum dihitung menunggak
                 $statistik['sudah_bayar']++;
-                if ($adaTransaksiPeriodeAktif) {
+                if ($layakDipulihkan) {
                     $layakPulihkanProfile = true;
                     $alasanPemulihan = "Bayar/pasang bulan ini, transaksi periode $periode_saat_ini berhasil";
                 }
@@ -1493,7 +1574,7 @@ while ($server = mysqli_fetch_array($query_server)) {
                 if (empty($firstDueDate) || strtotime($batasIsolir) > strtotime($hari_ini)) {
                     // Jatuh tempo (+ waktu tunggu untuk prabayar) belum lewat
                     $statistik['sudah_bayar']++;
-                    if ($adaTransaksiPeriodeAktif) {
+                    if ($layakDipulihkan) {
                         $layakPulihkanProfile = true;
                         $alasanPemulihan = "Jatuh tempo " . ($firstDueDate ?? '-') . " belum lewat (termasuk waktu tunggu) dan sudah ada transaksi periode $periode_saat_ini";
                     }
@@ -1505,7 +1586,7 @@ while ($server = mysqli_fetch_array($query_server)) {
                         $keterangan  = "Terakhir bayar: $referenceDate | Jatuh tempo: $firstDueDate | Nunggak: $bulanTunggak bulan$ketWaktuTunggu";
                     } else {
                         $statistik['sudah_bayar']++;
-                        if ($adaTransaksiPeriodeAktif) {
+                        if ($layakDipulihkan) {
                             $layakPulihkanProfile = true;
                             $alasanPemulihan = "Transaksi periode $periode_saat_ini sudah berhasil";
                         }
@@ -1595,13 +1676,13 @@ while ($server = mysqli_fetch_array($query_server)) {
                     $tanggalBayarTerakhir = substr($waktu_terakhir_bayar, 0, 10);
                     $sudahBayarSetelahTempo = ($tanggalBayarTerakhir >= $TEMPO);
                 }
-                if (!$sudahBayarSetelahTempo && !$adaTransaksiPeriodeAktif) {
+                if (!$sudahBayarSetelahTempo && !$layakDipulihkan) {
                     $belum_bayar     = true;
                     $jatuh_tempo_str = $TEMPO;
                     $keterangan      = "Fallback (TIPE_TEMPO='$TIPE_TEMPO') | TEMPO habis: $TEMPO | Periode aktif: $periode_saat_ini";
                 } else {
                     $statistik['sudah_bayar']++;
-                    if ($adaTransaksiPeriodeAktif) {
+                    if ($layakDipulihkan) {
                         $layakPulihkanProfile = true;
                         $alasanPemulihan = "Fallback: transaksi periode $periode_saat_ini sudah berhasil";
                     }
@@ -1615,7 +1696,7 @@ while ($server = mysqli_fetch_array($query_server)) {
                     $keterangan  = "Fallback (TIPE_TEMPO='$TIPE_TEMPO') | Terakhir bayar: $waktu_terakhir_bayar | JT: $jatuh_tempo_calc";
                 } else {
                     $statistik['sudah_bayar']++;
-                    if ($adaTransaksiPeriodeAktif) {
+                    if ($layakDipulihkan) {
                         $layakPulihkanProfile = true;
                         $alasanPemulihan = "Fallback: bayar terakhir $waktu_terakhir_bayar masih aktif sampai $jatuh_tempo_calc";
                     }
@@ -1698,12 +1779,33 @@ while ($server = mysqli_fetch_array($query_server)) {
             }
         }
 
-        if (!$belum_bayar && $layakPulihkanProfile && $adaTransaksiPeriodeAktif) {
+        // ============================================================
+        //  BLOK PEMULIHAN PROFILE -- utk pelanggan yang SUDAH BAYAR
+        //  ($belum_bayar false) tapi profile MikroTik-nya MASIH 'EXPIRED'
+        //  (sisa dari saat mereka telat sebelumnya).
+        //
+        //  SENGAJA cek status Mikrotik dulu utk SEMUA pelanggan sudah-bayar
+        //  (bukan cuma yang $layakPulihkanProfile true) supaya kalau memang
+        //  masih EXPIRED tapi TIDAK dipulihkan, log-nya menjelaskan KENAPA --
+        //  sebelumnya di sini SUNYI TOTAL kalau $layakPulihkanProfile false,
+        //  jadi susah dilacak (persis kasus laporan "Sudah bayar: 94, Profile
+        //  dipulihkan: 0" tanpa penjelasan apa pun di log).
+        // ============================================================
+        if (!$belum_bayar) {
             $mikStatusData = getMikrotikStatus($mikrotikCache, $mikConnected, $IDPEL);
             $mikrotik_status_awal = $mikStatusData['status'];
             $mikrotik_profile_awal = $mikStatusData['profile'];
 
-            if (strtoupper(trim($mikrotik_profile_awal)) === 'EXPIRED') {
+            if (strtoupper(trim($mikrotik_profile_awal)) === 'EXPIRED' && !$layakPulihkanProfile) {
+                // Profile masih EXPIRED tapi belum layak dipulihkan -- SATU-SATUNYA
+                // alasan yang mungkin sekarang (lihat syarat $layakDipulihkan di
+                // atas): pelanggan ini belum pernah tercatat bayar SAMA SEKALI
+                // (waktu_terakhir_bayar kosong), cuma "tidak dianggap menunggak"
+                // krn masih dlm masa tenggang/baru pasang.
+                echo "  [SUDAH BAYAR TAPI BELUM DIPULIHKAN] $IDPEL | $NAMA | secret_profile='$mikrotik_profile_awal' | alasan: belum pernah ada transaksi BERHASIL tercatat, masih dalam masa tenggang\n";
+            }
+
+            if (strtoupper(trim($mikrotik_profile_awal)) === 'EXPIRED' && $layakPulihkanProfile) {
                 $aksiPemulihan = restorePaidCustomerProfile(
                     $mikApi,
                     $mikConnected,

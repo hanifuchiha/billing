@@ -367,8 +367,21 @@ function getInternetStatusRows($conn, $userServerList, $areaFilter, $filename, $
     }
 
     if ($type === 'berhenti_bulan_ini') {
+        // pelanggan_berhenti tidak punya kolom AREA, jadi tidak bisa langsung
+        // "AND AREA IN ($areaFilter)" seperti tipe lain -- $userServerList di
+        // sini TIDAK di-scope AREA (selalu semua server milik owner), jadi
+        // untuk ASSISTANT harus derive ulang pemilik yang AREA-nya ada di
+        // $areaFilter (utk ASSISTANT = $area_list miliknya sendiri).
         $ownerWhere = "1=1";
-        $serverFilter = trim((string)$userServerList);
+        $serverFilterBerhenti = [];
+        $areaFilterTrimmed = trim((string)$areaFilter);
+        if ($areaFilterTrimmed !== '' && $areaFilterTrimmed !== "''") {
+            $queryServerBerhenti = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE AREA IN ($areaFilterTrimmed)");
+            while ($queryServerBerhenti && ($rowServerBerhenti = mysqli_fetch_assoc($queryServerBerhenti))) {
+                $serverFilterBerhenti[] = "'" . addslashes($rowServerBerhenti['PEMILIK']) . "'";
+            }
+        }
+        $serverFilter = count($serverFilterBerhenti) > 0 ? implode(",", $serverFilterBerhenti) : "''";
         if ($serverFilter !== '' && $serverFilter !== "''") {
             $ownerWhere = "pemilik IN ($serverFilter)";
         }

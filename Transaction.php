@@ -172,6 +172,9 @@ $struk_settings = get_struk_settings($struk_settings_username);
           // $userServerList sudah dihitung sekali di atas (scoping ASSISTANT-aware).
           $paket_q = mysqli_query($conn, "SELECT DISTINCT PAKET FROM paket WHERE PAKET IS NOT NULL AND PAKET != '' AND PEMILIK IN ($userServerList) ORDER BY PAKET");
           while ($pk = mysqli_fetch_assoc($paket_q)) {
+            if (paketVisibilityIsHidden((string)$pk['PAKET'], $assistant_hidden_paket_broadband ?? [])) {
+              continue;
+            }
             $sel = (isset($_GET['paket']) && $_GET['paket'] == $pk['PAKET']) ? 'selected' : '';
             echo "<option value='" . htmlspecialchars($pk['PAKET']) . "' $sel>" . htmlspecialchars($pk['PAKET']) . "</option>";
           }
@@ -634,12 +637,23 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
           'metode_bayar' => $filter_metode_bayar,
           'payment_method' => $filter_payment_method,
           'bukti' => $filter_bukti,
-          'status' => $filter_status
+          'status' => $filter_status,
+          'nama' => $filter_nama
         ];
         $export_query = http_build_query($export_params);
         ?>
         <a href="export_pdf.php?<?= htmlspecialchars($export_query) ?>" class="btn btn-danger" target="_blank">Export PDF</a>
         <a href="export_excel.php?<?= htmlspecialchars($export_query) ?>" class="btn btn-success" target="_blank">Export Excel</a>
+
+        <div class="d-inline-flex align-items-center gap-2 ms-2 p-2 border rounded" style="background:#fff3e0;">
+          <div class="form-check mb-0">
+            <input type="checkbox" class="form-check-input" id="trxSelectAllPenagihan" onchange="trxToggleSelectAllPenagihan(this)">
+            <label class="form-check-label small" for="trxSelectAllPenagihan">Pilih Semua PENAGIHAN</label>
+          </div>
+          <span class="small text-muted">Terpilih: <span id="trxSelectedPenagihanCount">0</span></span>
+          <button type="button" class="btn btn-sm btn-danger" id="trxBulkDeleteBtn" onclick="trxBulkDeletePenagihan()"><i class="fas fa-trash me-1"></i>Hapus Massal (PENAGIHAN)</button>
+        </div>
+        <div id="trxBulkDeleteStatus" class="mt-2" style="display:none;"></div>
       <?php
       }
 
@@ -807,6 +821,9 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
                 <!-- Header Row: Badge and Timestamp -->
                 <div class="d-flex justify-content-between align-items-start mb-3">
                   <div>
+                    <?php if ($data['STATUS'] === 'PENAGIHAN') { ?>
+                      <input type="checkbox" class="form-check-input trx-penagihan-checkbox me-2" value="<?php echo (int)$id; ?>" style="width:1.2em;height:1.2em;vertical-align:middle;">
+                    <?php } ?>
                     <span class="badge bg-warning text-dark me-2">TRANSAKSI</span>
                     <span class="badge <?php echo $status_badge_class; ?> text-white"><?php echo $status_badge_label; ?></span>
                   </div>
@@ -841,7 +858,19 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
                 <div class="row mb-3">
                   <div class="col-md-4 mb-2 mb-md-0">
                     <small class="text-muted d-block">PAKET</small>
-                    <strong><?php echo htmlspecialchars($data['PAKET']); ?></strong>
+                    <?php
+                      // Toggle "btn_trx_lihat_paket" (Pengaturan User > Tombol Individual
+                      // ASSISTANT): master switch terpisah dari "Hak Akses Paket (Katalog)" --
+                      // kalau dimatikan, SEMUA nama paket disembunyikan di Transaksi & Export
+                      // untuk assistant ini, apapun status hidden per-nama-paketnya.
+                      $bisa_lihat_paket_trx = ($AKSES !== 'ASSISTANT') || !empty($ui_visibility_settings['btn_trx_lihat_paket']);
+                      $paket_disembunyikan_trx = !$bisa_lihat_paket_trx || paketVisibilityIsHidden((string)$data['PAKET'], $assistant_hidden_paket_broadband ?? []);
+                    ?>
+                    <?php if ($paket_disembunyikan_trx): ?>
+                      <strong>-</strong>
+                    <?php else: ?>
+                      <strong><?php echo htmlspecialchars($data['PAKET']); ?></strong>
+                    <?php endif; ?>
                   </div>
                   <div class="col-md-4 mb-2 mb-md-0">
                     <small class="text-muted d-block">harga dasar ( termasuk PPN tergantung pengaturan )</small>
@@ -891,7 +920,14 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
 
                 <!-- Image and Actions Row -->
                 <div class="row">
-                  <?php if (($metode_bayar_raw === 'cash' || $metode_bayar_raw === 'transfer' || $metode_bayar_raw === 'manual') && !empty($bukti_image_url)) { ?>
+                  <?php
+                  // Toggle "btn_trx_lihat_bukti" (Pengaturan User > Tombol Individual ASSISTANT):
+                  // owner/admin selalu bisa lihat, ASSISTANT hanya kalau toggle-nya aktif. Dicek
+                  // server-side (bukan cuma sembunyikan lewat JS) karena ini foto bukti transfer,
+                  // data sensitif -- kalau cuma display:none, URL & isi foto tetap ada di HTML.
+                  $bisa_lihat_bukti_trx = ($AKSES !== 'ASSISTANT') || !empty($ui_visibility_settings['btn_trx_lihat_bukti']);
+                  ?>
+                  <?php if ($bisa_lihat_bukti_trx && ($metode_bayar_raw === 'cash' || $metode_bayar_raw === 'transfer' || $metode_bayar_raw === 'manual') && !empty($bukti_image_url)) { ?>
                     <div class="col-md-3 mb-3 mb-md-0">
                       <img src="<?php echo htmlspecialchars($bukti_image_url); ?>" alt="Bukti Pembayaran" style="max-width: 100%; max-height: 150px; border: 1px solid #ddd; border-radius: 6px;" onerror="this.style.display='none'">
                     </div>
@@ -931,8 +967,95 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
       </div>
   </div>
 
+<script>
+function trxGetPenagihanCheckboxes() {
+    return Array.from(document.querySelectorAll('.trx-penagihan-checkbox'));
+}
 
+function trxUpdateSelectedCount() {
+    const boxes = trxGetPenagihanCheckboxes();
+    const selected = boxes.filter(function (b) { return b.checked; });
+    const countEl = document.getElementById('trxSelectedPenagihanCount');
+    if (countEl) {
+        countEl.textContent = selected.length;
+    }
+    const selectAll = document.getElementById('trxSelectAllPenagihan');
+    if (selectAll) {
+        selectAll.checked = boxes.length > 0 && selected.length === boxes.length;
+    }
+}
 
+function trxToggleSelectAllPenagihan(checkbox) {
+    trxGetPenagihanCheckboxes().forEach(function (b) { b.checked = checkbox.checked; });
+    trxUpdateSelectedCount();
+}
+
+document.addEventListener('change', function (e) {
+    if (e.target && e.target.classList.contains('trx-penagihan-checkbox')) {
+        trxUpdateSelectedCount();
+    }
+});
+document.addEventListener('DOMContentLoaded', trxUpdateSelectedCount);
+
+async function trxBulkDeletePenagihan() {
+    const selected = trxGetPenagihanCheckboxes().filter(function (b) { return b.checked; }).map(function (b) { return b.value; });
+    if (selected.length === 0) {
+        alert('Pilih minimal satu transaksi PENAGIHAN untuk dihapus.');
+        return;
+    }
+    if (!confirm('Hapus ' + selected.length + ' transaksi PENAGIHAN terpilih? Tindakan ini tidak bisa dibatalkan.')) {
+        return;
+    }
+
+    const btn = document.getElementById('trxBulkDeleteBtn');
+    const statusBox = document.getElementById('trxBulkDeleteStatus');
+    btn.disabled = true;
+    statusBox.style.display = 'block';
+    statusBox.className = 'alert alert-info mt-2';
+    statusBox.textContent = 'Menghapus ' + selected.length + ' transaksi...';
+
+    try {
+        const response = await fetch('proses/bulk_hapus_transaksi_penagihan.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: 'ids=' + encodeURIComponent(selected.join(',')),
+            cache: 'no-store'
+        });
+        const text = await response.text();
+        let result;
+        try {
+            result = JSON.parse(text);
+        } catch (e) {
+            statusBox.className = 'alert alert-danger mt-2';
+            statusBox.textContent = 'Server mengembalikan response bukan JSON (kemungkinan error PHP).';
+            return;
+        }
+
+        if (!result.success) {
+            statusBox.className = 'alert alert-danger mt-2';
+            statusBox.textContent = result.message || 'Gagal menghapus.';
+            return;
+        }
+
+        statusBox.className = 'alert alert-success mt-2';
+        statusBox.textContent = 'Selesai. Berhasil dihapus: ' + (result.total_deleted || 0) + (result.total_failed ? (' | Gagal: ' + result.total_failed) : '');
+
+        (result.deleted || []).forEach(function (id) {
+            const cb = document.querySelector('.trx-penagihan-checkbox[value="' + id + '"]');
+            const card = cb ? cb.closest('.col-md-12.mb-4') : null;
+            if (card) {
+                card.remove();
+            }
+        });
+        trxUpdateSelectedCount();
+    } catch (err) {
+        statusBox.className = 'alert alert-danger mt-2';
+        statusBox.textContent = 'Gagal menghubungi server: ' + err.message;
+    } finally {
+        btn.disabled = false;
+    }
+}
+</script>
 
 
 

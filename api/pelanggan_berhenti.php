@@ -16,49 +16,16 @@ if ($auth['method'] === 'apikey') {
     api_rate_limit($conn, $auth['api_key']);
 }
 
-function get_owner_scope_values_berhenti($conn, $pemilik) {
-    $userId = 0;
-    $stmtUser = $conn->prepare("SELECT id FROM user WHERE USERNAME=? LIMIT 1");
-    if ($stmtUser) {
-        $stmtUser->bind_param('s', $pemilik);
-        $stmtUser->execute();
-        $resUser = $stmtUser->get_result();
-        if ($resUser && $resUser->num_rows > 0) {
-            $userRow = $resUser->fetch_assoc();
-            $userId = (int)($userRow['id'] ?? 0);
-        }
-    }
-
-    $owners = [];
-    if ($userId > 0) {
-        $stmtSrv = $conn->prepare("SELECT DISTINCT PEMILIK FROM server WHERE user_id=? OR PEMILIK=?");
-        if ($stmtSrv) {
-            $stmtSrv->bind_param('is', $userId, $pemilik);
-            $stmtSrv->execute();
-            $resSrv = $stmtSrv->get_result();
-            while ($resSrv && ($row = $resSrv->fetch_assoc())) {
-                $owner = trim((string)($row['PEMILIK'] ?? ''));
-                if ($owner !== '') {
-                    $owners[$owner] = true;
-                }
-            }
-        }
-    }
-
-    if (empty($owners)) {
-        $owners[$pemilik] = true;
-    }
-
-    $quotedOwners = [];
-    foreach (array_keys($owners) as $owner) {
-        $quotedOwners[] = "'" . mysqli_real_escape_string($conn, $owner) . "'";
-    }
-
-    return [
-        'user_id' => $userId,
-        'owner_in' => implode(',', $quotedOwners),
-        'owners' => array_keys($owners)
-    ];
+// Scoping SEBELUMNYA (get_owner_scope_values_berhenti(), dihapus) tidak pernah resolve
+// ASSISTANT->owner (server.user_id = id akun sendiri tidak akan match apa pun utk assistant,
+// karena server dimiliki OWNER, bukan assistant-nya) DAN tidak filter AREA sama sekali (cuma
+// PEMILIK) -- assistant/reseller kemungkinan melihat data kosong ATAU (kalau fallback-nya
+// ke-trigger) berpotensi bocor pelanggan berhenti lintas-area. Diganti pola resmi
+// _bootstrap.php::api_resolve_owner()/api_allowed_pemilik_list() yang sudah benar menangani
+// ASSISTANT (via user.grup + user.server) sama seperti api/pelanggan.php, api/odp.php, dll.
+$ctx = api_resolve_owner($conn, $pemilik);
+if (!$ctx) {
+    api_json(['success' => false, 'error' => 'User tidak ditemukan'], 401);
 }
 
 switch ($method) {
@@ -68,8 +35,8 @@ switch ($method) {
         $search = trim($_GET['search'] ?? '');
         $bulan = trim($_GET['bulan'] ?? 'all');
         $tahun = trim($_GET['tahun'] ?? 'all');
-        $scope = get_owner_scope_values_berhenti($conn, $pemilik);
-        $ownerIn = $scope['owner_in'];
+        $pemilikList = api_allowed_pemilik_list($conn, $ctx);
+        $ownerIn = api_pemilik_in_sql($conn, $pemilikList);
         $searchEsc = mysqli_real_escape_string($conn, $search);
         $bulanEsc = mysqli_real_escape_string($conn, $bulan);
         $tahunEsc = mysqli_real_escape_string($conn, $tahun);
@@ -108,18 +75,27 @@ switch ($method) {
             'tahun' => $tahun
         ];
 
+        // Dropdown filter server/area: dibatasi ke server yang benar-benar di-assign ke akun
+        // yang login (allowed_server_ids dari api_resolve_owner()), bukan lagi semua server owner.
         $servers = [];
-        $stmtSrv = $conn->prepare("SELECT DISTINCT PEMILIK, BRAND, AREA FROM server WHERE user_id=? OR PEMILIK=? ORDER BY AREA ASC, BRAND ASC");
-        $stmtSrv->bind_param('is', $scope['user_id'], $pemilik);
-        $stmtSrv->execute();
-        $resSrv = $stmtSrv->get_result();
-        while ($resSrv && ($srv = $resSrv->fetch_assoc())) {
-            $servers[] = $srv;
+        if (!empty($ctx['allowed_server_ids'])) {
+            $serverIdsIn = implode(',', array_map('intval', $ctx['allowed_server_ids']));
+            $resSrv = mysqli_query($conn, "SELECT DISTINCT PEMILIK, BRAND, AREA FROM server WHERE id IN ($serverIdsIn) ORDER BY AREA ASC, BRAND ASC");
+            while ($resSrv && ($srv = mysqli_fetch_assoc($resSrv))) {
+                $servers[] = $srv;
+            }
         }
 
+        // Bot WA milik OWNER akun ini (bukan username akun yang login -- utk ASSISTANT itu beda),
+        // dipakai sbg pilihan bot broadcast.
         $bots = [];
+        $ownerUsernameStmt = $conn->prepare('SELECT USERNAME FROM user WHERE id = ? LIMIT 1');
+        $ownerUsernameStmt->bind_param('i', $ctx['owner_user_id']);
+        $ownerUsernameStmt->execute();
+        $ownerUsernameRow = $ownerUsernameStmt->get_result()->fetch_assoc();
+        $ownerUsername = $ownerUsernameRow ? (string)$ownerUsernameRow['USERNAME'] : $pemilik;
         $stmtBot = $conn->prepare("SELECT DISTINCT namebot FROM botwa WHERE pemilik=? ORDER BY namebot ASC");
-        $stmtBot->bind_param('s', $pemilik);
+        $stmtBot->bind_param('s', $ownerUsername);
         $stmtBot->execute();
         $resBot = $stmtBot->get_result();
         while ($resBot && ($bot = $resBot->fetch_assoc())) {

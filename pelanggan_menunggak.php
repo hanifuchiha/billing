@@ -320,7 +320,26 @@ function getFirstDueDateForPrabayarFixedByLastUsage($row, $fixedDueDay)
         $cfgDay = 28;
     }
 
-    return buildMonthlyDate((int)$parsed['year'], (int)$parsed['month'], $cfgDay);
+    // BUG (fixed): $parsed adalah PENGUNAAN transaksi BERHASIL TERAKHIR -- periode
+    // yang SUDAH DIBAYAR (mnq_build_payment_index() cuma ambil STATUS='BERHASIL'),
+    // BUKAN periode yang belum dibayar. SEBELUMNYA fungsi ini balikin jatuh tempo
+    // dari bulan/tahun $parsed APA ADANYA (bulan yang sudah lunas) sbg "first due
+    // date" -- akibatnya evaluateMenunggakStatusForRow() cek siklus PERTAMA (bulan
+    // yang barusan dibayar), LANGSUNG ketemu pembayaran, LANGSUNG return show=false
+    // (dianggap "tidak menunggak" / bulan_nunggak floor ke 1 lewat fallback tampilan)
+    // -- utk HAMPIR SEMUA pelanggan prabayar+Fixed Due Date, terlepas dari berapa
+    // lama SUNGGUHNYA mereka menunggak. Itu sebab kartu "Nunggak 2 Siklus+" SELALU
+    // kosong & semua pelanggan nyangkut di "Nunggak 1 Siklus". Jatuh tempo PERTAMA
+    // yang BELUM dibayar = 1 bulan SETELAH periode yang sudah lunas ini, bukan bulan
+    // yang sama -- maju 1 bulan dulu sebelum dibangun jadi tanggal.
+    $dueMonth = (int)$parsed['month'] + 1;
+    $dueYear = (int)$parsed['year'];
+    if ($dueMonth > 12) {
+        $dueMonth = 1;
+        $dueYear++;
+    }
+
+    return buildMonthlyDate($dueYear, $dueMonth, $cfgDay);
 }
 
 function extractKendalaFromJoblistData($jobData)
@@ -499,13 +518,55 @@ function evaluateMenunggakStatusForRow($paymentIndex, $row, $today, $fixedDueDay
             return $status; // masih dalam waktu tunggu (grace period)
         }
 
+        // BUG (fixed): bulan_nunggak SEBELUMNYA di-hardcode ke 1 di sini apapun
+        // yang terjadi -- padahal pelanggan prabayar yang TIDAK PERNAH tercatat
+        // bayar (last_paid kosong) bisa saja sudah terpasang BERBULAN-BULAN lalu
+        // (mis. histori pembayarannya tidak pernah cocok/tercatat dgn benar --
+        // dilaporkan user utamanya utk pelanggan MODE RADIUS-only). Hardcode ke 1
+        // bikin SEMUA pelanggan begini SELALU muncul sbg "Nunggak 1 Siklus" walau
+        // sebenarnya sudah lama, dan kartu "Nunggak 2 Siklus+" jadi tidak pernah
+        // terisi. Hitung siklus SUNGGUHAN sejak TANGGALPASANG (pola sama dgn
+        // cabang "sudah pernah bayar" di bawah -- walk maju per siklus, cek ada
+        // pembayaran BERHASIL atau tidak di tiap siklus), bukan cuma asumsikan 1.
+        $idpel = (string)($row['IDPEL'] ?? '');
+        $bulanTunggakNeverPaid = 1;
+        $activeDueNeverPaid = $tanggalPasangRow;
+        if ($idpel !== '') {
+            $cursor = $tanggalPasangRow;
+            $count = 0;
+            $foundPayment = false;
+            $safety = 0;
+            while (strtotime($cursor) !== false && strtotime($cursor) <= $todayTsBaru && $safety < 600) {
+                $safety++;
+                $cycleEnd = getNextDueDateByTempoType($row, $cursor, $fixedDueDay);
+                if (empty($cycleEnd) || strtotime($cycleEnd) === false) {
+                    break;
+                }
+                if (hasSuccessfulPaymentInPeriod($paymentIndex, $idpel, $cursor, $cycleEnd)) {
+                    // Ada histori bayar yang cocok utk salah satu siklus walau
+                    // last_paid kosong (data tidak konsisten) -- anggap lunas.
+                    $foundPayment = true;
+                    break;
+                }
+                $count++;
+                $activeDueNeverPaid = $cursor;
+                $cursor = $cycleEnd;
+            }
+            if ($foundPayment) {
+                return $status;
+            }
+            if ($count >= 1) {
+                $bulanTunggakNeverPaid = $count;
+            }
+        }
+
         $status['show'] = true;
         $status['reference_date'] = $tanggalPasangRow;
         $status['first_due_date'] = $tanggalPasangRow;
-        $status['active_due_date'] = $tanggalPasangRow;
-        $status['bulan_nunggak'] = 1;
-        $status['hari_nunggak'] = max(1, (int)floor(($todayTsBaru - $pasangTsBaru) / 86400) + 1);
-        $status['total_hari_nunggak'] = $status['hari_nunggak'];
+        $status['active_due_date'] = $activeDueNeverPaid;
+        $status['bulan_nunggak'] = $bulanTunggakNeverPaid;
+        $status['hari_nunggak'] = max(1, (int)floor(($todayTsBaru - strtotime($activeDueNeverPaid)) / 86400) + 1);
+        $status['total_hari_nunggak'] = max(1, (int)floor(($todayTsBaru - $pasangTsBaru) / 86400) + 1);
         return $status;
     }
 
@@ -928,6 +989,37 @@ if (!empty($menunggakIdList)) {
                         placeholder="Cari IDPEL, nama, paket, server, area, tipe bayar..."
                     >
                 </div>
+                <div class="col-md-3">
+                    <label for="filterMenunggakArea" class="form-label">Filter Area</label>
+                    <select id="filterMenunggakArea" class="form-select">
+                        <option value="">-- Semua Area --</option>
+                        <?php
+                        $menunggakAreaOptions = [];
+                        foreach ($dataMenunggak as $rowAreaOpt) {
+                            $areaOptVal = trim((string)($rowAreaOpt['AREA'] ?? ''));
+                            if ($areaOptVal !== '') {
+                                $menunggakAreaOptions[$areaOptVal] = true;
+                            }
+                        }
+                        ksort($menunggakAreaOptions, SORT_STRING | SORT_FLAG_CASE);
+                        foreach (array_keys($menunggakAreaOptions) as $areaOptVal) {
+                            echo '<option value="' . htmlspecialchars($areaOptVal, ENT_QUOTES, 'UTF-8') . '">' . htmlspecialchars($areaOptVal, ENT_QUOTES, 'UTF-8') . '</option>';
+                        }
+                        ?>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="filterMenunggakMinValue" class="form-label">Minimal Lama Menunggak</label>
+                    <input type="number" min="0" id="filterMenunggakMinValue" class="form-control" placeholder="mis. 3">
+                </div>
+                <div class="col-md-2">
+                    <label for="filterMenunggakSatuan" class="form-label">Satuan</label>
+                    <select id="filterMenunggakSatuan" class="form-select">
+                        <option value="hari">Hari</option>
+                        <option value="bulan">Bulan</option>
+                        <option value="tahun">Tahun</option>
+                    </select>
+                </div>
             </div>
 
             <div class="table-responsive" id="menunggakTableScrollWrap" style="max-height: 65vh; overflow-y: auto;">
@@ -959,9 +1051,15 @@ if (!empty($menunggakIdList)) {
                                 $areaRow = (string)($row['AREA'] ?? '');
                                 $ticketInfo = isset($existingTicketMap[$idpelRow]) ? $existingTicketMap[$idpelRow] : null;
                                 $hasServerConnection = $idpelRow !== '';
+                                // Total hari kalender sungguhan sejak pertama menunggak (BUKAN
+                                // bulan_nunggak yang dihitung per siklus billing) -- dipakai
+                                // filter "Satuan Tunggakan" (hari/bulan/tahun) di JS supaya
+                                // konsisten dgn angka "Total X hari" yang sudah ditampilkan di
+                                // kolom "Bulan/Hari Tunggakan".
+                                $totalHariNunggakForFilter = (int)($row['total_hari_nunggak'] ?? 0);
                                 ob_start();
                                 ?>
-                                <tr>
+                                <tr data-area="<?php echo htmlspecialchars($areaRow, ENT_QUOTES, 'UTF-8'); ?>" data-hari-nunggak="<?php echo $totalHariNunggakForFilter; ?>">
                                     <td>
                                         <input
                                             type="checkbox"
@@ -1260,11 +1358,18 @@ if (!empty($menunggakIdList)) {
                             <a href="notification.php" target="_blank" rel="noopener">Notifikasi</a> sebelum kirim dengan mode ini.
                         </div>
                         <?php endif; ?>
+                        <div id="menunggakManualVarsInfo" class="alert alert-secondary py-2 mb-0 small">
+                            <i class="fas fa-code me-1"></i>
+                            Variabel tersedia (huruf besar/kecil sama-sama bisa), otomatis diganti per penerima saat dikirim:
+                            <code>$nama</code> <code>$idpel</code> <code>$nowa</code> <code>$paket</code>
+                            <code>$email</code> <code>$alamat</code> <code>$brand</code> <code>$jatuh_tempo</code> <code>$url</code>
+                        </div>
                         <div id="menunggakTemplateInfo" class="alert alert-secondary py-2 mb-0 small" style="display:none;">
                             <i class="fas fa-file-alt me-1"></i>
                             Preview template <strong>"Pesan Remainder Manual"</strong> dari menu
                             <a href="notification.php" target="_blank" rel="noopener">Notifikasi</a>
-                            -- placeholder <code>$NAMA</code>/<code>$IDPEL</code>/dll. di atas akan otomatis
+                            -- placeholder <code>$nama</code>/<code>$idpel</code>/<code>$nowa</code>/<code>$paket</code>/<code>$email</code>/<code>$alamat</code>/<code>$brand</code>/<code>$jatuh_tempo</code>/<code>$url</code>
+                            (huruf besar/kecil sama-sama bisa) di atas akan otomatis
                             diganti per penerima saat dikirim. Ubah isi templatenya di sana kalau perlu.
                         </div>
                     </div>
@@ -1347,6 +1452,38 @@ if (!empty($menunggakIdList)) {
             </form>
         </div>
     </div>
+
+    <?php if ($AKSES !== 'ASSISTANT'): ?>
+    <div class="card shadow-sm mb-4 border-danger">
+        <div class="card-header bg-danger text-white">
+            <h5 class="mb-0"><i class="fas fa-user-slash me-2"></i>Hapus Jadi Pelanggan Berhenti (Dari Data Terpilih)</h5>
+            <small>Pilih pelanggan dari checkbox pada tabel, lalu hapus sekaligus jadi Pelanggan Berhenti.</small>
+        </div>
+        <div class="card-body">
+            <input type="hidden" id="selectedIdpelHapusList" value="<?php echo htmlspecialchars($menunggakIdCsv, ENT_QUOTES, 'UTF-8'); ?>">
+            <div class="alert alert-warning mb-3">
+                <i class="fas fa-triangle-exclamation me-1"></i>
+                Aksi ini akan, untuk SETIAP pelanggan terpilih: kirim notif WA "Dismantle", putuskan &amp; hapus PPPoE
+                secret di MikroTik, hapus dari FreeRADIUS, lalu pindahkan datanya ke Pelanggan Berhenti (data di menu
+                Pelanggan akan HILANG). Restart FreeRADIUS cuma dilakukan SEKALI di akhir proses (bukan per
+                pelanggan). <b>Tidak bisa dibatalkan setelah dijalankan.</b> Maksimal 200 pelanggan per proses.
+            </div>
+            <div class="mb-3">
+                <div class="alert mb-0" style="background:#0f1b38;border:1px solid #2a3f72;color:#e9f0ff;">
+                    Jumlah data terpilih untuk dihapus: <strong id="selectedHapusCount"><?php echo $menunggakTotalTarget; ?></strong>
+                </div>
+            </div>
+            <button type="button" id="menunggakHapusBtn" class="btn btn-danger" onclick="submitMenunggakHapusBerhenti()">
+                <i class="fas fa-trash me-1"></i>Hapus Jadi Pelanggan Berhenti
+            </button>
+            <div id="menunggakHapusStatus" class="alert alert-info align-items-center mt-3" style="display:none;">
+                <div class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></div>
+                <span id="menunggakHapusStatusText">Sedang memproses...</span>
+            </div>
+            <div id="menunggakHapusResult" class="mt-3" style="display:none;"></div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <?php if ($AKSES === 'ADMIN'): ?>
     <div class="card shadow-sm mb-4">
@@ -1465,11 +1602,34 @@ function applyMenunggakSearch(keyword) {
     }
 
     const q = String(keyword || '').toLowerCase();
+    const areaFilterEl = document.getElementById('filterMenunggakArea');
+    const areaFilter = areaFilterEl ? areaFilterEl.value : '';
+
+    // Filter "Minimal Lama Menunggak" (hari/bulan/tahun) -- dikonversi ke hari
+    // (1 bulan ~ 30 hari, 1 tahun ~ 365 hari, pembulatan wajar utk kebutuhan
+    // filter, BUKAN dipakai buat perhitungan tagihan) lalu dibandingkan ke
+    // data-hari-nunggak (total hari kalender sungguhan sejak pertama
+    // menunggak, lihat atribut tr di atas).
+    const minValueEl = document.getElementById('filterMenunggakMinValue');
+    const satuanEl = document.getElementById('filterMenunggakSatuan');
+    const minValueRaw = minValueEl ? minValueEl.value.trim() : '';
+    const minDaysThreshold = minValueRaw === '' ? null : (function () {
+        const n = parseFloat(minValueRaw);
+        if (isNaN(n) || n < 0) return null;
+        const satuan = satuanEl ? satuanEl.value : 'hari';
+        if (satuan === 'tahun') return n * 365;
+        if (satuan === 'bulan') return n * 30;
+        return n;
+    })();
 
     const rows = document.querySelectorAll('#tabel-menunggak-khusus tbody tr');
     rows.forEach(function (row) {
         const text = (row.textContent || '').toLowerCase();
-        const isVisible = text.indexOf(q) !== -1;
+        const matchesText = q === '' || text.indexOf(q) !== -1;
+        const matchesArea = areaFilter === '' || (row.getAttribute('data-area') || '') === areaFilter;
+        const hariNunggakRow = parseInt(row.getAttribute('data-hari-nunggak') || '0', 10);
+        const matchesMinDays = minDaysThreshold === null || hariNunggakRow >= minDaysThreshold;
+        const isVisible = matchesText && matchesArea && matchesMinDays;
         row.style.display = isVisible ? '' : 'none';
 
         const checkbox = row.querySelector('.recipient-checkbox');
@@ -1670,6 +1830,26 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    const filterAreaSelect = document.getElementById('filterMenunggakArea');
+    if (filterAreaSelect) {
+        filterAreaSelect.addEventListener('change', function () {
+            applyMenunggakSearch(filterInput ? filterInput.value : '');
+        });
+    }
+
+    const filterMinValueInput = document.getElementById('filterMenunggakMinValue');
+    if (filterMinValueInput) {
+        filterMinValueInput.addEventListener('input', function () {
+            applyMenunggakSearch(filterInput ? filterInput.value : '');
+        });
+    }
+    const filterSatuanSelect = document.getElementById('filterMenunggakSatuan');
+    if (filterSatuanSelect) {
+        filterSatuanSelect.addEventListener('change', function () {
+            applyMenunggakSearch(filterInput ? filterInput.value : '');
+        });
+    }
+
     // Catatan: TIDAK panggil syncRecipients()/loadMenunggakProfileStatus() di sini.
     // Nilai awal selectedIdpelList/selectedRecipientCount/selectedOnlyCount sudah
     // benar dari PHP (mencakup SELURUH data menunggak, bukan cuma yang ter-render).
@@ -1850,6 +2030,7 @@ function toggleMenunggakPesanMode() {
     const pesanInput = document.getElementById('menunggakPesan');
     const templateInfo = document.getElementById('menunggakTemplateInfo');
     const templateEmptyWarning = document.getElementById('menunggakTemplateEmptyWarning');
+    const manualVarsInfo = document.getElementById('menunggakManualVarsInfo');
     const useTemplateHidden = document.getElementById('menunggakUseTemplate');
     const templatePreview = pesanInput.dataset.templatePreview || '';
 
@@ -1868,6 +2049,7 @@ function toggleMenunggakPesanMode() {
         }
         if (templateInfo) templateInfo.style.display = '';
         if (templateEmptyWarning) templateEmptyWarning.style.display = (templatePreview === '') ? '' : 'none';
+        if (manualVarsInfo) manualVarsInfo.style.display = 'none';
     } else {
         pesanInput.setAttribute('required', 'required');
         pesanInput.readOnly = false;
@@ -1875,6 +2057,7 @@ function toggleMenunggakPesanMode() {
         pesanInput.placeholder = 'Tulis pesan broadcast untuk pelanggan menunggak...';
         if (templateInfo) templateInfo.style.display = 'none';
         if (templateEmptyWarning) templateEmptyWarning.style.display = 'none';
+        if (manualVarsInfo) manualVarsInfo.style.display = '';
     }
 }
 
@@ -1898,6 +2081,14 @@ function syncRecipients() {
     const diskonInput = document.getElementById('selectedIdpelDiskonList');
     if (diskonInput) {
         diskonInput.value = selected.join(',');
+    }
+    const hapusInput = document.getElementById('selectedIdpelHapusList');
+    if (hapusInput) {
+        hapusInput.value = selected.join(',');
+    }
+    const selectedHapusCount = document.getElementById('selectedHapusCount');
+    if (selectedHapusCount) {
+        selectedHapusCount.textContent = selected.length;
     }
     document.getElementById('selectedCountInline').textContent = selected.length;
     document.getElementById('selectedRecipientCount').textContent = selected.length;
@@ -2225,6 +2416,94 @@ async function submitMenunggakBroadcast() {
     } finally {
         menunggakActiveController = null;
         menunggakIsSubmitting = false;
+    }
+}
+
+async function submitMenunggakHapusBerhenti() {
+    syncRecipients();
+
+    const button = document.getElementById('menunggakHapusBtn');
+    const statusBox = document.getElementById('menunggakHapusStatus');
+    const statusText = document.getElementById('menunggakHapusStatusText');
+    const resultBox = document.getElementById('menunggakHapusResult');
+    if (!button || !statusBox || !resultBox) {
+        return;
+    }
+
+    const selected = (document.getElementById('selectedIdpelHapusList').value || '').trim();
+    if (!selected) {
+        alert('Pilih minimal satu pelanggan untuk dihapus jadi Pelanggan Berhenti.');
+        return;
+    }
+
+    const idpelCount = selected.split(',').filter(Boolean).length;
+    const confirmMsg = 'Anda akan menghapus ' + idpelCount + ' pelanggan jadi Pelanggan Berhenti.\n\n' +
+        'Notif WA "Dismantle" akan dikirim, PPPoE secret di MikroTik diputus & dihapus, ' +
+        'dan user dihapus dari FreeRADIUS (restart sekali di akhir).\n\n' +
+        'Tindakan ini TIDAK BISA DIBATALKAN. Lanjutkan?';
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+
+    button.disabled = true;
+    statusBox.style.display = 'flex';
+    statusBox.className = 'alert alert-info align-items-center mt-3';
+    statusText.textContent = 'Sedang memproses ' + idpelCount + ' pelanggan (WA + MikroTik + FreeRADIUS)... jangan tutup halaman ini.';
+    resultBox.style.display = 'none';
+    resultBox.innerHTML = '';
+
+    try {
+        const response = await fetch('proses/bulk_hapus_pelanggan_menunggak.php', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
+            },
+            body: 'idpels=' + encodeURIComponent(selected),
+            cache: 'no-store'
+        });
+
+        const responseText = await response.text();
+        let result;
+        try {
+            result = JSON.parse(responseText);
+        } catch (parseErr) {
+            statusBox.className = 'alert alert-danger mt-3';
+            statusText.textContent = 'Server mengembalikan response bukan JSON (kemungkinan error PHP).';
+            resultBox.style.display = 'block';
+            resultBox.innerHTML = '<pre style="white-space:pre-wrap;font-size:0.8em;">' + responseText.substring(0, 1000) + '</pre>';
+            return;
+        }
+
+        if (!result.success) {
+            statusBox.className = 'alert alert-danger mt-3';
+            statusText.textContent = result.message || 'Gagal memproses.';
+            return;
+        }
+
+        statusBox.className = 'alert alert-success mt-3';
+        statusText.textContent = 'Selesai. Berhasil: ' + (result.total_berhasil || 0) + ' | Gagal: ' + (result.total_gagal || 0);
+
+        resultBox.style.display = 'block';
+        let html = '';
+        if (result.gagal && result.gagal.length > 0) {
+            html += '<div class="text-danger small"><strong>Gagal (' + result.gagal.length + '):</strong> ' + result.gagal.join(', ') + '</div>';
+        }
+        resultBox.innerHTML = html;
+
+        // Hapus baris yang berhasil dari tabel supaya tidak perlu reload halaman.
+        (result.berhasil || []).forEach(function (idpel) {
+            const checkbox = document.querySelector('#tabel-menunggak-khusus tbody tr .recipient-checkbox[value="' + CSS.escape(idpel) + '"]');
+            const row = checkbox ? checkbox.closest('tr') : null;
+            if (row) {
+                row.remove();
+            }
+        });
+        syncRecipients();
+    } catch (err) {
+        statusBox.className = 'alert alert-danger mt-3';
+        statusText.textContent = 'Gagal menghubungi server: ' + err.message;
+    } finally {
+        button.disabled = false;
     }
 }
 

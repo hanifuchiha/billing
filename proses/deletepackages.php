@@ -3,6 +3,7 @@ error_reporting(E_ALL);
 ini_set('display_errors', 1);
 require '../cek-sesi.php';
 require('../routeros_api.class.php');
+require_once __DIR__ . '/paket_profile_helpers.php';
 
 $API = new RouterosAPI();
 
@@ -53,6 +54,19 @@ while ($row = mysqli_fetch_assoc($q)) {
     $passwordip = $row['PASSWORD'];
 
     if ($API->connect($hostip, $usernameip, $passwordip)) {
+
+        // Pagar kedua, langsung di router. Cek tabel `pelanggan` di atas tidak
+        // melihat secret yang tidak (lagi) tercatat di database -- mis. pelanggan
+        // berhenti yang secret-nya masih tertinggal, atau yang kolom PAKET-nya
+        // sudah menyimpang. Menghapus PPP Profile yang masih direferensikan
+        // secret meninggalkan referensi menggantung: kolom profile secret itu
+        // berubah jadi "*15"/unknown di Winbox maupun saat dibaca lewat API.
+        $stillUsed = mikrotikCountSecretsUsingProfile($API, $paket);
+        if ($stillUsed > 0) {
+            $API->disconnect();
+            header("Location: ../packages.php?deleted=2");
+            exit;
+        }
 
         // Hapus PPP Profile jika ada
         $profiles = $API->comm("/ppp/profile/print", ["?name" => $paket]);

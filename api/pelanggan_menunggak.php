@@ -302,6 +302,9 @@ switch ($method) {
             $userGroup = trim((string)($userRow['grup'] ?? ''));
             $userServerJson = (string)($userRow['server'] ?? '');
         }
+        // Simpan id akun yang BENAR-BENAR login (sebelum $userId ditimpa jadi id owner di bawah
+        // utk ASSISTANT) -- dipakai utk baca pengaturan reseller milik akun ini sendiri.
+        $loginUserId = $userId;
 
         if ($userStatus === 'ASSISTANT' && $userGroup !== '' && ctype_digit($userGroup)) {
             $stmtOwner = $conn->prepare("SELECT id, USERNAME FROM user WHERE id=? LIMIT 1");
@@ -317,6 +320,16 @@ switch ($method) {
                 }
             }
         }
+
+        // Reseller/mitra ISP dengan filter harga aktif: HARGA yang dikembalikan API harus ikut
+        // harga custom mereka, sama seperti web -- sebelumnya endpoint ini selalu kirim harga
+        // mentah dari tabel paket. Baca pengaturan reseller dari akun yang BENAR-BENAR login
+        // ($loginUserId), bukan owner-nya.
+        require_once '../reseller_helper.php';
+        $resellerSettingsMenunggak = reseller_get_settings($conn, $loginUserId);
+        $GLOBALS['is_reseller'] = in_array($resellerSettingsMenunggak['assistant_role'], ['reseller', 'mitra_isp'], true);
+        $GLOBALS['reseller_price_filter_enabled'] = (bool)$resellerSettingsMenunggak['price_filter_enabled'];
+        $GLOBALS['reseller_id'] = $loginUserId;
 
         $pemilikValues = [];
         $areaValues = [];
@@ -716,16 +729,25 @@ switch ($method) {
             }
             $total = count($data);
 
-            $data = array_map(function($row) use ($fixedDueDay) {
+            $data = array_map(function($row) use ($fixedDueDay, $conn) {
+                $paketNama = $row['PAKET'] ?? ($row['paket'] ?? '');
+                $pemilikNama = $row['PEMILIK'] ?? ($row['pemilik'] ?? '');
+                $hargaFinal = $row['HARGA'] ?? ($row['harga'] ?? '');
+                if ($GLOBALS['is_reseller'] && $GLOBALS['reseller_price_filter_enabled'] && !empty($paketNama)) {
+                    $effectiveHarga = reseller_effective_harga($conn, $paketNama, $pemilikNama);
+                    if ($effectiveHarga > 0) {
+                        $hargaFinal = (string)$effectiveHarga;
+                    }
+                }
                 return [
                     'IDPEL' => $row['IDPEL'] ?? ($row['idpel'] ?? ''),
                     'NAMA' => $row['NAMA'] ?? ($row['nama'] ?? ''),
-                    'PAKET' => $row['PAKET'] ?? ($row['paket'] ?? ''),
+                    'PAKET' => $paketNama,
                     'STATUS' => $row['STATUS'] ?? ($row['status'] ?? 'MENUNGGAK'),
                     'AREA' => $row['AREA'] ?? ($row['area'] ?? ''),
-                    'PEMILIK' => $row['PEMILIK'] ?? ($row['pemilik'] ?? ''),
+                    'PEMILIK' => $pemilikNama,
                     'NOWA' => $row['NOWA'] ?? ($row['nowa'] ?? ''),
-                    'HARGA' => $row['HARGA'] ?? ($row['harga'] ?? ''),
+                    'HARGA' => $hargaFinal,
                     'TANGGALPASANG' => $row['TANGGALPASANG'] ?? ($row['tanggalpasang'] ?? ''),
                     'LAST_PAID' => $row['last_paid'] ?? '',
                     'bulan_nunggak' => (int)($row['bulan_nunggak'] ?? 0),

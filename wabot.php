@@ -3021,12 +3021,21 @@ WantedBy=multi-user.target";
                                                             
                                                             $parsedUrl = parse_url($data['addressbot']);
                                                             $port = isset($parsedUrl['port']) ? $parsedUrl['port'] : '';
-                                                            // Bot internal: addressbot menunjuk IP lokal Docker, jadi harus
-                                                            // dibangun ulang pakai IP publik server ini + port NAT Mikrotik.
+                                                            $addressbotHost = isset($parsedUrl['host']) ? $parsedUrl['host'] : '';
+                                                            // Bot internal MODE "DALAM HOST": addressbot menunjuk IP LOKAL
+                                                            // Docker ($config['webiplocal'], tidak bisa diakses langsung dari
+                                                            // browser admin), jadi harus dibangun ulang pakai IP publik
+                                                            // server ini + port NAT Mikrotik.
+                                                            // Bot internal MODE "LUAR HOST" (docker_remote/SSH): addressbot
+                                                            // SUDAH berisi IP server luar host yang benar & bisa diakses
+                                                            // langsung (lihat proses/addbot.php) -- JANGAN ditimpa lagi pakai
+                                                            // $ippublic server INI, itu penyebab tombol Setting bot luar-host
+                                                            // selalu ngarah ke server yang salah.
                                                             // Bot eksternal (unofficial_api/resmi_api): addressbot SUDAH
                                                             // alamat aslinya (server lain), jangan diganti ke IP server ini.
+                                                            $isBotModeDalamHost = $addressbotHost !== '' && $addressbotHost === trim((string)($config['webiplocal'] ?? ''));
                                                             $connect = (($data['tipe_bot'] ?? 'gowa') === 'gowa')
-                                                                ? "http://$ippublic:" . $port
+                                                                ? ($isBotModeDalamHost ? "http://$ippublic:" . $port : $data['addressbot'])
                                                                 : $data['addressbot'];
                                                             $volumeName = $port ? "whatsapp_{$port}" : $volumeName;
                                                             $serviceName = "botrespon_{$volumeName}.service";

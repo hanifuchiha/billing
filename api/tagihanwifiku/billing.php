@@ -14,137 +14,86 @@ if (!$pelanggan) {
     twk_response(404, ['success' => false, 'message' => 'Data pelanggan tidak ditemukan.']);
 }
 
-function twk_month_name_id(int $month, int $year): string
-{
-    $months = [
-        1 => 'Januari',
-        2 => 'Februari',
-        3 => 'Maret',
-        4 => 'April',
-        5 => 'Mei',
-        6 => 'Juni',
-        7 => 'Juli',
-        8 => 'Agustus',
-        9 => 'September',
-        10 => 'Oktober',
-        11 => 'November',
-        12 => 'Desember'
-    ];
-    if ($month > 12) {
-        $month = 1;
-        $year++;
-    }
-    return ($months[$month] ?? '') . ' ' . $year;
-}
-
-function twk_get_last_success_transaction(mysqli $conn, string $idpel): ?array
-{
-    $sql = "SELECT * FROM transaksi
-            WHERE IDPEL = ? AND STATUS = 'BERHASIL'
-            ORDER BY
-                RIGHT(PENGUNAAN, 4) DESC,
-                FIELD(LEFT(PENGUNAAN, LOCATE(' ', PENGUNAAN) - 1),
-                    'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-                    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember') DESC
-            LIMIT 1";
-    $stmt = mysqli_prepare($conn, $sql);
-    if (!$stmt) {
-        return null;
-    }
-    mysqli_stmt_bind_param($stmt, 's', $idpel);
-    mysqli_stmt_execute($stmt);
-    $res = mysqli_stmt_get_result($stmt);
-    $row = $res ? mysqli_fetch_assoc($res) : null;
-    mysqli_stmt_close($stmt);
-    return is_array($row) ? $row : null;
-}
-
+/**
+ * REWRITE 2026-08-07: implementasi lama TIDAK PUNYA cabang 'monthversary'
+ * sama sekali (langsung fallthrough ke default $tampiltagihan='SHOW' di
+ * awal fungsi) -- pelanggan Monthversary SELALU tampil "Belum bayar" walau
+ * sudah lunas. Cabang Fixed Due Date & Rolling juga pakai heuristik sendiri
+ * (hari>15, window 24-30 hari) yang tidak konsisten dgn mesin isolir
+ * sesungguhnya (cron cek_tagihan_harian.php). Sekarang reuse
+ * tagihanHitungStatus()/tagihanFallbackPeriodeLabel() (notifbot/notifphp/
+ * tagihan_status_lib.php) -- satu sumber logika periode yang sama dgn
+ * seluruh sistem, bukan reimplementasi terpisah yang gampang divergen lagi.
+ */
 function twk_compute_home_bill_status(mysqli $conn, array $pelanggan, string $idpel): array
 {
-    $tampiltagihan = 'SHOW';
-    $infotagihan = 'Menuggu pembayaran';
-    $sisaHariAktif = null;
+    require_once __DIR__ . '/../../notifbot/notifphp/tagihan_status_lib.php';
+    require_once __DIR__ . '/../../notifbot/reminder_settings_helper.php';
 
     $tipeTempo = trim((string)($pelanggan['TIPE_TEMPO'] ?? ''));
-    $tipeBayar = trim((string)($pelanggan['TIPE_BAYAR'] ?? ''));
-    $lastTransaction = twk_get_last_success_transaction($conn, $idpel);
+    $hariIni = date('Y-m-d');
 
-    if ($tipeTempo === 'mengikuti_tanggal_tempo') {
-        if (!empty($lastTransaction['waktu'])) {
-            $lastDate = new DateTime((string)$lastTransaction['waktu']);
-            $today = new DateTime();
+    $ownerUsername = reminderSettingsResolveOwnerUsername($conn, (string)($pelanggan['PEMILIK'] ?? ''));
+    $reminderSettings = reminderSettingsGet($conn, $ownerUsername);
+    $jatuhTempoHari = (int)($reminderSettings['jatuh_tempo'] ?? 25);
+    if ($jatuhTempoHari < 1 || $jatuhTempoHari > 28) {
+        $jatuhTempoHari = 25;
+    }
+    $periodeTercatatMode = (string)($reminderSettings['periode_tercatat'] ?? 'berjalan');
 
-            if ($lastDate->format('Y-m') === $today->format('Y-m')) {
-                if ((int)$today->format('d') > 15) {
-                    $currentMonth = (int)$today->format('n');
-                    $currentYear = (int)$today->format('Y');
-                    $nextMonth = twk_month_name_id($currentMonth + 1, $currentYear);
+    $lastPaymentMap = tagihanGetLastPaymentsBulk($conn, [$idpel]);
+    $lastPaidUsageMap = tagihanGetLastPaidUsageMapBulk($conn, [$idpel]);
 
-                    $queryCheck = mysqli_prepare($conn, "SELECT COUNT(*) AS count FROM transaksi WHERE IDPEL = ? AND STATUS = 'BERHASIL' AND PENGUNAAN = ?");
-                    $count = 0;
-                    if ($queryCheck) {
-                        mysqli_stmt_bind_param($queryCheck, 'ss', $idpel, $nextMonth);
-                        mysqli_stmt_execute($queryCheck);
-                        $resCheck = mysqli_stmt_get_result($queryCheck);
-                        if ($resCheck && ($rowCheck = mysqli_fetch_assoc($resCheck))) {
-                            $count = (int)($rowCheck['count'] ?? 0);
-                        }
-                        mysqli_stmt_close($queryCheck);
-                    }
+    $ctx = [
+        'hari_ini' => $hariIni,
+        'jatuh_tempo_hari' => $jatuhTempoHari,
+        'lastPaymentMap' => $lastPaymentMap,
+        'lastPaidUsageMap' => $lastPaidUsageMap,
+        'prabayar_grace_period' => 0,
+        'periode_tercatat_mode' => $periodeTercatatMode,
+    ];
 
-                    if ($count > 0) {
-                        $tampiltagihan = 'HIDE';
-                        $infotagihan = 'Pembayaran ditutup - Sudah ada tagihan bulan depan';
-                    } else {
-                        $tampiltagihan = 'SHOW';
-                        $infotagihan = 'Pembayaran dibuka';
-                    }
-                } else {
-                    $tampiltagihan = 'HIDE';
-                    $infotagihan = 'Pembayaran ditutup';
-                }
-            } elseif ($lastDate->format('Y-m') < $today->format('Y-m')) {
-                $tampiltagihan = 'SHOW';
-                $infotagihan = 'Pembayaran dibuka';
+    // "Sudah bayar periode berjalan" = periode yg SEHARUSNYA ditagih sekarang
+    // (label yang sama dipakai callback payment gateway/Manual Active) sudah
+    // ada di riwayat pembayaran BERHASIL terakhir.
+    $currentPeriodLabel = tagihanFallbackPeriodeLabel($conn, $pelanggan, $ctx);
+    $lastPaidPeriod = trim((string)($lastPaidUsageMap[$idpel] ?? ''));
+    $sudahBayarPeriodeIni = ($currentPeriodLabel !== '' && $lastPaidPeriod !== '' && $lastPaidPeriod === $currentPeriodLabel);
+
+    $jatuhTempoBerikutnya = tagihanHitungJatuhTempoBerikutnya($conn, $pelanggan, $ctx);
+    $tampilkanBelumBayar = !$sudahBayarPeriodeIni;
+
+    // Fixed Due Date: JANGAN tampilkan "Belum bayar" jauh2 hari sebelum jatuh
+    // tempo (dulu bug-nya malah kebalik -- heuristik "hari>15" yg tidak akurat).
+    // Cuma tampilkan mulai H-7 sebelum jatuh tempo (atau sudah lewat) --
+    // di luar window itu dianggap "Sudah bayar" utk tampilan ini walau
+    // transaksi periode berjalan belum tercatat (memang belum waktunya ditagih).
+    if ($tampilkanBelumBayar && $tipeTempo === 'mengikuti_tanggal_tempo' && !empty($jatuhTempoBerikutnya)) {
+        $dueTs = strtotime($jatuhTempoBerikutnya);
+        $todayTs = strtotime($hariIni);
+        if ($dueTs !== false && $todayTs !== false) {
+            $daysUntilDue = (int) floor(($dueTs - $todayTs) / 86400);
+            if ($daysUntilDue > 7) {
+                $tampilkanBelumBayar = false;
             }
-        } else {
-            $tampiltagihan = 'SHOW';
-            $infotagihan = 'Menuggu pembayaran';
         }
     }
 
-    if ($tipeTempo === 'mengikuti_tanggal_bayar') {
-        if (!empty($lastTransaction['waktu'])) {
-            $lastDate = new DateTime((string)$lastTransaction['waktu']);
-            $today = new DateTime();
-            $daysPassed = (int)$lastDate->diff($today)->days;
+    $tampiltagihan = $tampilkanBelumBayar ? 'SHOW' : 'HIDE';
 
-            if ($daysPassed >= 24) {
-                $tampiltagihan = 'SHOW';
-                $infotagihan = 'Pembayaran dibuka';
-            } else {
-                $tampiltagihan = 'HIDE';
-                $infotagihan = 'Pembayaran ditutup';
-            }
-
-            $sisaHariAktif = max(0, 30 - $daysPassed);
-        } else {
-            $tampiltagihan = 'SHOW';
-            $infotagihan = 'Menuggu pembayaran';
-
-            if (strtolower($tipeBayar) === 'pascabayar' && !empty($pelanggan['TANGGALPASANG'])) {
-                $installDate = new DateTime((string)$pelanggan['TANGGALPASANG']);
-                $today = new DateTime();
-                $daysPassed = (int)$installDate->diff($today)->days;
-                $sisaHariAktif = max(0, 30 - $daysPassed);
-            }
+    $sisaHariAktif = null;
+    if ($tipeTempo === 'mengikuti_tanggal_bayar' && !empty($jatuhTempoBerikutnya)) {
+        $dueTs = strtotime($jatuhTempoBerikutnya);
+        $todayTs = strtotime($hariIni);
+        if ($dueTs !== false && $todayTs !== false) {
+            $sisaHariAktif = max(0, (int) floor(($dueTs - $todayTs) / 86400));
         }
     }
 
     return [
         'tampiltagihan' => $tampiltagihan,
         'display_status' => $tampiltagihan === 'SHOW' ? 'Belum bayar' : 'Sudah bayar',
-        'info_tagihan' => $infotagihan,
+        'info_tagihan' => $tampiltagihan === 'SHOW' ? 'Pembayaran dibuka' : 'Pembayaran ditutup',
         'sisa_hari_aktif' => $sisaHariAktif
     ];
 }

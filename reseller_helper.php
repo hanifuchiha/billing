@@ -19,6 +19,10 @@ if (!function_exists('reseller_bootstrap_schema')) {
             'reseller_bw_cost' => "ALTER TABLE `user` ADD COLUMN `reseller_bw_cost` DECIMAL(15,2) NOT NULL DEFAULT 0",
             'reseller_bw_ppn_percent' => "ALTER TABLE `user` ADD COLUMN `reseller_bw_ppn_percent` DECIMAL(5,2) NOT NULL DEFAULT 11",
             'reseller_bw_bhp_uso' => "ALTER TABLE `user` ADD COLUMN `reseller_bw_bhp_uso` DECIMAL(15,2) NOT NULL DEFAULT 0",
+            // Skema beban reseller: 'bandwidth' (nominal tetap, pola lama) atau
+            // 'omset_percent' (persentase dari omset kotor bulan berjalan).
+            'reseller_cost_scheme' => "ALTER TABLE `user` ADD COLUMN `reseller_cost_scheme` VARCHAR(20) NOT NULL DEFAULT 'bandwidth'",
+            'reseller_omset_percent' => "ALTER TABLE `user` ADD COLUMN `reseller_omset_percent` DECIMAL(5,2) NOT NULL DEFAULT 0",
         ];
         foreach ($columns as $col => $alterSql) {
             $check = @mysqli_query($conn, "SHOW COLUMNS FROM `user` LIKE '$col'");
@@ -52,31 +56,107 @@ if (!function_exists('reseller_get_settings')) {
             'bw_cost' => 0.0,
             'bw_ppn_percent' => 11.0,
             'bw_bhp_uso' => 0.0,
+            'cost_scheme' => 'bandwidth',
+            'omset_percent' => 0.0,
         ];
 
-        $q = mysqli_query($conn, "SELECT assistant_role, reseller_price_filter_enabled, reseller_bw_cost, reseller_bw_ppn_percent, reseller_bw_bhp_uso FROM `user` WHERE id = $user_id LIMIT 1");
+        $q = mysqli_query($conn, "SELECT assistant_role, reseller_price_filter_enabled, reseller_bw_cost, reseller_bw_ppn_percent, reseller_bw_bhp_uso, reseller_cost_scheme, reseller_omset_percent FROM `user` WHERE id = $user_id LIMIT 1");
         if (!$q || mysqli_num_rows($q) === 0) {
             return $defaults;
         }
         $row = mysqli_fetch_assoc($q);
+        $scheme = $row['reseller_cost_scheme'] ?? 'bandwidth';
+        if (!in_array($scheme, ['bandwidth', 'omset_percent'], true)) {
+            $scheme = 'bandwidth';
+        }
         return [
             'assistant_role' => $row['assistant_role'] !== null && $row['assistant_role'] !== '' ? $row['assistant_role'] : 'assistant',
             'price_filter_enabled' => (int)$row['reseller_price_filter_enabled'],
             'bw_cost' => (float)$row['reseller_bw_cost'],
             'bw_ppn_percent' => (float)$row['reseller_bw_ppn_percent'],
             'bw_bhp_uso' => (float)$row['reseller_bw_bhp_uso'],
+            'cost_scheme' => $scheme,
+            'omset_percent' => (float)($row['reseller_omset_percent'] ?? 0),
         ];
     }
 }
 
 if (!function_exists('reseller_bandwidth_burden')) {
     // Beban = (biaya bandwidth + BHP USO) dikenakan PPN di atasnya.
+    // Dipakai langsung kalau skema = 'bandwidth' (pola lama, nominal tetap).
     function reseller_bandwidth_burden($settings)
     {
         $cost = (float)($settings['bw_cost'] ?? 0);
         $bhpUso = (float)($settings['bw_bhp_uso'] ?? 0);
         $ppnPercent = (float)($settings['bw_ppn_percent'] ?? 0);
         return ($cost + $bhpUso) * (1 + ($ppnPercent / 100));
+    }
+}
+
+if (!function_exists('reseller_cost_burden')) {
+    // Beban reseller sesuai skema yang dipilih:
+    // - 'bandwidth'     : nominal tetap, lihat reseller_bandwidth_burden().
+    // - 'omset_percent' : persentase dari $omset (omset kotor periode berjalan,
+    //                     sudah di-scope AREA milik reseller tsb -- lihat caller).
+    function reseller_cost_burden($settings, $omset = 0.0)
+    {
+        $scheme = $settings['cost_scheme'] ?? 'bandwidth';
+        if ($scheme === 'omset_percent') {
+            $percent = (float)($settings['omset_percent'] ?? 0);
+            return (float)$omset * ($percent / 100);
+        }
+        return reseller_bandwidth_burden($settings);
+    }
+}
+
+if (!function_exists('reseller_omset_bulan_ini')) {
+    // Omset kotor bulan berjalan (transaksi BERHASIL) utk pelanggan di AREA yang
+    // di-assign lewat $server_json (kolom `server` milik akun reseller). Dipakai
+    // skema beban 'omset_percent' -- dipanggil dari list ASSISTANT di user.php.
+    function reseller_omset_bulan_ini($conn, $server_json)
+    {
+        $area_ids = json_decode((string)$server_json, true);
+        if (!is_array($area_ids) || count($area_ids) === 0) {
+            return 0.0;
+        }
+        $id_in = implode(",", array_map('intval', $area_ids));
+        $arealist = [];
+        $query_area = mysqli_query($conn, "SELECT AREA FROM server WHERE id IN ($id_in)");
+        if ($query_area) {
+            while ($row_area = mysqli_fetch_assoc($query_area)) {
+                if (!empty($row_area['AREA'])) {
+                    $arealist[] = $row_area['AREA'];
+                }
+            }
+        }
+        $arealist = array_unique(array_filter($arealist));
+        if (count($arealist) === 0) {
+            return 0.0;
+        }
+        $area_list = "'" . implode("','", array_map('addslashes', $arealist)) . "'";
+
+        $pemilik_ids = [];
+        $query_pemilik = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE AREA IN ($area_list)");
+        if ($query_pemilik) {
+            while ($row_pemilik = mysqli_fetch_assoc($query_pemilik)) {
+                $pemilik_ids[] = "'" . $row_pemilik['PEMILIK'] . "'";
+            }
+        }
+        $pemilik_list = count($pemilik_ids) > 0 ? implode(",", $pemilik_ids) : "''";
+
+        $awal_bulan_ini = date('Y-m-01');
+        $akhir_bulan_ini = date('Y-m-t');
+        $sql = "SELECT SUM(t.HARGA) as total FROM transaksi t
+            INNER JOIN pelanggan p ON t.IDPEL = p.IDPEL
+            WHERE t.STATUS = 'BERHASIL'
+              AND DATE(t.TANGGALBAYAR) >= '$awal_bulan_ini' AND DATE(t.TANGGALBAYAR) <= '$akhir_bulan_ini'
+              AND p.PEMILIK IN ($pemilik_list) AND p.AREA IN ($area_list)";
+        $result = mysqli_query($conn, $sql);
+        if (!$result) {
+            return 0.0;
+        }
+        $row = mysqli_fetch_assoc($result);
+        return (float)($row['total'] ?? 0);
     }
 }
 

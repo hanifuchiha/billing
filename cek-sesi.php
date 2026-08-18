@@ -40,6 +40,11 @@ telegramBotAccessEnsureColumns($conn);
 require_once 'notifbot/telegram_send_helper.php';
 telegramEnsurePelangganColumn($conn);
 $assigned_telegram_bot_ids = [];
+require_once 'livechat_access_helper.php';
+livechatAccessEnsureColumn($conn);
+require_once 'paket_visibility_helper.php';
+paketVisibilityBootstrapSchema($conn);
+$assigned_livechat_areas = [];
 $assistant_role = null;
 $is_reseller = false;
 $reseller_id = null;
@@ -138,7 +143,9 @@ while ($hasil_cek_role = mysqli_fetch_array($query_cek_role)) {
 				$reseller_id = (int)$id;
 				$reseller_settings = reseller_get_settings($conn, $reseller_id);
 				$reseller_price_filter_enabled = (bool)$reseller_settings['price_filter_enabled'];
-				$reseller_bandwidth_burden = reseller_bandwidth_burden($reseller_settings);
+				// $reseller_bandwidth_burden dihitung final di bawah, SETELAH $area_list
+				// terbentuk (baris ~198) -- skema 'omset_percent' butuh angka omset yang
+				// scoped ke AREA milik reseller ini.
 			}
 
 			$id_grup_assistant = $hasil_cek_role['grup'];
@@ -193,7 +200,64 @@ while ($hasil_cek_role = mysqli_fetch_array($query_cek_role)) {
 			sort($arealist);
 			if (!empty($arealist)) {
 			   $area_list = "'" . implode("','", array_map('addslashes', $arealist)) . "'"; // dipakai di query WHERE IN
+			} else {
+			   // Assistant/reseller tanpa satupun server/area di-assign -- $area_list
+			   // HARUS tetap terdefinisi (string yang tak mungkin match AREA manapun),
+			   // supaya query "AREA IN ($area_list)" di banyak file lain tidak jadi
+			   // "AREA IN ()" (syntax error SQL) begitu variabel ini undefined.
+			   $area_list = "''";
 			}
+
+			// Beban reseller final: skema 'bandwidth' (nominal tetap) tidak butuh
+			// omset, skema 'omset_percent' butuh omset kotor BULAN BERJALAN yang
+			// di-scope ke server/AREA milik reseller ini (pola sama seperti dashboard.php).
+			if ($is_reseller) {
+				$reseller_omset_bulan_ini = 0.0;
+				if (($reseller_settings['cost_scheme'] ?? 'bandwidth') === 'omset_percent') {
+					$reseller_pemilik_ids = [];
+					$queryServerReseller = mysqli_query($conn, "SELECT PEMILIK FROM server WHERE AREA IN ($area_list)");
+					if ($queryServerReseller) {
+						while ($rowServerReseller = mysqli_fetch_assoc($queryServerReseller)) {
+							$reseller_pemilik_ids[] = "'" . $rowServerReseller['PEMILIK'] . "'";
+						}
+					}
+					$reseller_pemilik_list = count($reseller_pemilik_ids) > 0 ? implode(",", $reseller_pemilik_ids) : "''";
+
+					$reseller_tanggal_bayar_filter_sql = "COALESCE(
+						DATE(t.TANGGALBAYAR),
+						STR_TO_DATE(t.TANGGALBAYAR, '%Y-%m-%d'),
+						STR_TO_DATE(
+							CONCAT(
+								TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+									SUBSTRING_INDEX(t.TANGGALBAYAR, ',', -1),
+									'Januari', '01'
+								), 'Februari', '02'), 'Maret', '03'), 'April', '04'), 'Mei', '05'), 'Juni', '06'), 'Juli', '07'), 'Agustus', '08'), 'September', '09'), 'Oktober', '10'), 'November', '11'), 'Desember', '12'))
+							),
+							'%d %m %Y'
+						)
+					)";
+					$reseller_awal_bulan_ini = date('Y-m-01');
+					$reseller_akhir_bulan_ini = date('Y-m-t');
+					$sql_omset_reseller = "SELECT SUM(t.HARGA) as total FROM transaksi t
+						INNER JOIN pelanggan p ON t.IDPEL = p.IDPEL
+						WHERE t.STATUS = 'BERHASIL'
+						  AND $reseller_tanggal_bayar_filter_sql >= '$reseller_awal_bulan_ini'
+						  AND $reseller_tanggal_bayar_filter_sql <= '$reseller_akhir_bulan_ini'
+						  AND p.PEMILIK IN ($reseller_pemilik_list) AND p.AREA IN ($area_list)";
+					$result_omset_reseller = mysqli_query($conn, $sql_omset_reseller);
+					if ($result_omset_reseller) {
+						$row_omset_reseller = mysqli_fetch_assoc($result_omset_reseller);
+						$reseller_omset_bulan_ini = (float)($row_omset_reseller['total'] ?? 0);
+					}
+				}
+				$reseller_bandwidth_burden = reseller_cost_burden($reseller_settings, $reseller_omset_bulan_ini);
+			}
+
+			// Key file logo billing ("profile-{key}.png" di dokumen/logo/): assistant
+			// yang sudah punya logo sendiri pakai username-nya sendiri, selain itu
+			// (assistant tanpa logo sendiri, atau owner) pakai username owner --
+			// sama seperti pola $ui_settings_username di header.php.
+			$logo_owner_key = ($AKSES === 'ASSISTANT' && !empty($asistant_name)) ? $asistant_name : $ceknama;
 
 			// --- Bangun daftar bot WA yang di-assign khusus ke assistant ini ---
 			// Kolom assigned_bots ada di BARIS ASSISTANT itu sendiri ($hasil_cek_role),
@@ -215,6 +279,16 @@ while ($hasil_cek_role = mysqli_fetch_array($query_cek_role)) {
 				$assigned_telegram_bot_ids_decoded = json_decode($assigned_telegram_bots_JSON, true);
 				if (is_array($assigned_telegram_bot_ids_decoded)) {
 					$assigned_telegram_bot_ids = array_values(array_unique(array_map('intval', $assigned_telegram_bot_ids_decoded)));
+				}
+			}
+
+			// --- Sama persis di atas, tapi utk AREA yang di-assign khusus ke
+			// assistant ini utk menu Live Chat (livechat_access_helper.php) ---
+			$assigned_livechat_areas_JSON = $hasil_cek_role['assigned_livechat_areas'] ?? null;
+			if ($assigned_livechat_areas_JSON) {
+				$assigned_livechat_areas_decoded = json_decode($assigned_livechat_areas_JSON, true);
+				if (is_array($assigned_livechat_areas_decoded)) {
+					$assigned_livechat_areas = array_values(array_unique(array_filter(array_map('strval', $assigned_livechat_areas_decoded))));
 				}
 			}
 
@@ -242,6 +316,21 @@ while ($hasil_cek_role = mysqli_fetch_array($query_cek_role)) {
 
 
 
+}
+
+// Hak Akses Paket (Katalog): daftar nama paket yang di-hide dari
+// dropdown/katalog untuk akun ASSISTANT ini (by id akun assistant itu
+// SENDIRI -- $id, BUKAN $current_user_id yang menunjuk ke owner). Kosong []
+// untuk ADMIN/owner (tidak pernah difilter). Dihitung SEKALI di sini supaya
+// tersedia global di hampir semua halaman (require cek-sesi.php/header.php),
+// dipakai lewat paketVisibilityFilterRows()/paketVisibilityIsHidden().
+$assistant_hidden_paket_broadband = [];
+$assistant_hidden_paket_hotspot = [];
+$assistant_hidden_paket_corporate = [];
+if (($AKSES ?? '') === 'ASSISTANT' && !empty($id)) {
+    $assistant_hidden_paket_broadband = paketVisibilityGetHiddenNames($conn, $id, 'broadband');
+    $assistant_hidden_paket_hotspot = paketVisibilityGetHiddenNames($conn, $id, 'hotspot');
+    $assistant_hidden_paket_corporate = paketVisibilityGetHiddenNames($conn, $id, 'corporate');
 }
 
 if (!in_array($ticket_management_source, $ticket_management_allowed, true)) {

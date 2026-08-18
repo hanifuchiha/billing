@@ -5,6 +5,7 @@ require '../cek-sesi.php'; // pastikan file ini menyetel $conn
 require('../routeros_api.class.php');
 require_once __DIR__ . '/../radius_sync_lib.php';
 require_once __DIR__ . '/../reseller_helper.php';
+require_once __DIR__ . '/paket_profile_helpers.php';
 radiusEnsurePaketProfileSourceColumn($conn);
 paketDiskonPermanenEnsureColumns($conn);
 
@@ -117,37 +118,37 @@ foreach ($serversRaw as $entry) {
             continue;
         }
 
-        if ($isOrigin) {
-            // Hapus profile & pool lama (nama mungkin berubah)
-            $pl = $API->comm("/ppp/profile/print", ["?name" => $oldPaket]);
-            if (!empty($pl)) {
-                foreach ($pl as $p) {
-                    if (isset($p['.id'])) {
-                        $API->comm("/ppp/profile/remove", [".id" => $p['.id']]);
-                    }
-                }
-            }
-            $pools = $API->comm("/ip/pool/print", ["?name" => $oldPaket]);
-            if (!empty($pools)) {
-                foreach ($pools as $pp) {
-                    if (isset($pp['.id'])) {
-                        $API->comm("/ip/pool/remove", [".id" => $pp['.id']]);
-                    }
-                }
-            }
+        // Profile & pool lama TIDAK dihapus lalu dibuat ulang. Di RouterOS,
+        // /ppp/secret menyimpan referensi ke .id profile; menghapus profile-nya
+        // membuat SEMUA secret pelanggan di paket ini menunjuk .id yang sudah
+        // hilang, sehingga kolom profile-nya tampil "*15"/unknown di Winbox dan
+        // ikut terbaca begitu oleh /ppp/secret/print (tables.php, pelanggan
+        // menunggak, cron scan status). Cukup di-set/rename di tempat: .id
+        // lestari, semua secret otomatis ikut ke nama baru.
+        //
+        // Pool didahulukan karena profile memakainya sebagai remote-address.
+        $poolResult = mikrotikUpsertIpPool($API, $isOrigin ? $oldPaket : '', $profileName, $remot);
+        if (!$poolResult['ok']) {
+            $errors[] = "IP Pool gagal di $pemilik-$area: " . $poolResult['error'];
         }
 
-        $API->comm("/ip/pool/add", [
-            "name"   => $profileName,
-            "ranges" => $remot,
-        ]);
-        $API->comm("/ppp/profile/add", [
-            "name"           => $profileName,
-            "rate-limit"     => $ratelimit,
-            "local-address"  => $local,
-            "remote-address" => $profileName,
-        ]);
+        $profileResult = mikrotikUpsertPppProfile(
+            $API,
+            $isOrigin ? $oldPaket : '',
+            $profileName,
+            $ratelimit,
+            $local,
+            $profileName
+        );
         $API->disconnect();
+
+        if (!$profileResult['ok']) {
+            // Jangan update database kalau router menolak -- nama paket di DB
+            // yang tidak ada padanannya di /ppp/profile bikin semua
+            // /ppp/secret/set profile=... berikutnya gagal diam-diam.
+            $errors[] = "PPP Profile gagal di $pemilik-$area: " . $profileResult['error'];
+            continue;
+        }
     }
 
     if ($isOrigin) {
@@ -156,6 +157,23 @@ foreach ($serversRaw as $entry) {
                       WHERE id = " . (int) $id;
         if (mysqli_query($conn, $sqlUpdate)) {
             $updatedOrigin = true;
+
+            // PPP Profile di Mikrotik ikut ganti nama (karena di-rename, bukan
+            // dibuat ulang), jadi kolom PAKET pelanggan HARUS ikut disamakan.
+            // Kalau tidak, semua "/ppp/secret/set profile=<nama lama>" berikutnya
+            // -- callback pembayaran, activecustomer.php, cron isolir/restore --
+            // ditolak Mikrotik dan diabaikan diam-diam, sehingga pelanggan
+            // tertinggal di profile EXPIRED / referensi lama. Perilaku ini sama
+            // dengan yang sudah dilakukan editpackagestaticip.php.
+            if ($oldPaket !== $profileName) {
+                $oldPaketEsc = mysqli_real_escape_string($conn, $oldPaket);
+                $oldPemilikEsc = mysqli_real_escape_string($conn, $oldPemilik);
+                $oldAreaEsc = mysqli_real_escape_string($conn, $oldArea);
+                mysqli_query($conn, "UPDATE pelanggan SET PAKET = '$profileNameEsc'
+                                     WHERE PAKET = '$oldPaketEsc'
+                                       AND PEMILIK = '$oldPemilikEsc'
+                                       AND AREA = '$oldAreaEsc'");
+            }
         } else {
             $errors[] = 'Update database gagal: ' . mysqli_error($conn);
         }

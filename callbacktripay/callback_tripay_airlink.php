@@ -774,7 +774,8 @@ if ($cekstatus == "EXPIRED") {
     
     // Kirim notifikasi error
     $hargatampil = "Rp " . number_format($amount, 0, ',', '.');
-    $text = "Kode pembayaran anda untuk pelanggan $merchant_ref dengan No Ref $invoiceref dengan detail $payment_method ( $payment_method_code ) sebesar $hargatampil kadaluarsa (EXPIRED) dan tidak dapat diproses. Silakan membuat kode baru di portal pelanggan. Terima kasih atas pengertiannya.";
+
+    $text = "📢 INFORMASI KODE PEMBAYARAN Pelanggan: $merchant_ref No. Ref: $invoiceref Metode: $payment_method ($payment_method_code) Nominal: $hargatampil Kode pembayaran yang sebelumnya dibuat sudah tidak berlaku dan tidak dapat digunakan untuk melakukan pembayaran. ⚠️ PENTING: Ada kemungkinan Anda telah membuat lebih dari satu kode pembayaran untuk tagihan yang sama. Setiap kode pembayaran memiliki masa berlaku dan hanya kode yang masih dapat digunakan yang dapat diproses. Pesan ini BUKAN pemberitahuan tagihan baru. Jika Anda membuat kode pembayaran yang baru, kode tersebut hanya menggantikan kode pembayaran sebelumnya untuk TAGIHAN YANG SAMA. Tidak ada penagihan atau pembayaran dua kali. Jika pembayaran belum dilakukan, silakan membuat kode pembayaran baru melalui portal pelanggan. ✅ Jika Anda sudah memiliki kode pembayaran lain yang telah berhasil dibayar, silakan ABAIKAN pesan ini. Tidak perlu melakukan pembayaran kembali. Terima kasih atas pengertiannya.";
 
     if (!empty($waapi) && !empty($botname) && !empty($botpass)) {
         $data = ["phone" => $sendwa, "message" => prependDynamicGreeting($text)];

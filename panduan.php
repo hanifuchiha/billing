@@ -251,7 +251,8 @@ if ($safe_ui_username !== '') {
                             <li><a href="#tim">9. Tim, Sales/Mitra & Hak Akses ASSISTANT</a></li>
                             <li><a href="#sistem">10. Pengaturan Sistem & Portal Pelanggan</a></li>
                             <li><a href="#tiket">11. Tiket & Provisioning</a></li>
-                            <li><a href="#troubleshoot">12. Troubleshooting & FAQ</a></li>
+                            <li><a href="#corporate">12. Menu Corporate (B2B)</a></li>
+                            <li><a href="#troubleshoot">13. Troubleshooting & FAQ</a></li>
                         </ul>
 
                         <h3 id="persiapan">1. Persiapan Awal</h3>
@@ -447,6 +448,12 @@ if ($safe_ui_username !== '') {
                             <p><b>Simulasi:</b> Dari 50 voucher yang tadi digenerate, 30 sudah laku terjual minggu ini. Buka Voucher Bank untuk melihat sisa stok 20 voucher yang belum terpakai, sekaligus bisa cetak ulang atau hapus voucher yang kertasnya rusak sebelum sempat dijual.</p>
                             <a class="btn btn-info" href="voucherbank.php" target="_blank"><i class="fas fa-piggy-bank"></i> Buka Voucher Bank</a>
                         </div>
+                        <div class="step">
+                            <h4>4.6 Paket Static IP</h4>
+                            <p>Paket khusus untuk pelanggan yang butuh IP tetap (statis), bukan IP dinamis dari PPP Pool. Perlu dibedakan: ini <b>bukan</b> tipe koneksi baru -- tetap PPPoE biasa dengan Mode API/RADIUS/MULTI sama seperti paket biasa, cuma IP pelanggannya dikunci tetap. Local/Remote IP di form boleh dikosongkan kalau Anda mau atur profile Mikrotik manual sendiri.</p>
+                            <p><b>Simulasi:</b> Kantor cabang PT ABC butuh IP publik tetap 103.xx.xx.10 supaya bisa dipakai CCTV remote. Buat Paket Static IP "Dedicated 20M", lalu daftarkan PT ABC lewat Customer Static IP dengan IP tersebut -- setiap kali reconnect, IP-nya tidak berubah-ubah seperti pelanggan PPPoE biasa.</p>
+                            <a class="btn btn-success" href="packagesstaticip.php" target="_blank"><i class="fas fa-network-wired"></i> Kelola Paket Static IP</a>
+                        </div>
 
                         <h3 id="pelanggan">5. Manajemen Pelanggan</h3>
                         <div class="step">
@@ -483,6 +490,20 @@ if ($safe_ui_username !== '') {
                             <p>Daftar pelanggan yang sudah berhenti berlangganan (churn) -- baik karena pindah rumah, ganti provider, atau alasan lain. Data mereka tetap tersimpan (tidak dihapus permanen) untuk arsip, tapi tidak lagi ditagih atau dihitung sebagai pelanggan aktif.</p>
                             <p><b>Simulasi:</b> Pelanggan bernama Sari pindah kota dan minta berhenti langganan. Anda pindahkan datanya ke Pelanggan Berhenti (bukan dihapus) -- dia otomatis tidak lagi masuk hitungan pelanggan aktif/tagihan bulanan, tapi riwayat datanya masih bisa dicek kalau suatu saat dia daftar lagi.</p>
                             <a class="btn btn-secondary" href="daftar_pelanggan_berhenti.php" target="_blank"><i class="fas fa-user-slash"></i> Buka Pelanggan Berhenti</a>
+                        </div>
+
+                        <div class="step">
+                            <h4>5.7 Customer Static IP</h4>
+                            <p>Daftarkan pelanggan yang pakai Paket Static IP (lihat 4.6). Form-nya sama persis Customer PPPoE biasa (username/password PPPoE, Mode API/RADIUS/MULTI), ditambah 1 field khusus: pilih IP Static dari IP Pool Static Area yang bersangkutan. Billing/invoice/reminder-nya otomatis ikut sistem yang sama dengan pelanggan PPPoE biasa.</p>
+                            <p><b>Simulasi:</b> PT ABC (lihat contoh 4.6) didaftarkan lewat Customer Static IP, pilih Paket "Dedicated 20M", pilih IP 103.xx.xx.10 dari dropdown IP Pool Static -- sistem otomatis memasang IP itu ke koneksi PPPoE-nya (via remote-address API MODE atau Framed-IP-Address RADIUS MODE).</p>
+                            <a class="btn btn-primary" href="tablesstaticip.php" target="_blank"><i class="fas fa-network-wired"></i> Kelola Customer Static IP</a>
+                        </div>
+
+                        <div class="step">
+                            <h4>5.8 IP Pool Static</h4>
+                            <p>Definisikan range IP yang tersedia untuk dipakai pelanggan Static IP per Area/Server -- supaya saat mendaftarkan pelanggan baru, admin tinggal pilih dari dropdown IP yang belum kepakai (bukan ngetik manual dan berisiko bentrok/dobel).</p>
+                            <p><b>Simulasi:</b> Area "Jakarta Selatan" dapat alokasi 103.xx.xx.1 sampai 103.xx.xx.20 dari ISP upstream. Daftarkan range itu di IP Pool Static -- setiap kali admin menambah Customer Static IP baru di area itu, sistem otomatis cuma menawarkan IP yang belum dipakai pelanggan lain.</p>
+                            <a class="btn btn-info" href="staticippool.php" target="_blank"><i class="fas fa-map-signs"></i> Kelola IP Pool Static</a>
                         </div>
 
                         <h3 id="pembayaran">6. Sistem Pembayaran & Billing</h3>
@@ -821,7 +842,47 @@ if ($safe_ui_username !== '') {
                             <p>Lihat penjelasan lengkap di bagian <a href="#pelanggan">5.4 Provisioning Joblist</a> -- proses approval pendaftaran pelanggan baru sebelum akunnya benar-benar aktif di Mikrotik.</p>
                         </div>
 
-                        <h3 id="troubleshoot">12. Troubleshooting & FAQ</h3>
+                        <h3 id="corporate">12. Menu Corporate (B2B)</h3>
+                        <div class="step">
+                            <p>Menu khusus untuk pelanggan perusahaan/instansi (kantor, sekolah, hotel, rumah sakit, dst) yang butuh pencatatan lebih lengkap dari pelanggan residential biasa -- data perusahaan, banyak PIC (Person In Charge), kontrak, sampai billing dengan termin pembayaran (Net 7/14/30/60). Menu ini <b>terpisah total</b> dari Customer PPPoE/Static IP biasa -- kalau perusahaan itu juga butuh koneksi internet fisik, tetap didaftarkan terpisah lewat menu Customer PPPoE/Static IP.</p>
+                        </div>
+                        <div class="step">
+                            <h4>12.1 Customer Corporate</h4>
+                            <p>Data profil perusahaan (nama, NPWP, NIB, SIUP, alamat, email finance/IT, kontak) beserta daftar PIC (bisa lebih dari satu -- misal Finance, IT Support, Direktur, masing-masing dengan nama/jabatan/email/WA/telepon sendiri).</p>
+                            <p><b>Simulasi:</b> Anda dapat klien baru PT Maju Jaya. Tambah Customer Corporate, isi data perusahaan (NPWP, alamat kantor), lalu tambah 2 PIC: "Budi - Finance" dan "Siti - IT Support" masing-masing dengan kontak WA sendiri -- kalau ada tagihan, Anda tahu harus hubungi Budi; kalau ada gangguan teknis, hubungi Siti.</p>
+                            <a class="btn btn-primary" href="corporate.php" target="_blank"><i class="fas fa-building"></i> Kelola Customer Corporate</a>
+                        </div>
+                        <div class="step">
+                            <h4>12.2 Kontrak</h4>
+                            <p>Riwayat kontrak kerja sama per perusahaan (nomor kontrak, tanggal mulai/berakhir, upload PDF). Boleh lebih dari satu baris per perusahaan -- kalau kontrak diperpanjang (renewal), cukup tambah kontrak baru tanpa menghapus riwayat kontrak lama. Toggle "Auto Reminder" bisa diaktifkan tapi <b>belum ada pengirim otomatisnya</b> (fitur pengingat H- sebelum kontrak berakhir belum tersedia versi ini) -- jadi tetap perlu dipantau manual.</p>
+                            <p><b>Simulasi:</b> Kontrak PT Maju Jaya berlaku 1 tahun (Jan-Des 2026). Upload PDF kontraknya di menu Kontrak (dibuka dari tombol "Kontrak" di baris PT Maju Jaya). Akhir tahun, kontrak diperpanjang -- tambah baris kontrak baru "2027" tanpa menghapus baris kontrak 2026 yang lama, supaya riwayatnya tetap tercatat.</p>
+                        </div>
+                        <div class="step">
+                            <h4>12.3 Layanan Corporate</h4>
+                            <p>Satu perusahaan bisa punya banyak layanan sekaligus (Internet Dedicated, Broadband, MPLS, VPN, CCTV, VoIP, Data Center, Colocation, Cloud, Managed Service, dst). Layanan berbasis koneksi internet (mis. Internet Dedicated) bisa diaktifkan "Provisioning Otomatis" supaya benar-benar dibuatkan koneksi PPPoE nyata di Mikrotik/RADIUS (pilih Server, Paket, opsional VLAN/OLT/IP). Layanan non-internet (CCTV, Data Center, dst) cukup dicatat sebagai inventori tanpa provisioning. Ada tombol <b>Isolir/Aktifkan</b> manual untuk layanan yang provisioning-nya aktif -- kontrol koneksi ini SENGAJA manual (bukan otomatis lewat cron), karena penanganan pelanggan Corporate yang menunggak biasanya butuh negosiasi/SLA, bukan langsung diputus otomatis seperti pelanggan residential. Mengubah dropdown <b>Status Layanan</b> di form Edit ke NONAKTIF juga otomatis memutus koneksi (perilaku sama seperti tombol Isolir), dan balik ke AKTIF otomatis menyambungkan lagi -- jadi kedua cara itu (tombol Isolir maupun ubah Status Layanan) selalu konsisten, tidak akan ada koneksi yang diam-diam tetap hidup padahal berstatus NONAKTIF.</p>
+                            <p><b>Simulasi:</b> PT Maju Jaya berlangganan 2 layanan: "Internet Dedicated 100M" (provisioning aktif, benar-benar konek ke Mikrotik) dan "CCTV Monitoring" (cuma catatan, tidak ada provisioning). Kalau suatu saat PT Maju Jaya menunggak lama dan setelah dihubungi tetap tidak bayar, admin klik tombol <b>Isolir</b> di layanan Internet Dedicated-nya untuk memutus koneksi sementara.</p>
+                            <a class="btn btn-dark btn-sm mt-2" href="corporate.php" target="_blank"><i class="fas fa-network-wired"></i> Buka lewat tombol "Layanan" di Customer Corporate</a>
+                        </div>
+                        <div class="step">
+                            <h4>12.4 Transaksi Corporate</h4>
+                            <p>Menu invoice/billing khusus Corporate -- <b>terpisah</b> dari menu Transaction biasa (yang dipakai pelanggan PPPoE/Hotspot). Beda dengan billing PPPoE yang otomatis bulanan, invoice Corporate dibuat manual per kejadian dengan termin pembayaran (Cash/Net 7/14/30/60), mendukung pembayaran sebagian (partial/DP) yang dicatat bertahap, dan ada ringkasan Outstanding & Aging Piutang (1-30/31-60/61-90/&gt;90 hari) supaya kelihatan mana tagihan yang sudah lama menunggak.</p>
+                            <p><b>Simulasi:</b> PT Maju Jaya dapat tagihan Internet Dedicated bulan ini Rp 5.000.000 dengan termin Net 30. Buat Invoice, pilih perusahaan & layanan terkait, isi jumlah dan termin -- sistem otomatis hitung tanggal jatuh tempo (30 hari dari tanggal invoice). Minggu berikutnya PT Maju Jaya transfer DP Rp 2.000.000 -- klik <b>Catat Bayar</b>, isi jumlahnya, status invoice otomatis berubah jadi "Sebagian" (Partial). Setelah pelunasan, catat sisa Rp 3.000.000 -- status berubah jadi "Lunas". Invoice bisa dicetak/dikirim via tombol Cetak (link publik, bisa dibuka PIC Finance tanpa perlu login admin).</p>
+                            <a class="btn btn-primary" href="transaksicorporate.php" target="_blank"><i class="fas fa-file-invoice-dollar"></i> Kelola Transaksi Corporate</a>
+                        </div>
+                        <div class="step">
+                            <h4>12.5 Portal Corporate (Sisi Pelanggan)</h4>
+                            <p>Halaman login terpisah khusus pelanggan Corporate (beda dari Portal Pelanggan biasa di 10.3) -- 1 perusahaan dapat 1 username & password portal (diatur admin di menu Customer Corporate 12.1, field "Portal Login Corporate"), dipakai bersama oleh semua PIC perusahaan itu. Setelah login, PIC bisa lihat data perusahaan, daftar PIC, status semua layanan (termasuk status koneksi Aktif/Terputus), dan riwayat invoice lengkap dengan tombol cetak -- tanpa perlu hubungi admin untuk cek tagihan. Demi keamanan, kredensial router/PPPoE <b>tidak pernah ditampilkan</b> di portal ini.</p>
+                            <p><b>Simulasi:</b> Anda kasih username "ptmajujaya" & password ke Budi (PIC Finance PT Maju Jaya). Budi login ke Portal Corporate, langsung lihat semua invoice perusahaannya beserta status bayar & sisa tagihan -- tidak perlu WA admin tiap kali mau cek tagihan terbaru.</p>
+                            <a class="btn btn-info" href="corporate_portal/login.php" target="_blank"><i class="fas fa-sign-in-alt"></i> Buka Portal Corporate</a>
+                        </div>
+                        <div class="step">
+                            <h4>12.6 Pengaturan Portal Corporate</h4>
+                            <p>Atur tampilan halaman login Portal Corporate (12.5) -- nama product/brand, tagline, 3 kartu fitur di panel kiri, dan isi modal "Kebijakan &amp; Bantuan" (FAQ, Refund Policy, Syarat &amp; Ketentuan, Kontak). Logo yang dipakai sama dengan logo akun CRM Anda (diatur di menu Pengaturan Halaman Pelanggan, 10.2) -- supaya identitas brand konsisten di semua portal, tidak perlu upload logo dua kali.</p>
+                            <p><b>Simulasi:</b> Anda mau nama brand yang tampil di Portal Corporate bukan username teknis akun CRM, tapi "FiberQ Business". Buka Pengaturan Portal Corporate, isi Nama Product "FiberQ Business" dan tagline "Solusi Internet Dedicated untuk Bisnis Anda", simpan -- halaman login Portal Corporate langsung tampil dengan identitas itu.</p>
+                            <a class="btn btn-primary btn-sm mt-2" href="corporate_portal_setting.php" target="_blank"><i class="fas fa-sliders-h"></i> Buka Pengaturan Portal Corporate</a>
+                        </div>
+
+                        <h3 id="troubleshoot">13. Troubleshooting & FAQ</h3>
                         <div class="accordion" id="troubleshootAccordion">
                             <div class="accordion-item">
                                 <h2 class="accordion-header">

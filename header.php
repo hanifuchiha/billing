@@ -1,4 +1,5 @@
 <?php require 'cek-sesi.php';
+require_once __DIR__ . '/logo_color_helper.php';
 $embed_mode = isset($_GET['embed']) && (string) $_GET['embed'] === '1';
 
 function load_ui_visibility_settings($username)
@@ -126,6 +127,8 @@ function load_ui_visibility_settings($username)
         'btn_trx_print_struk' => true,
         'btn_trx_download_pdf' => true,
         'btn_trx_hapus' => true,
+        'btn_trx_lihat_bukti' => true,
+        'btn_trx_lihat_paket' => true,
         'buttons_diskon' => true,
         'btn_diskon_simpan' => true,
         'btn_diskon_nonaktifkan' => true,
@@ -136,6 +139,12 @@ function load_ui_visibility_settings($username)
         'buttons_struk_setting' => true,
         'btn_struk_simpan' => true,
         'btn_struk_logo' => true,
+        'btn_logo_billing_sendiri' => true,
+        'btn_linkanda_pendaftaran' => true,
+        'btn_linkanda_pelanggan' => true,
+        'btn_linkanda_login_billing' => true,
+        'btn_linkanda_login_hotspot' => true,
+        'btn_linkanda_corporate' => true,
         'buttons_mitra' => true,
         'btn_mitra_tambah' => true,
         'btn_mitra_edit' => true,
@@ -159,6 +168,30 @@ function load_ui_visibility_settings($username)
         'btn_wabot_nonaktifkan' => true,
         'btn_wabot_hapus' => true,
         'btn_wabot_aktifkan' => true,
+        // --- Menu Customer Corporate (2026-08-07): corporate.php, corporate_kontrak.php,
+        // corporate_layanan.php, transaksicorporate.php.
+        'buttons_corporate' => true,
+        'btn_corp_tambah' => true,
+        'btn_corp_edit' => true,
+        'btn_corp_kontrak' => true,
+        'btn_corp_layanan' => true,
+        'btn_corp_invoice' => true,
+        'btn_corp_hapus' => true,
+        'buttons_corporate_kontrak' => true,
+        'btn_corpkontrak_tambah' => true,
+        'btn_corpkontrak_hapus' => true,
+        'buttons_corporate_layanan' => true,
+        'btn_corplayanan_tambah' => true,
+        'btn_corplayanan_edit' => true,
+        'btn_corplayanan_isolir' => true,
+        'btn_corplayanan_hapus' => true,
+        'buttons_transaksicorporate' => true,
+        'btn_trxcorp_tambah' => true,
+        'btn_trxcorp_bayar' => true,
+        'btn_trxcorp_cetak' => true,
+        'btn_trxcorp_hapus' => true,
+        'buttons_corporate_portal_setting' => true,
+        'btn_corppl_simpan' => true,
     ];
 
     $safe_username = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$username);
@@ -251,7 +284,17 @@ if (isset($ceknama)) {
 <?php
 
 // Ambil logo brand untuk semua halaman (termasuk subfolder) dengan path absolut.
+// Assistant yang sudah upload logo sendiri (toggle btn_logo_billing_sendiri)
+// dicoba LEBIH DULU -- kalau belum upload, otomatis fallback ke logo owner.
 $brand_logo_candidates = [];
+if ($AKSES === 'ASSISTANT' && !empty($asistant_name) && !empty($ui_visibility_settings['btn_logo_billing_sendiri'] ?? null)) {
+    $brand_self = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$asistant_name);
+    if ($brand_self !== '') {
+        $brand_logo_candidates[] = $brand_self;
+        $brand_logo_candidates[] = strtoupper($brand_self);
+        $brand_logo_candidates[] = strtolower($brand_self);
+    }
+}
 $brand_owner = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)($ceknama ?? ''));
 if ($brand_owner !== '') {
     $brand_logo_candidates[] = $brand_owner;
@@ -265,12 +308,28 @@ $brand_logo_candidates = array_values(array_unique(array_filter($brand_logo_cand
 $logo_path = '/dokumen/logo/logo.png';
 $logo_file = __DIR__ . '/../../dokumen/logo/logo.png';
 
+$logo_matched_candidate = null;
 foreach ($brand_logo_candidates as $brand_candidate) {
     $candidate_file = __DIR__ . '/../../dokumen/logo/profile-' . $brand_candidate . '.png';
     if (file_exists($candidate_file)) {
         $logo_file = $candidate_file;
         $logo_path = '/dokumen/logo/profile-' . $brand_candidate . '.png';
+        $logo_matched_candidate = $brand_candidate;
         break;
+    }
+}
+
+// Warna tema per akun (--primary-color/--secondary-color), di-derive dari logo
+// yang barusan ke-resolve di atas ($logo_matched_candidate), BUKAN dari
+// config.json global lagi. Kalau belum pernah dihitung (logo lama, sebelum
+// fitur ini ada), hitung & simpan sekali di sini (self-heal) supaya page-load
+// berikutnya langsung baca dari cache -- tidak perlu ekstraksi ulang tiap load.
+$logo_theme_colors = null;
+if ($logo_matched_candidate !== null) {
+    $logo_theme_colors = logoColorGetSaved($logo_matched_candidate);
+    if ($logo_theme_colors === null) {
+        logoColorExtractAndSave($logo_matched_candidate, $logo_file);
+        $logo_theme_colors = logoColorGetSaved($logo_matched_candidate);
     }
 }
 
@@ -288,9 +347,16 @@ if (!empty($ceknama)) {
     $page_title .= ' - ' . $ceknama;
 }
 
-// Hidden input untuk simpan warna hasil extract (agar bisa dipakai PHP/JS)
-echo '<input type="hidden" id="extracted_primary_color" value="'.htmlspecialchars($config['extracted_primary_color'] ?? '').'">';
-echo '<input type="hidden" id="extracted_secondary_color" value="'.htmlspecialchars($config['extracted_secondary_color'] ?? '').'">';
+// Hidden input untuk simpan warna hasil extract (agar bisa dipakai PHP/JS).
+// Diisi dari $logo_theme_colors (settings/logo-colors-{username}.json, dihitung
+// server-side dgn GD dari logo AKUN INI SENDIRI di atas) -- BUKAN lagi dari
+// config.json global yang dulu dipakai bersama owner + semua assistant-nya.
+// Kalau belum ada logo/warna sama sekali, dibiarkan kosong: loadSavedColors()
+// no-op dan CSS jatuh ke warna default netral, lalu extractColorsFromLogo()
+// (live, di browser) tetap jalan sbg fallback terakhir & akan self-heal cache
+// ini lewat proses/save_logo_colors.php begitu berhasil.
+echo '<input type="hidden" id="extracted_primary_color" value="'.htmlspecialchars($logo_theme_colors['primary'] ?? '').'">';
+echo '<input type="hidden" id="extracted_secondary_color" value="'.htmlspecialchars($logo_theme_colors['secondary'] ?? '').'">';
 ?>
 
 <!DOCTYPE html>
@@ -379,6 +445,11 @@ echo '<input type="hidden" id="extracted_secondary_color" value="'.htmlspecialch
                 'rekappembayaranmitra': 'buttons_komisi_pembayaran',
                 'system_setting': 'buttons_system_setting',
                 'telegrambot': 'buttons_telegram',
+                'corporate': 'buttons_corporate',
+                'corporate_kontrak': 'buttons_corporate_kontrak',
+                'corporate_layanan': 'buttons_corporate_layanan',
+                'transaksicorporate': 'buttons_transaksicorporate',
+                'corporate_portal_setting': 'buttons_corporate_portal_setting',
             };
             return pageMap[pageName] || null;
         }
@@ -646,6 +717,33 @@ echo '<input type="hidden" id="extracted_secondary_color" value="'.htmlspecialch
                     { key: 'btn_telegram_test', selectors: '.telegram-test-btn' },
                     { key: 'btn_telegram_hapus', selectors: '.telegram-delete-btn' },
                     { key: 'btn_telegram_save_penerima', selectors: '.telegram-save-penerima-btn' }
+                ],
+                'corporate': [
+                    { key: 'btn_corp_tambah', selectors: '[data-bs-target="#addCorporateModal"]' },
+                    { key: 'btn_corp_edit', selectors: '[data-perm="btn_corp_edit"]' },
+                    { key: 'btn_corp_kontrak', selectors: '[data-perm="btn_corp_kontrak"]' },
+                    { key: 'btn_corp_layanan', selectors: '[data-perm="btn_corp_layanan"]' },
+                    { key: 'btn_corp_invoice', selectors: '[data-perm="btn_corp_invoice"]' },
+                    { key: 'btn_corp_hapus', selectors: '[data-perm="btn_corp_hapus"]' }
+                ],
+                'corporate_kontrak': [
+                    { key: 'btn_corpkontrak_tambah', selectors: '[data-perm="btn_corpkontrak_tambah"]' },
+                    { key: 'btn_corpkontrak_hapus', selectors: '[data-perm="btn_corpkontrak_hapus"]' }
+                ],
+                'corporate_layanan': [
+                    { key: 'btn_corplayanan_tambah', selectors: '[data-bs-target="#addLayananModal"]' },
+                    { key: 'btn_corplayanan_edit', selectors: '[data-perm="btn_corplayanan_edit"]' },
+                    { key: 'btn_corplayanan_isolir', selectors: '[data-perm="btn_corplayanan_isolir"]' },
+                    { key: 'btn_corplayanan_hapus', selectors: '[data-perm="btn_corplayanan_hapus"]' }
+                ],
+                'transaksicorporate': [
+                    { key: 'btn_trxcorp_tambah', selectors: '[data-bs-target="#addInvoiceModal"]' },
+                    { key: 'btn_trxcorp_bayar', selectors: '[data-perm="btn_trxcorp_bayar"]' },
+                    { key: 'btn_trxcorp_cetak', selectors: '[data-perm="btn_trxcorp_cetak"]' },
+                    { key: 'btn_trxcorp_hapus', selectors: '[data-perm="btn_trxcorp_hapus"]' }
+                ],
+                'corporate_portal_setting': [
+                    { key: 'btn_corppl_simpan', selectors: 'button[name="save_corporate_portal"]' }
                 ]
             };
 
@@ -705,7 +803,7 @@ echo '<input type="hidden" id="extracted_secondary_color" value="'.htmlspecialch
   <!-- Font Awesome Icons -->
   <script src="https://kit.fontawesome.com/42d5adcbca.js" crossorigin="anonymous"></script>
   <!-- CSS Files -->
-  <link id="pagestyle" href="/keuangan/billing/assets/css/soft-ui-dashboard.css?v=1.1.0" rel="stylesheet" />
+  <link id="pagestyle" href="../assets/css/soft-ui-dashboard.css?v=1.1.0" rel="stylesheet" />
 
 </head>
 
@@ -1869,6 +1967,27 @@ echo '<input type="hidden" id="extracted_secondary_color" value="'.htmlspecialch
 <body class="<?php echo $embed_mode ? 'bg-gray-100' : 'g-sidenav-show bg-gray-100'; ?>">
   <?php if (!$embed_mode): ?>
   <?php require 'sidebar.php'; ?>
+  <?php
+    // Widget global CS Call Center (heartbeat + panggilan masuk) -- HARUS
+    // di-include di SINI (semua halaman billing yang sudah login), BUKAN
+    // cuma di cs_call_center.php -- lihat docblock cs_call_center_agent_widget.php.
+    // Sebelum ini tidak pernah benar-benar ke-wire ke header.php, jadi
+    // heartbeat "agent aktif" cuma ke-update selama staff sedang membuka
+    // halaman Call Center itu sendiri -- begitu pindah menu, heartbeat basi
+    // dlm 45 detik dan tombol Call di sisi pelanggan ikut hilang-timbul
+    // padahal toggle Agent Aktif-nya tetap ON (laporan user 2026-08-15).
+    // Patokannya sekarang murni: sudah login sbg role agent (ADMIN/USER/
+    // ASSISTANT) + fitur CS Call Center aktif utk owner ini -- BUKAN sedang
+    // di halaman mana.
+    $_csccIsAgentRole = in_array($AKSES ?? '', ['ASSISTANT', 'USER', 'ADMIN'], true);
+    if ($_csccIsAgentRole) {
+        require_once __DIR__ . '/cs_call_center_helper.php';
+        $_csccWidgetOwnerKey = csCallCenterScopeKey($AKSES, $ceknama);
+        if (csCallCenterIsFeatureEnabled($conn, $_csccWidgetOwnerKey)) {
+            require __DIR__ . '/cs_call_center_agent_widget.php';
+        }
+    }
+  ?>
   <?php endif; ?>
 
 <!-- Loading Animation Script & Logo Color Extract -->
@@ -1945,6 +2064,7 @@ function analyzeImageColors(imageData) {
     });
 }
 function rgbToHex(r,g,b){return "#"+[r,g,b].map(x=>{const h=x.toString(16);return h.length==1?"0"+h:h}).join("");}
+let logoColorAlreadyCached=false;
 function applyLogoColors(colors){
     const root=document.documentElement;
     if(colors[0]){
@@ -1958,11 +2078,26 @@ function applyLogoColors(colors){
     // Simpan ke hidden input jika ada
     const p=document.getElementById('extracted_primary_color');if(p)p.value=colors[0]?.hex||'';
     const s=document.getElementById('extracted_secondary_color');if(s)s.value=colors[1]?.hex||'';
+
+    // Kalau server BELUM punya cache warna utk akun ini (logo lama, sebelum
+    // fitur cache server-side ada, atau GD gagal decode saat upload), simpan
+    // hasil ekstraksi browser ini ke server supaya page-load berikutnya tidak
+    // perlu ekstraksi ulang. Kalau sudah ada cache, tidak perlu kirim lagi.
+    if(!logoColorAlreadyCached && colors[0] && colors[1]){
+        fetch('proses/save_logo_colors.php',{
+            method:'POST',
+            headers:{'Content-Type':'application/x-www-form-urlencoded'},
+            body:'primary='+encodeURIComponent(colors[0].hex)+'&secondary='+encodeURIComponent(colors[1].hex)
+        }).catch(()=>{});
+    }
 }
 function loadSavedColors(){
     const p=document.getElementById('extracted_primary_color');
     const s=document.getElementById('extracted_secondary_color');
     const root=document.documentElement;
+    if(p&&p.value && s&&s.value){
+        logoColorAlreadyCached=true;
+    }
     if(p&&p.value){
         root.style.setProperty('--logo-primary',p.value);
         root.style.setProperty('--primary-color',p.value);

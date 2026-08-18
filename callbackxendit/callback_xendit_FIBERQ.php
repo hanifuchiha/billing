@@ -75,15 +75,46 @@ $token = $_SERVER['HTTP_X_CALLBACK_TOKEN'] ?? '';
 //     die(json_encode(["status" => "error", "message" => "Invalid token"]));
 // }
 
-// Mapping status dan variabel utama
-$invoiceref = $arr['external_id'] ?? '';
-$cekstatus = ($arr['status'] ?? '') === 'PAID' ? 'PAID' : (($arr['status'] ?? '') === 'PENDING' ? 'PENDING' : 'FAILED');
-$amount = (float)($arr['amount'] ?? 0);
-$payment_method = $arr['payment_method'] ?? '';
-$payment_method_code = $arr['payment_channel'] ?? '';
-$customer_name = $arr['payer_email'] ?? '';
-$customer_phone = $arr['payer_phone'] ?? '';
-$payment_link = $arr['invoice_url'] ?? '';
+// Mapping status dan variabel utama -- Xendit kirim BENTUK PAYLOAD BEDA
+// tergantung jenis pembayaran (Invoice/VA/QRIS langsung, lihat portal_bayar.php
+// cabang xendit_submit yang baru). Normalisasi di sini SEKALI ke variabel yang
+// sudah dipakai di SISA FILE INI apa adanya -- jangan ubah logic di bawah,
+// cukup deteksi bentuk payload & isi variabel yang benar.
+if (isset($arr['account_number']) && isset($arr['bank_code']) && !isset($arr['status'])) {
+    // Virtual Account paid callback (Callback Virtual Account API) -- kemunculan
+    // webhook ini SENDIRI berarti pembayaran sudah diterima, tidak ada field status.
+    $invoiceref = $arr['external_id'] ?? '';
+    $cekstatus = 'PAID';
+    $amount = (float) ($arr['amount'] ?? 0);
+    $payment_method = 'VIRTUAL_ACCOUNT';
+    $payment_method_code = $arr['bank_code'] ?? '';
+    $customer_name = '';
+    $customer_phone = '';
+    $payment_link = '';
+} elseif (($arr['event'] ?? '') === 'qr.payment' || isset($arr['qr_id'])) {
+    // QRIS paid callback (QR Codes API) -- dukung format unified event (data
+    // nested) maupun format raw lama, dua-duanya dipakai Xendit tergantung versi.
+    $qrData = $arr['data'] ?? $arr;
+    $invoiceref = $qrData['reference_id'] ?? $qrData['external_id'] ?? '';
+    $qrStatus = strtoupper((string) ($qrData['status'] ?? ''));
+    $cekstatus = in_array($qrStatus, ['SUCCEEDED', 'PAID'], true) ? 'PAID' : (($qrStatus === 'PENDING') ? 'PENDING' : 'FAILED');
+    $amount = (float) ($qrData['amount'] ?? 0);
+    $payment_method = 'QRIS';
+    $payment_method_code = 'QRIS';
+    $customer_name = '';
+    $customer_phone = '';
+    $payment_link = '';
+} else {
+    // Invoice callback (format lama -- SUDAH jalan production, TIDAK diubah).
+    $invoiceref = $arr['external_id'] ?? '';
+    $cekstatus = ($arr['status'] ?? '') === 'PAID' ? 'PAID' : (($arr['status'] ?? '') === 'PENDING' ? 'PENDING' : 'FAILED');
+    $amount = (float)($arr['amount'] ?? 0);
+    $payment_method = $arr['payment_method'] ?? '';
+    $payment_method_code = $arr['payment_channel'] ?? '';
+    $customer_name = $arr['payer_email'] ?? '';
+    $customer_phone = $arr['payer_phone'] ?? '';
+    $payment_link = $arr['invoice_url'] ?? '';
+}
 
 
 ///////////////////////////DATA USERNAME/////////////////////////////////////////////////////////////

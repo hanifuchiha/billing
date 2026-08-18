@@ -47,10 +47,10 @@ echo ".btn-status-online-working{color:#16a34a!important;}\n";
 echo ".btn-status-expired{color:#b45309!important;}\n";
 echo ".btn-status-online-dhcp{color:#16a34a!important;}\n";
 echo ".btn-status-offline{color:#dc2626!important;}\n";
-echo ".status-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;margin-top:8px;}\n";
-echo ".status-detail-item{display:flex;justify-content:space-between;align-items:center;font-size:12px;line-height:1.4;gap:8px;}\n";
-echo ".status-detail-item span{color:#888;font-weight:400;white-space:nowrap;}\n";
-echo ".status-detail-item b{color:inherit;font-weight:600;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}\n";
+echo ".status-detail-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px 12px;margin-top:8px;width:100%;}\n";
+echo ".status-detail-item{display:flex;justify-content:space-between;align-items:center;font-size:12px;line-height:1.4;gap:8px;min-width:0;}\n";
+echo ".status-detail-item span{color:#888;font-weight:400;white-space:nowrap;flex-shrink:0;}\n";
+echo ".status-detail-item b{color:inherit;font-weight:600;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;}\n";
 echo "</style>\n";
 
 // Debug mode: ?debug=1 or ?debug=all

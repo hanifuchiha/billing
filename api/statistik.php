@@ -21,28 +21,39 @@ try {
     }
 
     if ($method === 'GET') {
-        // Get user_id from authenticated username
-        $userIdQuery = mysqli_query($conn, "SELECT id FROM user WHERE USERNAME = '".mysqli_real_escape_string($conn, $pemilik)."'");
-        $userId = null;
-        if ($userIdQuery && ($userRow = mysqli_fetch_assoc($userIdQuery))) {
-            $userId = $userRow['id'];
-        }
-        
-        if (!$userId) {
-            echo json_encode(['success' => false, 'error' => 'User ID tidak ditemukan']);
+        // Scoping SEBELUMNYA (server WHERE user_id = id akun yang login) tidak pernah resolve
+        // ASSISTANT->owner -- utk akun ASSISTANT, server.user_id TIDAK PERNAH sama dengan id
+        // assistant itu sendiri (server dimiliki OWNER), jadi $userServers/$userAreas selalu
+        // kosong -> SEMUA 16 statistik di bawah ini selalu 0 utk akun ASSISTANT manapun, padahal
+        // datanya sebenarnya ada. Diganti pola resmi _bootstrap.php::api_resolve_owner() yang
+        // sudah benar menangani ASSISTANT (via user.grup + user.server), sama seperti
+        // api/pelanggan.php dkk.
+        $ctx = api_resolve_owner($conn, $pemilik);
+        if (!$ctx) {
+            echo json_encode(['success' => false, 'error' => 'User tidak ditemukan']);
             exit;
         }
-        
-        // Get user servers and areas based on user_id
+        // Get user servers and areas based on server yang di-assign (allowed_server_ids)
         $userServers = [];
         $userAreas = [];
-        $queryServer = mysqli_query($conn, "SELECT PEMILIK, AREA FROM server WHERE user_id = ".intval($userId));
-        while($row = mysqli_fetch_assoc($queryServer)) {
-            $userServers[] = $row['PEMILIK'];
-            if (!empty($row['AREA'])) $userAreas[] = $row['AREA'];
+        if (!empty($ctx['allowed_server_ids'])) {
+            $serverIdsIn = implode(',', array_map('intval', $ctx['allowed_server_ids']));
+            $queryServer = mysqli_query($conn, "SELECT PEMILIK, AREA FROM server WHERE id IN ($serverIdsIn)");
+            while ($row = mysqli_fetch_assoc($queryServer)) {
+                $userServers[] = $row['PEMILIK'];
+                if (!empty($row['AREA'])) $userAreas[] = $row['AREA'];
+            }
         }
-        $userServerList = count($userServers) > 0 ? "'" . implode("','", array_map(function($x) use ($conn) { return mysqli_real_escape_string($conn, $x); }, $userServers)) . "'" : "'" . mysqli_real_escape_string($conn, $pemilik) . "'";
+        $userServerList = count($userServers) > 0 ? "'" . implode("','", array_map(function($x) use ($conn) { return mysqli_real_escape_string($conn, $x); }, $userServers)) . "'" : "''";
         $userAreaList = count($userAreas) > 0 ? "'" . implode("','", array_map(function($x) use ($conn) { return mysqli_real_escape_string($conn, $x); }, $userAreas)) . "'" : "''";
+
+        // Setting reminder (jatuh tempo) tersimpan per OWNER, bukan per-assistant -- resolve dulu
+        // username owner sebelum lookup file, supaya assistant tidak selalu jatuh ke default 28.
+        $ownerUsernameStmtStat = $conn->prepare('SELECT USERNAME FROM user WHERE id = ? LIMIT 1');
+        $ownerUsernameStmtStat->bind_param('i', $ctx['owner_user_id']);
+        $ownerUsernameStmtStat->execute();
+        $ownerUsernameRowStat = $ownerUsernameStmtStat->get_result()->fetch_assoc();
+        $ownerUsernameStat = $ownerUsernameRowStat ? (string)$ownerUsernameRowStat['USERNAME'] : $pemilik;
 
         $stat = [];
         $today = date('Y-m-d');
@@ -121,7 +132,7 @@ try {
         }
 
         $fixedDueDateDay = 28;
-        $safeUsername = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$pemilik);
+        $safeUsername = preg_replace('/[^a-zA-Z0-9_\-]/', '', $ownerUsernameStat);
         $reminderFile = dirname(__DIR__) . '/notifbot/data/reminder-' . $safeUsername . '.json';
         if (is_file($reminderFile)) {
             $json = @file_get_contents($reminderFile);

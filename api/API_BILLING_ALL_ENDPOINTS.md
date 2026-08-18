@@ -309,3 +309,59 @@ Dengan dokumentasi ini, Anda bisa mendapatkan data apapun yang tersedia di web m
 - Untuk endpoint baru, gunakan pola dokumentasi yang sama agar konsisten.
 
 ---
+
+## 16. Reseller / Mitra ISP, Manual Active, Upload Logo, Export (fitur terbaru)
+
+Semua endpoint di section ini pakai auth standar `_bootstrap.php` (session aktif -> username+password
+-> `?key=<API_KEY>` / body `key`/`api_key`), sama seperti `pelanggan_berhenti.php`/`statistik.php`.
+
+### 16.1 Pengaturan RESELLER / MITRA ISP -- `user_assistant.php`
+
+Field reseller kini ikut di setiap response `user_assistant.php` (GET/POST/PUT), dalam key `reseller`:
+
+```json
+"reseller": {
+  "assistant_role": "reseller",       // assistant | assistant_teknisi | reseller | mitra_isp
+  "price_filter_enabled": true,       // filter harga custom paket aktif?
+  "cost_scheme": "omset_percent",     // "bandwidth" atau "omset_percent"
+  "bw_cost": 0, "bw_ppn_percent": 11, "bw_bhp_uso": 0,   // dipakai kalau cost_scheme = bandwidth
+  "omset_percent": 5.5,               // dipakai kalau cost_scheme = omset_percent
+  "is_reseller": true,
+  "current_burden": 275000            // beban terhitung (Rp), sudah sesuai skema yang dipilih
+}
+```
+
+- **GET** `/user_assistant.php` atau `/user_assistant.php?id=<id>` -> owner-only, list/detail sub-akun ASSISTANT termasuk blok `reseller` di atas.
+- **POST** `/user_assistant.php` -> tambah sub-akun baru, body boleh sertakan `reseller: {...}` (semua field opsional, default `assistant_role="assistant"`).
+- **PUT** `/user_assistant.php` -> body `{ "id": 123, "reseller": {...} }` untuk ubah skema/role/filter harga; kalau salah satu field reseller dikirim, ke-7 kolomnya diupdate sekaligus (samakan dengan form Edit ASSISTANT di web).
+
+### 16.2 Filter Harga Custom Paket -- `reseller_paket_price.php` (baru)
+
+- **GET** `/reseller_paket_price.php?reseller_user_id=123` -> daftar paket broadband+hotspot di area reseller ini, dengan status `enabled`/`custom_harga` yang sudah tersimpan.
+- **POST/PUT** `/reseller_paket_price.php` -> body:
+  ```json
+  {
+    "reseller_user_id": 123,
+    "items": [
+      { "paket_type": "broadband", "paket_id": 45, "paket_nama": "Home 20Mbps", "enabled": true, "custom_harga": 150000 }
+    ]
+  }
+  ```
+
+### 16.3 Manual Active -- `manual_active.php` (baru)
+
+- **POST** `/manual_active.php` (multipart/form-data, SAMA PERSIS dengan field form Manual Active di web: `id`, `NAMA`, `IDPEL`, `EMAIL`, `NOWA`, `PAKET`, `PEMILIK`, `AREA`, `metode_bayar`, `only_activate_without_transaksi`, `periode_month`, `periode_year`, file `bukti_pembayaran`).
+- Endpoint ini adalah *bridge* langsung ke `proses/activecustomer.php` (bukan reimplementasi terpisah) -- otomatis connect Mikrotik/RADIUS + kirim notif WA persis seperti tombol Manual Active di web, termasuk mengikuti perbaikan terbaru (perilaku disamakan dengan callback payment gateway, tidak lagi ada gating periode).
+
+### 16.4 Upload Logo Billing -- `upload_logo.php` (baru)
+
+- **POST** `/upload_logo.php` (multipart/form-data, field file: `profile_picture`, JPG/PNG maks 2MB).
+- ASSISTANT hanya bisa upload logo **sendiri** kalau owner sudah aktifkan toggle *"Tombol: Upload/Hapus Logo Billing Sendiri"* di Pengaturan User; kalau belum, request ditolak (403) -- tidak pernah diam-diam menimpa logo owner.
+- Warna tema (`--primary-color`/`--secondary-color`) otomatis dihitung & disimpan dari logo baru, sama seperti alur upload di web.
+
+### 16.5 Export dengan Harga Reseller -- `backup.php?type=billing_core_data`
+
+- Sudah ada sebelumnya, sekarang harga di `include=pelanggan` dan `include=transaksi` otomatis mengikuti harga custom reseller (kalau caller adalah akun reseller/mitra ISP dengan filter harga aktif) -- tidak perlu parameter tambahan, otomatis terdeteksi dari akun yang login/API key yang dipakai.
+- Contoh: `GET /backup.php?type=billing_core_data&include=pelanggan,transaksi`
+
+---

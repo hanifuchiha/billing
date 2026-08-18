@@ -128,6 +128,58 @@ if (!$resUsers) {
     die("❌ Query users gagal: " . mysqli_error($conn));
 }
 
+// Peta harga paket (paket|brand|area -> harga) + daftar paket FASUM (harga
+// <= 0, bukan promo) -- dipakai supaya pelanggan FASUM/gratisan TIDAK ikut
+// dihitung sbg "Expired" di cache ini. SEBELUMNYA $expired_ids/$total_expired
+// di bawah menghitung SEMUA pelanggan ber-profile EXPIRED tanpa peduli
+// FASUM sama sekali -- akibatnya kartu dashboard "Expired Online"/"Expired
+// Los" (baca Total_online_expired/Total_expired_offline dari cache ini
+// langsung) bisa lebih besar dari "Lewat Jatuh Tempo" di statistics.php dan
+// total pelanggan_menunggak.php, yang DUA-DUANYA sudah exclude FASUM lewat
+// filter yang sama (lihat cek_tagihan_harian.php, sumber kebenaran isolir
+// sungguhan, yang juga skip FASUM). $paket TABEL GLOBAL (bukan per-user),
+// jadi cukup dibangun sekali di sini, dipakai ulang utk semua user di loop
+// bawah.
+$hargaPaketMapSl = [];
+$fasumPaketListSl = [];
+$resPaketSl = mysqli_query($conn, "SELECT id, PAKET, HARGA, BRAND, AREA FROM paket");
+while ($rPaketSl = mysqli_fetch_assoc($resPaketSl)) {
+    $paketKeySl = strtolower(trim((string)($rPaketSl['PAKET'] ?? '')));
+    $brandKeySl = strtolower(trim((string)($rPaketSl['BRAND'] ?? '')));
+    $areaKeySl = strtolower(trim((string)($rPaketSl['AREA'] ?? '')));
+    $hargaPaketMapSl[$paketKeySl . '|' . $brandKeySl . '|' . $areaKeySl] = $rPaketSl['HARGA'];
+    if ($paketKeySl !== '' && ($rPaketSl['HARGA'] === '' || (float)$rPaketSl['HARGA'] <= 0)) {
+        $fasumPaketListSl[$paketKeySl] = (string)($rPaketSl['id'] ?? '');
+    }
+}
+$promoPaketIdsSl = [];
+$resPromoSl = mysqli_query($conn, "SELECT paket_id FROM promo_paket");
+while ($rPromoSl = mysqli_fetch_assoc($resPromoSl)) {
+    $promoPaketIdsSl[] = (string)($rPromoSl['paket_id'] ?? '');
+}
+
+function serverloadResolveHarga(array $map, string $paket, string $brand, string $area)
+{
+    if (isset($map[$paket . '|' . $brand . '|' . $area])) return $map[$paket . '|' . $brand . '|' . $area];
+    if (isset($map[$paket . '||' . $area])) return $map[$paket . '||' . $area];
+    if (isset($map[$paket . '|' . $brand . '|'])) return $map[$paket . '|' . $brand . '|'];
+    if (isset($map[$paket . '||'])) return $map[$paket . '||'];
+    if (isset($map[$paket])) return $map[$paket];
+    return null;
+}
+
+function serverloadIsFasumPelanggan(string $paket, string $brand, string $area, array $hargaMap, array $fasumList, array $promoIds): bool
+{
+    if (stripos($paket, 'free') !== false) {
+        return true;
+    }
+    if ($paket !== '' && isset($fasumList[$paket]) && !in_array((string)$fasumList[$paket], $promoIds, true)) {
+        return true;
+    }
+    $harga = serverloadResolveHarga($hargaMap, $paket, $brand, $area);
+    return ($harga === null || (float)$harga <= 0);
+}
+
 while ($userRow = mysqli_fetch_assoc($resUsers)) {
     $user_id = $userRow['id'];
     $username = $userRow['USERNAME'];
@@ -191,6 +243,11 @@ while ($userRow = mysqli_fetch_assoc($resUsers)) {
     $LOS = 0;
     $offline_non_expired_ids = [];
     $expired_ids = [];
+    // Set terpisah (username sbg key -> auto-dedup) khusus utk pelanggan
+    // EXPIRED yang SEDANG ONLINE -- dipakai hitung $expired_online_count di
+    // akhir (lihat komentar di deklarasi $total_expired/$expired_online_count
+    // final di bawah, sebelum $data_json ditulis).
+    $expired_online_ids_set = [];
     $los_ids = [];
     $odp_stats = [];
     $pppoe_profiles = [];
@@ -201,6 +258,7 @@ while ($userRow = mysqli_fetch_assoc($resUsers)) {
         $hostip     = $data['IP'];
         $passwordip = $data['PASSWORD'];
         $area = $data['AREA'];
+        $BRAND = $data['BRAND'] ?? $usernameip;
 
         echo "🔹 [$username] proses server $hostip (pemilik $usernameip, area $area)<br>";
 
@@ -271,8 +329,30 @@ while ($userRow = mysqli_fetch_assoc($resUsers)) {
                 if ($profile === null) {
                     $no_secret++;
                 }
-                if ($profile === 'EXPIRED') {
-                    $total_expired++;
+                // Pelanggan FASUM/gratisan (harga <= 0, bukan promo) TIDAK ikut
+                // dihitung EXPIRED di sini -- lihat komentar di deklarasi
+                // serverloadIsFasumPelanggan() di atas kenapa ini perlu (supaya
+                // Total_online_expired/Total_expired_offline & expired_ids di
+                // cache ini konsisten dgn statistics.php/pelanggan_menunggak.php).
+                $isFasumPelangganSl = serverloadIsFasumPelanggan(
+                    strtolower(trim((string)($p['PAKET'] ?? ''))),
+                    strtolower(trim((string)($p['BRAND'] ?? $BRAND))),
+                    strtolower(trim((string)$area)),
+                    $hargaPaketMapSl,
+                    $fasumPaketListSl,
+                    $promoPaketIdsSl
+                );
+                if ($profile === 'EXPIRED' && !$isFasumPelangganSl) {
+                    // SENGAJA TIDAK increment $total_expired langsung di sini --
+                    // kalau 1 AREA yang sama kebetulan dilayani lebih dari 1 baris
+                    // `server` (mis. router cadangan/redundant), pelanggan yang
+                    // SAMA bisa ke-proses beberapa kali dalam loop per-server ini,
+                    // jadi counter mentah bisa dobel-hitung padahal $expired_ids
+                    // (array, auto-dedup by username) tidak. $total_expired
+                    // DIHITUNG ULANG dari count($expired_ids) di akhir (sebelum
+                    // $data_json ditulis) supaya SELALU konsisten dgn jumlah unik
+                    // pelanggan di $expired_ids -- sumber yang sama persis dipakai
+                    // statistics.php/pelanggan_menunggak.php.
                     if (!in_array($username, $expired_ids, true)) {
                         $expired_ids[] = $username;
                     }
@@ -287,8 +367,11 @@ while ($userRow = mysqli_fetch_assoc($resUsers)) {
                         break;
                     }
                 }
-                if ($profile === 'EXPIRED' && $is_online) {
-                    $expired_online_count++;
+                if ($profile === 'EXPIRED' && $is_online && !$isFasumPelangganSl) {
+                    // Deduped juga (lihat komentar $expired_ids di atas) -- key
+                    // by username, $expired_online_count dihitung ulang dari
+                    // count() set ini di akhir.
+                    $expired_online_ids_set[$username] = true;
                 }
 
                 if ($odp_key !== '') {
@@ -297,6 +380,23 @@ while ($userRow = mysqli_fetch_assoc($resUsers)) {
                     } else {
                         $odp_stats[$odp_key]['TOTAL_LOS']++;
                     }
+                }
+
+                // Hitung PPPoE profile HANYA dari pelanggan yang sedang ONLINE
+                // (koneksi aktif/$actives, atau grup RADIUS aktif utk MODE
+                // RADIUS) -- dipakai card "Estimate income" di dashboard.php.
+                // SEBELUMNYA dihitung dari SEMUA secret PPPoE terdaftar
+                // (lihat blok lama di bawah, sekarang dihapus), jadi pelanggan
+                // yang sedang offline/putus tetap ikut ke-hitung sbg income,
+                // bikin estimasinya jauh lebih besar dari pendapatan real saat
+                // ini. Pakai $profile yang sudah di-resolve di atas (termasuk
+                // fallback grup RADIUS utk MODE RADIUS), bukan baca ulang
+                // $secret['profile'] mentah.
+                if ($is_online && $profile !== null && $profile !== 'EXPIRED') {
+                    if (!isset($pppoe_profiles[$profile])) {
+                        $pppoe_profiles[$profile] = 0;
+                    }
+                    $pppoe_profiles[$profile]++;
                 }
 
                 if (!$is_online) {
@@ -310,21 +410,15 @@ while ($userRow = mysqli_fetch_assoc($resUsers)) {
                 }
             }
 
-            // Profiles count - hitung pengguna per profile
+            // Profiles count - pastikan semua profile PPPoE yang ada di router
+            // muncul di $pppoe_profiles (baseline 0) walau sedang tidak ada
+            // yang online -- hitung penggunanya sendiri SUDAH dilakukan per-
+            // pelanggan di atas (hanya yang $is_online, lihat komentar di sana).
             $API->write('/ppp/profile/print'); $profiles = $API->read();
             foreach ($profiles as $p) {
                 if ($p['name'] != 'EXPIRED') {
                     if (!isset($pppoe_profiles[$p['name']])) {
                         $pppoe_profiles[$p['name']] = 0;
-                    }
-                }
-            }
-
-            // Hitung pengguna per PPPoE profile
-            foreach ($secrets as $secret) {
-                if (isset($secret['profile']) && $secret['profile'] != 'EXPIRED') {
-                    if (isset($pppoe_profiles[$secret['profile']])) {
-                        $pppoe_profiles[$secret['profile']]++;
                     }
                 }
             }
@@ -345,7 +439,14 @@ while ($userRow = mysqli_fetch_assoc($resUsers)) {
         usleep(500000);
     }
 
-
+    // Hitung ULANG $total_expired/$expired_online_count dari set yang sudah
+    // di-dedup (lihat komentar di titik increment lama di atas) -- supaya
+    // kartu dashboard "Expired Online"/"Expired Los" (Total_online_expired/
+    // Total_expired_offline) tidak pernah lebih besar dari jumlah unik
+    // pelanggan sesungguhnya di $expired_ids, konsisten dgn statistics.php/
+    // pelanggan_menunggak.php yang sama-sama konsultasi $expired_ids ini.
+    $total_expired = count($expired_ids);
+    $expired_online_count = count($expired_online_ids_set);
 
 
 

@@ -497,6 +497,27 @@ if ($API->connect($ip . ":" . $ippublicportapi, $username, $password)) {
         }
     }
 
+    // Mode 'outside': port/nama container yang kosong di HOST LOKAL belum tentu
+    // kosong juga di server SSH remote (dua mesin terpisah, docker ps lokal di
+    // atas tidak tahu apa-apa soal container yang sudah ada di sana). Query
+    // langsung container whatsapp_* yang ada di remote supaya port yang sudah
+    // dipakai di sana ikut dihindari dari awal, bukan baru ketahuan pas
+    // "docker run" gagal dengan "container name already in use".
+    if ($deployMode === 'outside') {
+        $remoteListCmd = "sshpass -p " . escapeshellarg($sshPass)
+            . " ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=8 "
+            . $sshUser . "@" . $sshIp . " "
+            . escapeshellarg("docker ps -a --format '{{.Names}}'") . " 2>/dev/null";
+        exec($remoteListCmd, $remoteBotNames, $remoteListCode);
+        if ($remoteListCode === 0 && !empty($remoteBotNames)) {
+            foreach ($remoteBotNames as $remoteName) {
+                if (preg_match('/whatsapp_(\d+)/', trim($remoteName), $m)) {
+                    $usedPorts[(int)$m[1]] = true;
+                }
+            }
+        }
+    }
+
     $foundPort = null;
     for ($candidatePort = $PORT_MIN; $candidatePort <= $PORT_MAX; $candidatePort++) {
         if (!isset($usedPorts[$candidatePort])) {
@@ -506,6 +527,15 @@ if ($API->connect($ip . ":" . $ippublicportapi, $username, $password)) {
     }
 
     if ($foundPort !== null) {
+        // Port/nama container yang tampak kosong di awal bisa saja tetap bentrok
+        // saat docker run beneran dieksekusi (race, atau -- utk mode 'outside' --
+        // container lain yang tidak sempat kedeteksi dari pengecekan remote di
+        // atas). Kalau itu terjadi, jangan cuma nyerah: pindah ke port kosong
+        // berikutnya dan coba lagi, sampai $maxPortAttempts kali.
+        $portAttemptLog = [];
+        $maxPortAttempts = 5;
+
+    for ($portAttempt = 1; $portAttempt <= $maxPortAttempts; $portAttempt++) {
         // Port kosong ditemukan
         $volumeName = "whatsapp_$foundPort";
         shell_exec("docker volume create $volumeName");
@@ -648,16 +678,21 @@ if ($deployMode === 'outside') {
         $containerId = trim(implode("\n", $lines));
         @unlink($tempFile);
 
-        // Jika port already allocated, coba cleanup container lama dan retry
-        if ($exitCode !== 0 && strpos($output, 'port is already allocated') !== false) {
-            // Auto cleanup container lama di port ini
+        $isPortConflict = (strpos($output, 'port is already allocated') !== false);
+        $isNameConflict = (strpos($output, 'is already in use by container') !== false)
+            || (stripos($output, 'Conflict.') !== false);
+
+        // Mode DALAM HOST: bentrok port di sini kemungkinan besar container orphan
+        // milik sistem sendiri (bukan punya orang lain) -- aman dibersihkan &
+        // port yang SAMA dicoba ulang sekali, sama seperti perilaku lama.
+        if ($exitCode !== 0 && $isPortConflict && $deployMode !== 'outside') {
             $containerName = "whatsapp_$foundPort";
             shell_exec("docker stop $containerName 2>/dev/null");
             shell_exec("docker rm $containerName 2>/dev/null");
-            
+
             // Hapus entry bot lama dari database dengan port yang sama
             $mysqli->query("DELETE FROM botwa WHERE addressbot LIKE '%:$foundPort%'");
-            
+
             // Retry docker run
             sleep(2); // Wait sebentar sebelum retry
             $tempFile2 = tempnam(sys_get_temp_dir(), 'docker_retry_');
@@ -669,9 +704,42 @@ if ($deployMode === 'outside') {
             $containerId = trim(implode("\n", $lines2));
             @unlink($tempFile2);
             $output = $output2;
-            
-            $cleanupStatus[] = "🗑️  Auto cleanup: Container lama di port $foundPort dihapus, retry docker run";
+
+            $portAttemptLog[] = "🗑️  Auto cleanup: Container lama di port $foundPort dihapus, retry docker run";
         }
+
+        if ($exitCode === 0 && !empty($containerId)) {
+            break; // sukses, keluar dari loop percobaan port
+        }
+
+        // Masih gagal karena bentrok port/nama (baik mode luar host, atau mode
+        // dalam host yang cleanup+retry-nya di atas tetap gagal): JANGAN paksa
+        // hapus container di server tujuan (bisa jadi punya bot lain yang masih
+        // aktif dipakai) -- cukup pindah ke port kosong berikutnya lalu ulangi
+        // seluruh proses (volume, salin webhook, docker run) dari awal loop.
+        if (($isPortConflict || $isNameConflict) && $portAttempt < $maxPortAttempts) {
+            $usedPorts[$foundPort] = true;
+            $nextPort = null;
+            for ($candidatePort = $PORT_MIN; $candidatePort <= $PORT_MAX; $candidatePort++) {
+                if (!isset($usedPorts[$candidatePort])) {
+                    $nextPort = $candidatePort;
+                    break;
+                }
+            }
+            if ($nextPort === null) {
+                break; // tidak ada port kosong lagi di rentang yang diizinkan
+            }
+            $portAttemptLog[] = "⚠️  Port $foundPort bentrok di " . ($deployMode === 'outside' ? "server luar ($sshIp)" : "host lokal") . ", mencoba port $nextPort...";
+            $foundPort = $nextPort;
+            continue;
+        }
+
+        break; // gagal karena sebab lain (bukan bentrok port/nama) -- jangan looping sia-sia
+    }
+
+    if (!empty($portAttemptLog)) {
+        $cleanupStatus = array_merge($cleanupStatus, $portAttemptLog);
+    }
 
         if ($exitCode !== 0 || empty($containerId)) {
             echo "<div class='container-notif error-container'>";
@@ -721,7 +789,14 @@ if ($deployMode === 'outside') {
 
         // echo "<p style='text-align: center; color: #10b981; font-weight: 600; margin: 15px 0;'>🔗 Rule NAT ditambahkan ke MikroTik</p><br>";
 
-        $addressbot = "http://$lokalwebserver:" . $foundPort;
+        // Mode "outside": container jalan di server SSH remote ($sshIp), bukan
+        // di host lokal ini, jadi addressbot (dipakai wabot.php utk semua
+        // komunikasi ke bot -- QR, status, kirim pesan, dst) HARUS pakai IP
+        // yang sama dgn $connect ($ippublic, sudah ditimpa jadi $sshIp di atas),
+        // bukan $lokalwebserver yang cuma valid utk mode "inside".
+        $addressbot = ($deployMode === 'outside')
+            ? "http://$ippublic:" . $foundPort
+            : "http://$lokalwebserver:" . $foundPort;
          $connect = "http://$ippublic:" . $foundPort;
         $webhookview = "{$config['webhook_url']}index.php?id=$volumeName";
         // Bot yang dibuat oleh ASSISTANT (bukan owner) ditandai created_by_assistant

@@ -365,9 +365,14 @@ if (!function_exists('tagihanGetFirstDueDateFixed')) {
     function tagihanGetFirstDueDateFixed(string $referenceDate, int $fixedDueDay): ?string
     {
         if (empty($referenceDate) || strtotime($referenceDate) === false) return null;
-        $nextMonthTs = strtotime('+1 month', strtotime($referenceDate));
-        $year = (int) date('Y', $nextMonthTs);
-        $month = (int) date('m', $nextMonthTs);
+        // FIX: JANGAN strtotime('+1 month', ...) langsung -- kalau $referenceDate
+        // tanggal 29/30/31 dan bulan berikutnya lebih pendek (mis. 31 Jan -> +1
+        // month = 3 Maret, BUKAN Februari), PHP overflow ke bulan sesudahnya lagi.
+        // Hitung nomor bulan/tahun langsung (aman dari overflow tanggal), baru +1.
+        $refTs = strtotime($referenceDate);
+        $year = (int) date('Y', $refTs);
+        $month = (int) date('n', $refTs) + 1;
+        if ($month > 12) { $month = 1; $year++; }
         return tagihanBuildMonthlyDate($year, $month, $fixedDueDay);
     }
 }
@@ -376,9 +381,11 @@ if (!function_exists('tagihanGetNextDueDateFixed')) {
     function tagihanGetNextDueDateFixed(string $currentDueDate, int $fixedDueDay): ?string
     {
         if (empty($currentDueDate) || strtotime($currentDueDate) === false) return null;
-        $nextMonthTs = strtotime('+1 month', strtotime($currentDueDate));
-        $year = (int) date('Y', $nextMonthTs);
-        $month = (int) date('m', $nextMonthTs);
+        // Fix overflow sama seperti tagihanGetFirstDueDateFixed() di atas.
+        $curTs = strtotime($currentDueDate);
+        $year = (int) date('Y', $curTs);
+        $month = (int) date('n', $curTs) + 1;
+        if ($month > 12) { $month = 1; $year++; }
         return tagihanBuildMonthlyDate($year, $month, $fixedDueDay);
     }
 }

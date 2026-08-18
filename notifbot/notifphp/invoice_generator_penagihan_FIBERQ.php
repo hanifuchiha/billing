@@ -102,23 +102,25 @@ if ($pemilik === 'penagihan') {
 // di loop bawah, bukan diproses di sini.
 $configPath = __DIR__ . '/../data/invoice_generator-' . $pemilik . '.json';
 $generatorEnabled = false;
-$scheduleMode = 'monthly_range';
-$startDay = 25;
+// "Terbit H- sblm jatuh tempo" -- SETTING YANG SAMA dipakai
+// invoice_generator_rolling_monthversary_*.php (Monthversary/Rolling). SEBELUMNYA
+// Fixed Due Date generate berdasar jadwal kalender start_day/scheduleMode
+// ("Mulai Tanggal") yang TERPISAH & TIDAK sinkron dgn setting H- ini sama
+// sekali -- bisa generate jauh lebih awal dari yang admin maksud. Sekarang
+// SATU setting yang sama dipakai kedua mode, lihat komentar di $fixedDueDateInRange
+// di bawah.
+$daysBeforeDue = 2;
 
 if (file_exists($configPath)) {
     $cfg = json_decode(file_get_contents($configPath), true);
     if (is_array($cfg)) {
         $generatorEnabled = !empty($cfg['enabled']);
-        $scheduleMode = (($cfg['schedule'] ?? 'monthly_range') === 'daily') ? 'daily' : 'monthly_range';
-        $startDay = isset($cfg['start_day']) ? (int)$cfg['start_day'] : 25;
+        $daysBeforeDue = isset($cfg['days_before_due']) ? (int)$cfg['days_before_due'] : 2;
     }
 }
+$daysBeforeDue = max(0, min(30, $daysBeforeDue));
 
-$startDay = max(1, min(31, $startDay));
-
-// $startDay ("Mulai Tanggal" di section Invoice Generator) HANYA menentukan jadwal
-// KAPAN cron ini mulai jalan tiap bulan -- BUKAN tanggal jatuh tempo invoice. Tanggal
-// jatuh tempo aktual pakai $jatuhTempoHari, dari setting "jatuh_tempo" di Payment
+// Tanggal jatuh tempo aktual pakai $jatuhTempoHari, dari setting "jatuh_tempo" di Payment
 // Setting -> Konfigurasi Fixed Due Date (reminder-{PEMILIK}.json), supaya due date
 // yang tertera di invoice selalu sesuai dengan yang dikonfigurasi admin di sana.
 $reminderConfigPath = __DIR__ . '/../data/reminder-' . $pemilik . '.json';
@@ -135,16 +137,7 @@ if (!$generatorEnabled) {
     exit("Generator nonaktif\n");
 }
 
-$todayDay = (int)date('j');
-$lastDay = (int)date('t');
-$effectiveStartDay = min($startDay, $lastDay);
-
-// Gate rentang tanggal generate (start_day/scheduleMode) -- HANYA relevan utk
-// pelanggan Fixed Due Date, satu-satunya mode yang diproses file ini.
-$fixedDueDateInRange = true;
-if ($scheduleMode !== 'daily' && ($todayDay < $effectiveStartDay || $todayDay > $lastDay)) {
-    $fixedDueDateInRange = false;
-}
+$today = date('Y-m-d');
 
 // Daftar nama bulan Indonesia, dipakai juga oleh bangunTanggalBayar() untuk lookup index bulan.
 $bulanIndo = [
@@ -166,6 +159,19 @@ $dueMonthTs = strtotime('+1 month', strtotime(date('Y-m-01')));
 $periodeTargets = [
     1 => tagihanResolvePeriodeTercatat((int)date('n', $dueMonthTs), (int)date('Y', $dueMonthTs), $periodeTercatatMode),
 ];
+
+// Tanggal jatuh tempo utk periode target (bulan depan, tanggal = $jatuhTempoHari,
+// di-clamp ke jumlah hari bulan tsb) -- dipakai utk gerbang "Terbit H- sblm
+// jatuh tempo" di bawah, MENGGANTIKAN gerbang lama start_day/scheduleMode.
+$dueDateForTarget = tagihanBuildMonthlyDate((int)date('Y', $dueMonthTs), (int)date('n', $dueMonthTs), $jatuhTempoHari);
+$daysUntilDueTarget = ($dueDateForTarget !== null)
+    ? (int) floor((strtotime($dueDateForTarget) - strtotime($today)) / 86400)
+    : PHP_INT_MAX;
+
+// Cuma generate begitu sisa hari ke jatuh tempo periode target <= $daysBeforeDue
+// -- sama persis logika invoice_generator_rolling_monthversary_*.php (lihat
+// komentar $daysBeforeDue di atas).
+$fixedDueDateInRange = ($daysUntilDueTarget <= $daysBeforeDue);
 
 $userStmt = $conn->prepare("SELECT id FROM user WHERE USERNAME = ? LIMIT 1");
 $userStmt->bind_param('s', $pemilik);
@@ -208,6 +214,7 @@ $serverRes = $serverStmt->get_result();
 $totalInserted = 0;
 $totalSkipped = 0;
 $totalRegenerated = 0;
+$totalTerlaluAwalDihapus = 0;
 $ringkasanPerPeriode = [];
 
 while ($server = $serverRes->fetch_assoc()) {
@@ -256,8 +263,41 @@ while ($server = $serverRes->fetch_assoc()) {
             continue;
         }
 
-        // Dari sini ke bawah HANYA utk pelanggan Fixed Due Date (mengikuti_tanggal_tempo)
-        // -- jadwal kalender global (start_day/scheduleMode), 1 periode (bulan depan) saja.
+        // Dari sini ke bawah HANYA utk pelanggan Fixed Due Date (mengikuti_tanggal_tempo).
+        //
+        // Bersihkan invoice PENAGIHAN (belum bayar) yang "belum waktunya" -- sisa
+        // hari ke jatuh temponya (dihitung dari PENGUNAAN + $jatuhTempoHari) MASIH
+        // LEBIH dari $daysBeforeDue hari lagi. SEBELUMNYA jadwal start_day/scheduleMode
+        // yang lama bisa generate invoice jauh sebelum H- yang seharusnya, jadi bisa
+        // ada sisa invoice "kepagian" nyangkut di database. JANGAN sentuh invoice
+        // PENAGIHAN yang jatuh temponya SUDAH DEKAT/LEWAT (itu tagihan sah yang
+        // sedang berjalan/menunggak, harus tetap ada) -- cuma yang masih jauh di depan.
+        $cleanupStaleStmt = $conn->prepare("SELECT id, PENGUNAAN FROM transaksi WHERE IDPEL = ? AND PEMILIK = ? AND TRIM(UPPER(COALESCE(STATUS,''))) = 'PENAGIHAN'");
+        $cleanupStaleStmt->bind_param('ss', $idpel, $serverPemilik);
+        $cleanupStaleStmt->execute();
+        $cleanupStaleRes = $cleanupStaleStmt->get_result();
+        $staleInvoiceIds = [];
+        while ($staleRow = $cleanupStaleRes->fetch_assoc()) {
+            $staleDue = tagihanGetFirstDueDateFixedByUsagePeriod((string)($staleRow['PENGUNAAN'] ?? ''), $jatuhTempoHari);
+            if ($staleDue === null) {
+                continue;
+            }
+            $staleDaysUntil = (int) floor((strtotime($staleDue) - strtotime($today)) / 86400);
+            if ($staleDaysUntil > $daysBeforeDue) {
+                $staleInvoiceIds[] = (int)$staleRow['id'];
+            }
+        }
+        $cleanupStaleStmt->close();
+        if (!empty($staleInvoiceIds)) {
+            $delStaleStmt = $conn->prepare("DELETE FROM transaksi WHERE id = ?");
+            foreach ($staleInvoiceIds as $staleId) {
+                $delStaleStmt->bind_param('i', $staleId);
+                $delStaleStmt->execute();
+                $totalTerlaluAwalDihapus++;
+            }
+            $delStaleStmt->close();
+        }
+
         if (!$fixedDueDateInRange) {
             $totalSkipped += count($periodeTargets);
             continue;
@@ -326,7 +366,7 @@ while ($server = $serverRes->fetch_assoc()) {
 
 $serverStmt->close();
 
-echo "Selesai. Total Inserted: {$totalInserted}, Total Regenerated: {$totalRegenerated}, Total Skipped: {$totalSkipped}\n";
+echo "Selesai. Total Inserted: {$totalInserted}, Total Regenerated: {$totalRegenerated}, Total Skipped: {$totalSkipped}, Invoice Terlalu Awal Dihapus: {$totalTerlaluAwalDihapus}\n";
 foreach ($ringkasanPerPeriode as $periode => $rek) {
     $ins = $rek['inserted'] ?? 0;
     $rgn = $rek['regenerated'] ?? 0;

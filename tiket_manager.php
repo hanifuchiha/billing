@@ -936,6 +936,28 @@ function tmProcessDismantleFromTicket($conn, $ticketRow, $reportText, $detailTex
     }
     $stmtDelPel->close();
 
+    // Kirim notif WA "Pesan DISMANTLE Manual" (Notification Setting) --
+    // SEBELUMNYA proses dismantle dari joblist ini sama sekali tidak pernah
+    // mengirim notif apapun ke pelanggan. Placeholder template: $nama, $idpel,
+    // $tanggal_dismantle (lihat notification.php form Pesan Dismantle Manual).
+    // Gagal kirim TIDAK menggagalkan proses dismantle (data billing sudah
+    // pasti berhasil dipindah/dihapus di atas), cuma diabaikan.
+    try {
+        require_once __DIR__ . '/notifbot/notif_template_helper.php';
+        $dismantleTemplate = notifTemplateGetKhususColumn($pemilikBerhenti, 'pesan_dismantle_manual');
+        if (trim($dismantleTemplate) !== '') {
+            $dismantleVars = [
+                'nama' => $namaBerhenti,
+                'idpel' => $idpelBerhenti,
+                'tanggal_dismantle' => $tanggalBerhenti,
+            ];
+            $dismantleMessage = notifTemplateReplaceVars($dismantleTemplate, $dismantleVars);
+            notifSendWhatsappViaBot($conn, $pemilikBerhenti, $nowaBerhenti, $dismantleMessage);
+        }
+    } catch (\Throwable $eNotifDismantle) {
+        // Diamkan -- proses dismantle tetap berhasil walau notif gagal.
+    }
+
     $message = 'Pelanggan ' . $idpelBerhenti . ' berhasil dipindah ke pelanggan_berhenti dan dihapus dari pelanggan.';
     return true;
 }
