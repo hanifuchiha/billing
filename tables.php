@@ -4657,6 +4657,17 @@ function resetPemakaian(btn, idPel, nama) {
                                           AND t.STATUS = 'BERHASIL'
                                           AND DATE(t.waktu) >= p.TEMPO
                                     )";
+                                    $rowsFreePackageSql = "(
+                                        LOWER(TRIM(p.PAKET)) = 'airhome-free'
+                                        OR EXISTS (
+                                            SELECT 1 FROM paket pk
+                                            WHERE pk.PAKET = p.PAKET
+                                              AND pk.PEMILIK = p.PEMILIK
+                                              AND pk.HARGA IS NOT NULL
+                                              AND CAST(pk.HARGA AS DECIMAL(15,2)) <= 0
+                                        )
+                                    )";
+                                    $rowsUnpaidWhereSql = "NOT $rowsFreePackageSql AND NOT $rowsPaidExistsSql";
                                     $rowsExpiredWhereSql = "p.TEMPO <= '$rowsTodaySql' AND NOT $rowsPaidExistsSql";
 
                                     $rowsWhereParts = [];
@@ -4706,7 +4717,7 @@ function resetPemakaian(btn, idPel, nama) {
                                     if ($rowsFilterBayar === 'sudah_bayar') {
                                         $rowsWhereParts[] = $rowsPaidExistsSql;
                                     } elseif ($rowsFilterBayar === 'belum_bayar') {
-                                        $rowsWhereParts[] = "NOT $rowsPaidExistsSql";
+                                        $rowsWhereParts[] = $rowsUnpaidWhereSql;
                                     }
                                     if ($rowsFilterStatus === 'expired') {
                                         $rowsWhereParts[] = $rowsExpiredWhereSql;
@@ -4753,7 +4764,7 @@ function resetPemakaian(btn, idPel, nama) {
                                         }
 
                                         if ($rowsLosFromCache !== null) {
-                                            $rowsOfflineIdpel = array_values(array_intersect_key($rowsCandidateIdpel, $rowsLosFromCache));
+                                            $rowsOfflineIdpel = array_keys(array_intersect_key($rowsCandidateIdpel, $rowsLosFromCache));
                                         } else {
                                             require_once __DIR__ . '/routeros_api.class.php';
 
@@ -4830,6 +4841,8 @@ function resetPemakaian(btn, idPel, nama) {
                                           AND t.STATUS = 'BERHASIL'
                                           AND DATE(t.waktu) >= p.TEMPO
                                     )";
+                                    $freePackageSql = $rowsFreePackageSql;
+                                    $unpaidWhereSql = "NOT $freePackageSql AND NOT $paidExistsSql";
                                     $rowsTodaySql = date('Y-m-d');
                                     $expiredWhereSql = "p.TEMPO <= '$rowsTodaySql' AND NOT $paidExistsSql";
 
@@ -4860,21 +4873,25 @@ function resetPemakaian(btn, idPel, nama) {
                                                 $qSummaryExpired = mysqli_query($conn, "SELECT COUNT(*) AS total FROM pelanggan p WHERE p.IDPEL IN ($summaryIdList) AND $expiredWhereSql");
                                                 $rowSummaryExpired = $qSummaryExpired ? mysqli_fetch_assoc($qSummaryExpired) : ['total' => 0];
                                                 $summaryExpired += (int)($rowSummaryExpired['total'] ?? 0);
+
+                                                $qSummaryUnpaid = mysqli_query($conn, "SELECT COUNT(*) AS total FROM pelanggan p WHERE p.IDPEL IN ($summaryIdList) AND $unpaidWhereSql");
+                                                $rowSummaryUnpaid = $qSummaryUnpaid ? mysqli_fetch_assoc($qSummaryUnpaid) : ['total' => 0];
+                                                $summaryBelumBayar += (int)($rowSummaryUnpaid['total'] ?? 0);
                                             }
                                         }
-                                        $summaryBelumBayar = max(0, $summaryTotalPelanggan - $summarySudahBayar);
                                     } else {
                                         $qPaymentSummary = mysqli_query($conn, "
                                             SELECT
                                                 COUNT(*) AS total_pelanggan,
-                                                COALESCE(SUM(CASE WHEN $paidExistsSql THEN 1 ELSE 0 END), 0) AS sudah_bayar
+                                                COALESCE(SUM(CASE WHEN $paidExistsSql THEN 1 ELSE 0 END), 0) AS sudah_bayar,
+                                                COALESCE(SUM(CASE WHEN $unpaidWhereSql THEN 1 ELSE 0 END), 0) AS belum_bayar
                                             FROM pelanggan p
                                             WHERE $rowsBaseWhere
                                         ");
-                                        $paymentSummaryRow = $qPaymentSummary ? mysqli_fetch_assoc($qPaymentSummary) : ['total_pelanggan' => 0, 'sudah_bayar' => 0];
+                                        $paymentSummaryRow = $qPaymentSummary ? mysqli_fetch_assoc($qPaymentSummary) : ['total_pelanggan' => 0, 'sudah_bayar' => 0, 'belum_bayar' => 0];
                                         $summaryTotalPelanggan = (int)($paymentSummaryRow['total_pelanggan'] ?? 0);
                                         $summarySudahBayar = (int)($paymentSummaryRow['sudah_bayar'] ?? 0);
-                                        $summaryBelumBayar = max(0, $summaryTotalPelanggan - $summarySudahBayar);
+                                        $summaryBelumBayar = (int)($paymentSummaryRow['belum_bayar'] ?? 0);
 
                                         $qExpiredSummary = mysqli_query($conn, "SELECT COUNT(*) AS total FROM pelanggan p WHERE $rowsBaseWhere AND $expiredWhereSql");
                                         $expiredSummaryRow = $qExpiredSummary ? mysqli_fetch_assoc($qExpiredSummary) : ['total' => 0];
