@@ -1469,7 +1469,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
     .customer-payment-summary {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         gap: 10px;
         font-size: 12px;
     }
@@ -1507,9 +1507,16 @@ document.addEventListener("DOMContentLoaded", function() {
 
     @media (max-width: 575.98px) {
         .customer-payment-summary {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
         }
     }
+
+    @media (min-width: 576px) and (max-width: 991.98px) {
+        .customer-payment-summary {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+    }
+
 </style>
 
 
@@ -2517,7 +2524,6 @@ echo implode("\n", $shareLines);
                                 <div class="input-group">
                                     <select class="form-select input-custom-height" id="caripaket" name="caripaket">
                                          <option value="">-- Pilih PAKET AREA --</option>
-                                        <option value="EXPIRED">EXPIRED</option>
                                         <?php
                                       
 
@@ -2549,6 +2555,27 @@ echo implode("\n", $shareLines);
                                             echo '<option value="' . $paketshow . '" ' . ((isset($_REQUEST['caripaket']) && $_REQUEST['caripaket'] == $paketshow) ? 'selected' : '') . '>' . $paketshow . '</option>';
                                         }
                                         ?>
+                                    </select>
+                                </div>
+
+                                <label for="filter_bayar" class="form-label mt-2">Filter Pembayaran</label>
+                                <div class="input-group">
+                                    <select class="form-select input-custom-height" id="filter_bayar" name="filter_bayar">
+                                        <?php $selectedFilterBayar = (string)($_REQUEST['filter_bayar'] ?? ''); ?>
+                                        <option value="">-- Semua Status Bayar --</option>
+                                        <option value="sudah_bayar" <?= $selectedFilterBayar === 'sudah_bayar' ? 'selected' : ''; ?>>Sudah Bayar</option>
+                                        <option value="belum_bayar" <?= $selectedFilterBayar === 'belum_bayar' ? 'selected' : ''; ?>>Belum Bayar</option>
+                                    </select>
+                                </div>
+
+                                <label for="filter_status_pelanggan" class="form-label mt-2">Filter Status Pelanggan</label>
+                                <div class="input-group">
+                                    <select class="form-select input-custom-height" id="filter_status_pelanggan" name="filter_status">
+                                        <?php $selectedFilterStatus = (string)($_REQUEST['filter_status'] ?? ''); ?>
+                                        <option value="">-- Semua Status --</option>
+                                        <option value="aktif" <?= $selectedFilterStatus === 'aktif' ? 'selected' : ''; ?>>Aktif</option>
+                                        <option value="expired" <?= $selectedFilterStatus === 'expired' ? 'selected' : ''; ?>>Expired</option>
+                                        <option value="los" <?= $selectedFilterStatus === 'los' ? 'selected' : ''; ?>>LOS</option>
                                     </select>
                                 </div>
 
@@ -2589,12 +2616,16 @@ echo implode("\n", $shareLines);
                                         var areaEl = document.getElementById('area');
                                         var odpEl = document.getElementById('cariodp');
                                         var paketEl = document.getElementById('caripaket');
+                                        var bayarEl = document.getElementById('filter_bayar');
+                                        var statusEl = document.getElementById('filter_status_pelanggan');
 
                                         document.getElementById('carilos-cari-pelanggan').value = keywordInput ? keywordInput.value.trim() : '';
                                         document.getElementById('carilos-server').value = serverSelect ? serverSelect.value : '';
                                         document.getElementById('carilos-area').value = areaEl ? areaEl.value : '';
                                         document.getElementById('carilos-cariodp').value = odpEl ? odpEl.value : '';
                                         document.getElementById('carilos-caripaket').value = paketEl ? paketEl.value : '';
+                                        document.getElementById('carilos-filter-bayar').value = bayarEl ? bayarEl.value : '';
+                                        document.getElementById('carilos-filter-status').value = statusEl ? statusEl.value : '';
                                     });
                                 }
                             });
@@ -2606,6 +2637,8 @@ echo implode("\n", $shareLines);
                                 <input type="hidden" name="area" id="carilos-area">
                                 <input type="hidden" name="cariodp" id="carilos-cariodp">
                                 <input type="hidden" name="caripaket" id="carilos-caripaket">
+                                <input type="hidden" name="filter_bayar" id="carilos-filter-bayar">
+                                <input type="hidden" name="filter_status" id="carilos-filter-status" value="los">
                                 <div class="mt-3">
                                 <button type="submit" class="btn btn-danger input-custom-height w-100">
                                     Tampilkan Pelanggan LOS
@@ -4577,7 +4610,9 @@ function resetPemakaian(btn, idPel, nama) {
                                     $rowsFilterArea   = trim((string)($_REQUEST['area'] ?? ''));
                                     $rowsFilterOdp    = trim((string)($_REQUEST['cariodp'] ?? ''));
                                     $rowsFilterPaket  = trim((string)($_REQUEST['caripaket'] ?? ''));
-                                    $rowsIsLosOnly    = ($rowsAction === 'cari_los');
+                                    $rowsFilterBayar  = trim((string)($_REQUEST['filter_bayar'] ?? ''));
+                                    $rowsFilterStatus = trim((string)($_REQUEST['filter_status'] ?? ''));
+                                    $rowsIsLosOnly    = ($rowsAction === 'cari_los' || $rowsFilterStatus === 'los');
                                     $rowsIsGlobalSearch = ($rowsAction === 'cari_global');
 
                                     $lazyPostPayload = [
@@ -4587,6 +4622,8 @@ function resetPemakaian(btn, idPel, nama) {
                                         'area'           => $rowsFilterArea,
                                         'cariodp'        => $rowsFilterOdp,
                                         'caripaket'      => $rowsFilterPaket,
+                                        'filter_bayar'   => $rowsFilterBayar,
+                                        'filter_status'  => $rowsFilterStatus,
                                         'page_size'      => $pageSize,
                                     ];
 
@@ -4612,6 +4649,15 @@ function resetPemakaian(btn, idPel, nama) {
                                         header('Location: tables.php' . ($prgParams ? ('?' . http_build_query($prgParams)) : ''));
                                         exit;
                                     }
+
+                                    $rowsTodaySql = date('Y-m-d');
+                                    $rowsPaidExistsSql = "EXISTS (
+                                        SELECT 1 FROM transaksi t
+                                        WHERE t.IDPEL = p.IDPEL
+                                          AND t.STATUS = 'BERHASIL'
+                                          AND DATE(t.waktu) >= p.TEMPO
+                                    )";
+                                    $rowsExpiredWhereSql = "p.TEMPO <= '$rowsTodaySql' AND NOT $rowsPaidExistsSql";
 
                                     $rowsWhereParts = [];
                                     if ($AKSES === 'ASSISTANT') {
@@ -4652,21 +4698,27 @@ function resetPemakaian(btn, idPel, nama) {
                                     }
                                     if ($rowsFilterPaket !== '') {
                                         if (strtoupper($rowsFilterPaket) === 'EXPIRED') {
-                                            $rowsTodaySql = date('Y-m-d');
-                                            $rowsWhereParts[] = "p.TEMPO <= '$rowsTodaySql' AND NOT EXISTS (
-                                                SELECT 1 FROM transaksi t
-                                                WHERE t.IDPEL = p.IDPEL AND t.STATUS = 'BERHASIL' AND DATE(t.waktu) >= p.TEMPO
-                                            )";
+                                            $rowsWhereParts[] = $rowsExpiredWhereSql;
                                         } else {
                                             $rowsWhereParts[] = "p.PAKET = '" . mysqli_real_escape_string($conn, $rowsFilterPaket) . "'";
                                         }
+                                    }
+                                    if ($rowsFilterBayar === 'sudah_bayar') {
+                                        $rowsWhereParts[] = $rowsPaidExistsSql;
+                                    } elseif ($rowsFilterBayar === 'belum_bayar') {
+                                        $rowsWhereParts[] = "NOT $rowsPaidExistsSql";
+                                    }
+                                    if ($rowsFilterStatus === 'expired') {
+                                        $rowsWhereParts[] = $rowsExpiredWhereSql;
+                                    } elseif ($rowsFilterStatus === 'aktif') {
+                                        $rowsWhereParts[] = "NOT ($rowsExpiredWhereSql)";
                                     }
 
                                     $rowsBaseWhere = implode(' AND ', $rowsWhereParts);
                                     $pageRows = [];
 
                                     // Belum ada filter apapun (search/server/area/odp/paket/LOS) -> jangan tampilkan data apapun di awal load.
-                                    $rowsHasAnyFilter = ($rowsCariKeyword !== '' || $rowsFilterServer !== '' || $rowsFilterArea !== '' || $rowsFilterOdp !== '' || $rowsFilterPaket !== '');
+                                    $rowsHasAnyFilter = ($rowsCariKeyword !== '' || $rowsFilterServer !== '' || $rowsFilterArea !== '' || $rowsFilterOdp !== '' || $rowsFilterPaket !== '' || $rowsFilterBayar !== '' || $rowsFilterStatus !== '');
 
                                     if (!$rowsHasAnyFilter && !$rowsIsLosOnly) {
                                         $displayed_total = 0;
@@ -4770,15 +4822,31 @@ function resetPemakaian(btn, idPel, nama) {
                                     $summaryTotalPelanggan = 0;
                                     $summarySudahBayar = 0;
                                     $summaryBelumBayar = 0;
+                                    $summaryExpired = 0;
+                                    $summaryLos = 0;
                                     $paidExistsSql = "EXISTS (
                                         SELECT 1 FROM transaksi t
                                         WHERE t.IDPEL = p.IDPEL
                                           AND t.STATUS = 'BERHASIL'
                                           AND DATE(t.waktu) >= p.TEMPO
                                     )";
+                                    $rowsTodaySql = date('Y-m-d');
+                                    $expiredWhereSql = "p.TEMPO <= '$rowsTodaySql' AND NOT $paidExistsSql";
+
+                                    $summaryLosFromCache = null;
+                                    $summaryLosCacheName = ($AKSES === 'ASSISTANT' && !empty($asistant_name)) ? $asistant_name : ($ceknama ?? '');
+                                    $summaryLosCacheFile = __DIR__ . '/serverlog/' . preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$summaryLosCacheName) . '.txt';
+                                    if ($summaryLosCacheName !== '' && is_file($summaryLosCacheFile)) {
+                                        $summaryLosCacheRaw = @file_get_contents($summaryLosCacheFile);
+                                        $summaryLosCacheDecoded = json_decode((string)$summaryLosCacheRaw, true);
+                                        if (is_array($summaryLosCacheDecoded) && isset($summaryLosCacheDecoded['los_ids']) && is_array($summaryLosCacheDecoded['los_ids'])) {
+                                            $summaryLosFromCache = array_values(array_unique(array_map('strval', $summaryLosCacheDecoded['los_ids'])));
+                                        }
+                                    }
 
                                     if ($rowsIsLosOnly) {
                                         $summaryTotalPelanggan = isset($rowsOfflineIdpel) && is_array($rowsOfflineIdpel) ? count($rowsOfflineIdpel) : 0;
+                                        $summaryLos = $summaryTotalPelanggan;
                                         if ($summaryTotalPelanggan > 0) {
                                             $summaryPaidIds = [];
                                             foreach (array_chunk($rowsOfflineIdpel, 500) as $summaryChunk) {
@@ -4788,6 +4856,10 @@ function resetPemakaian(btn, idPel, nama) {
                                                 $qSummaryPaid = mysqli_query($conn, "SELECT COUNT(*) AS total FROM pelanggan p WHERE p.IDPEL IN ($summaryIdList) AND $paidExistsSql");
                                                 $rowSummaryPaid = $qSummaryPaid ? mysqli_fetch_assoc($qSummaryPaid) : ['total' => 0];
                                                 $summarySudahBayar += (int)($rowSummaryPaid['total'] ?? 0);
+
+                                                $qSummaryExpired = mysqli_query($conn, "SELECT COUNT(*) AS total FROM pelanggan p WHERE p.IDPEL IN ($summaryIdList) AND $expiredWhereSql");
+                                                $rowSummaryExpired = $qSummaryExpired ? mysqli_fetch_assoc($qSummaryExpired) : ['total' => 0];
+                                                $summaryExpired += (int)($rowSummaryExpired['total'] ?? 0);
                                             }
                                         }
                                         $summaryBelumBayar = max(0, $summaryTotalPelanggan - $summarySudahBayar);
@@ -4803,6 +4875,21 @@ function resetPemakaian(btn, idPel, nama) {
                                         $summaryTotalPelanggan = (int)($paymentSummaryRow['total_pelanggan'] ?? 0);
                                         $summarySudahBayar = (int)($paymentSummaryRow['sudah_bayar'] ?? 0);
                                         $summaryBelumBayar = max(0, $summaryTotalPelanggan - $summarySudahBayar);
+
+                                        $qExpiredSummary = mysqli_query($conn, "SELECT COUNT(*) AS total FROM pelanggan p WHERE $rowsBaseWhere AND $expiredWhereSql");
+                                        $expiredSummaryRow = $qExpiredSummary ? mysqli_fetch_assoc($qExpiredSummary) : ['total' => 0];
+                                        $summaryExpired = (int)($expiredSummaryRow['total'] ?? 0);
+
+                                        if (is_array($summaryLosFromCache) && count($summaryLosFromCache) > 0) {
+                                            foreach (array_chunk($summaryLosFromCache, 500) as $summaryLosChunk) {
+                                                $summaryLosIdList = implode(',', array_map(function ($v) use ($conn) {
+                                                    return "'" . mysqli_real_escape_string($conn, (string)$v) . "'";
+                                                }, $summaryLosChunk));
+                                                $qSummaryLos = mysqli_query($conn, "SELECT COUNT(*) AS total FROM pelanggan p WHERE $rowsBaseWhere AND p.IDPEL IN ($summaryLosIdList)");
+                                                $rowSummaryLos = $qSummaryLos ? mysqli_fetch_assoc($qSummaryLos) : ['total' => 0];
+                                                $summaryLos += (int)($rowSummaryLos['total'] ?? 0);
+                                            }
+                                        }
                                     }
 
                                     echo '<tr class="customer-summary-row"><td colspan="5" class="p-3">';
@@ -4810,6 +4897,8 @@ function resetPemakaian(btn, idPel, nama) {
                                     echo '<div class="summary-item"><div class="summary-label">Total Pelanggan</div><div class="summary-value">' . number_format($summaryTotalPelanggan, 0, ',', '.') . '</div></div>';
                                     echo '<div class="summary-item"><div class="summary-label text-success">Sudah Bayar</div><div class="summary-value text-success">' . number_format($summarySudahBayar, 0, ',', '.') . '</div></div>';
                                     echo '<div class="summary-item"><div class="summary-label text-danger">Belum Bayar</div><div class="summary-value text-danger">' . number_format($summaryBelumBayar, 0, ',', '.') . '</div></div>';
+                                    echo '<div class="summary-item"><div class="summary-label text-warning">Expired</div><div class="summary-value text-warning">' . number_format($summaryExpired, 0, ',', '.') . '</div></div>';
+                                    echo '<div class="summary-item"><div class="summary-label text-info">LOS</div><div class="summary-value text-info">' . number_format($summaryLos, 0, ',', '.') . '</div></div>';
                                     echo '</div>';
                                     echo '</td></tr>';
 
