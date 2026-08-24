@@ -813,6 +813,34 @@ function isSamePeriodAsTodayLocal(string $dateValue, string $today): bool
     return date('Y-m', $tsDate) === date('Y-m', $tsToday);
 }
 
+/**
+ * BUG (fixed): cabang "baru pasang/bayar bulan ini" SEBELUMNYA mengecek
+ * TANGGALPASANG pakai isSamePeriodAsTodayLocal() apa adanya utk SEMUA
+ * pelanggan prabayar yang SUDAH PERNAH bayar (cabang "belum pernah bayar"
+ * sudah ditangani terpisah) -- artinya dapat toleransi SAMPAI AKHIR BULAN
+ * KALENDER. Kalau TANGGALPASANG kebetulan jatuh di bulan berjalan (mis.
+ * data TANGGALPASANG ter-reset/di-edit ulang walau histori bayar jauh lebih
+ * lama), pelanggan dapat toleransi jauh lebih lama dari "Waktu Tunggu
+ * Prabayar" (Payment Setting) yang sudah dikonfigurasi -- bertentangan
+ * dengan tujuan setting itu sendiri (isolir setelah TANGGALPASANG + waktu
+ * tunggu, bukan sampai akhir bulan). Sekarang utk prabayar, TANGGALPASANG
+ * cuma melindungi selama waktu tunggu -- selaras dgn cabang "belum pernah
+ * bayar". Pascabayar tetap pakai aturan lama (toleransi 1 bulan kalender).
+ */
+function isTanggalPasangMasihAmanLocal(string $tipeBayar, string $tanggalPasang, string $today, int $prabayarGracePeriod): bool
+{
+    if ($tipeBayar !== 'prabayar') {
+        return isSamePeriodAsTodayLocal($tanggalPasang, $today);
+    }
+    if (empty($tanggalPasang) || strtotime($tanggalPasang) === false) {
+        return false;
+    }
+    $batasAman = $prabayarGracePeriod > 0
+        ? date('Y-m-d', strtotime("+{$prabayarGracePeriod} days", strtotime($tanggalPasang)))
+        : $tanggalPasang;
+    return strtotime($batasAman) > strtotime($today);
+}
+
 function parseIndoMonthYearLocal(string $value): ?array
 {
     $raw = trim($value);
@@ -858,7 +886,25 @@ function getFirstDueDateFixedByUsagePeriod(string $penggunaan, int $fixedDueDay)
         return null;
     }
 
-    return buildMonthlyDateLocal((int)$parsed['year'], (int)$parsed['month'], $fixedDueDay);
+    // BUG (fixed, selaras dgn getFirstDueDateForPrabayarFixedByLastUsage() di
+    // pelanggan_menunggak.php / tagihanGetFirstDueDateFixedByUsagePeriod() di
+    // tagihan_status_lib.php): $parsed adalah PENGUNAAN transaksi BERHASIL
+    // TERAKHIR -- periode yang SUDAH DIBAYAR -- BUKAN periode yang belum
+    // dibayar. Sebelumnya fungsi ini balikin jatuh tempo dari bulan/tahun
+    // $parsed apa adanya, jadi countConsecutiveMissedMonths() cek siklus
+    // PERTAMA (bulan yang barusan dibayar), LANGSUNG ketemu pembayaran,
+    // LANGSUNG return 0 (dianggap tidak menunggak) -- pelanggan prabayar
+    // Fixed Due Date jadi TIDAK PERNAH diisolir walau nunggak berbulan-bulan.
+    // Jatuh tempo PERTAMA yang belum dibayar = 1 bulan setelah periode yang
+    // sudah lunas ini.
+    $dueMonth = (int)$parsed['month'] + 1;
+    $dueYear = (int)$parsed['year'];
+    if ($dueMonth > 12) {
+        $dueMonth = 1;
+        $dueYear++;
+    }
+
+    return buildMonthlyDateLocal($dueYear, $dueMonth, $fixedDueDay);
 }
 
 function buildMonthlyDateLocal(int $year, int $month, int $day): ?string
@@ -1226,7 +1272,7 @@ while ($server = mysqli_fetch_array($query_server)) {
                     $belum_bayar = true;
                     $keterangan = "Belum pernah bayar sejak pasang: $TANGGALPASANG | Waktu tunggu: $prabayar_grace_period hari";
                 }
-            } elseif (isSamePeriodAsTodayLocal($TANGGALPASANG, $hari_ini) || isSamePeriodAsTodayLocal($referenceDate, $hari_ini)) {
+            } elseif (isTanggalPasangMasihAmanLocal($TIPE_BAYAR, $TANGGALPASANG, $hari_ini, $prabayar_grace_period) || isSamePeriodAsTodayLocal($referenceDate, $hari_ini)) {
                 // Baru pasang atau baru bayar bulan ini → belum dihitung menunggak
                 $statistik['sudah_bayar']++;
                 if ($layakDipulihkan) {
@@ -1362,7 +1408,7 @@ while ($server = mysqli_fetch_array($query_server)) {
                     $belum_bayar = true;
                     $keterangan = "Belum pernah bayar sejak pasang: $TANGGALPASANG | Waktu tunggu: $prabayar_grace_period hari";
                 }
-            } elseif (isSamePeriodAsTodayLocal($TANGGALPASANG, $hari_ini) || isSamePeriodAsTodayLocal($referenceDate, $hari_ini)) {
+            } elseif (isTanggalPasangMasihAmanLocal($TIPE_BAYAR, $TANGGALPASANG, $hari_ini, $prabayar_grace_period) || isSamePeriodAsTodayLocal($referenceDate, $hari_ini)) {
                 // Baru pasang atau baru bayar bulan ini → belum dihitung menunggak
                 $statistik['sudah_bayar']++;
                 if ($layakDipulihkan) {
@@ -1556,7 +1602,7 @@ while ($server = mysqli_fetch_array($query_server)) {
                     $belum_bayar = true;
                     $keterangan = "Belum pernah bayar sejak pasang: $TANGGALPASANG | Waktu tunggu: $prabayar_grace_period hari";
                 }
-            } elseif (isSamePeriodAsTodayLocal($TANGGALPASANG, $hari_ini) || isSamePeriodAsTodayLocal($referenceDate, $hari_ini)) {
+            } elseif (isTanggalPasangMasihAmanLocal($TIPE_BAYAR, $TANGGALPASANG, $hari_ini, $prabayar_grace_period) || isSamePeriodAsTodayLocal($referenceDate, $hari_ini)) {
                 // Baru pasang atau baru bayar bulan ini → belum dihitung menunggak
                 $statistik['sudah_bayar']++;
                 if ($layakDipulihkan) {

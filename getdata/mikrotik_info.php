@@ -107,6 +107,14 @@ function getRegisteredHotspotVouchersFromDb($conn, $pemilik) {
 }
 
 $api = new RouterosAPI();
+// Endpoint ini dipanggil per-baris server saat halaman Server Area dimuat
+// (+ auto-refresh tiap 60 detik) -- default class (timeout 3s x 5 attempts +
+// delay 3s antar attempt) bisa menggantung sampai ~27 detik utk 1 server yang
+// offline/error, sama pola perbaikan yg sudah dipakai endpoint live lain spt
+// scan_active_connections_notindatabase.php / get_live_traffic.php.
+$api->timeout = 3;
+$api->attempts = 1;
+$api->delay = 0;
 
 try {
     if (!$api->connect($mikrotik_ip, $mikrotik_user, $mikrotik_pass)) {
@@ -126,7 +134,7 @@ try {
 
     // ---------------------------------------------------------------
     // Step 1: Ambil username terdaftar di database (AREA + PEMILIK)
-    // Ini jadi filter — hanya username yang ada di sini yang dihitung
+    // Ini jadi filter ï¿½ hanya username yang ada di sini yang dihitung
     // ---------------------------------------------------------------
     $registered = getRegisteredUsernamesFromDb($conn, $server_area, $server_pemilik);
     $total_pppoe_secret = count($registered); // Total = jumlah di database
@@ -189,7 +197,7 @@ try {
     }
 
     // ---------------------------------------------------------------
-    // Step 5: Hotspot — filter berdasarkan database (tabel `voucher`)
+    // Step 5: Hotspot ï¿½ filter berdasarkan database (tabel `voucher`)
     // bukan langsung hitung semua active dari MikroTik.
     //
     // Total Hotspot   = jumlah voucher terdaftar di DB untuk PEMILIK ini

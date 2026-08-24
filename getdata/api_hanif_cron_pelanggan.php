@@ -262,7 +262,18 @@ function keuHttpRequestMultipart(string $url, array $fields, ?string $filePath, 
     ];
 }
 
-function resolveSite(string $area, array $remoteSiteByName, array $overrideMap): ?array
+/**
+ * Normalisasi nama AREA/site utk pencocokan case/whitespace-insensitive.
+ * Dipakai supaya "Home-13960.01-16_GEDUNG-B" dan "home-13960.01-16_gedung-b"
+ * (mis. beda kapitalisasi krn diketik manual/edit) dikenali sbg site yang
+ * SAMA, bukan dianggap belum ada lalu dibuatkan site DUPLIKAT di keuangan.
+ */
+function normalizeAreaKey(string $value): string
+{
+    return mb_strtolower(trim($value), 'UTF-8');
+}
+
+function resolveSite(string $area, array $remoteSiteByName, array $overrideMap, array $remoteSiteByNormalizedName = []): ?array
 {
     $areaTrim = trim($area);
 
@@ -277,6 +288,26 @@ function resolveSite(string $area, array $remoteSiteByName, array $overrideMap):
             'id_site' => $s['site_ref_id'] ?? $s['id_site'] ?? null,
             'site_name' => $s['site_name'] ?? $areaTrim,
         ];
+    }
+
+    // BUG (fixed): sebelumnya pencocokan cuma exact-match (case & whitespace
+    // sensitif). Kalau AREA lokal beda kapitalisasi tipis dari site_name yang
+    // sudah ada di keuangan (padahal site-nya SAMA), resolveSite() balikin
+    // null -> pemanggil kira site belum ada -> createRemoteSite() dipanggil
+    // lagi -> site DUPLIKAT (persis kasus server Mikrotik "GEDUNG-B" yang
+    // sempat kebuat dobel gara-gara hal serupa). Fallback pencocokan
+    // case/whitespace-insensitive di sini supaya site yang sudah ada
+    // (walau beda kapitalisasi) tetap dikenali & TIDAK dibuat ulang.
+    if ($areaTrim !== '') {
+        $normalized = normalizeAreaKey($areaTrim);
+        if (isset($remoteSiteByNormalizedName[$normalized])) {
+            $s = $remoteSiteByNormalizedName[$normalized];
+            return [
+                'source' => $s['source'] ?? 'site',
+                'id_site' => $s['site_ref_id'] ?? $s['id_site'] ?? null,
+                'site_name' => $s['site_name'] ?? $areaTrim,
+            ];
+        }
     }
 
     return null;
@@ -344,8 +375,27 @@ function createRemoteSite(string $areaName, array $sampleRow, array &$summary): 
     }
 
     if ($resp['http_code'] === 409) {
+        // Coba pulihkan id_site yang sudah ada dari body respons 409 (kalau
+        // API menyertakannya) -- supaya site yang MEMANG sudah ada tetap
+        // dikenali & dipakai (bukan dianggap gagal & di-skip terus tiap run).
+        // Sebelumnya 409 SELALU return null -- pelanggan di AREA itu jadi
+        // TIDAK PERNAH ke-sync ke keuangan sampai ada yang menambahkan
+        // mapping manual, walau site-nya sebenarnya sudah tersedia.
+        $existingArea = $resp['json']['area'] ?? $resp['json']['site'] ?? $resp['json']['data'] ?? null;
+        if (is_array($existingArea)) {
+            $existingId = (int)($existingArea['id'] ?? $existingArea['id_site'] ?? 0);
+            if ($existingId > 0) {
+                syncLog("Site '$areaName' sudah ada di keuangan (409), id_site dipulihkan dari respons: $existingId");
+                return [
+                    'source' => 'site',
+                    'id_site' => $existingId,
+                    'site_name' => (string)($existingArea['nama_site'] ?? $areaName),
+                ];
+            }
+        }
+
         $summary['sites_create_failed']++;
-        syncLog("SKIP: site '$areaName' sudah ada di keuangan (409) tapi id_site-nya tidak diketahui dari sini. Tambahkan manual ke keuangan_site_override.json.");
+        syncLog("SKIP: site '$areaName' sudah ada di keuangan (409) tapi id_site-nya tidak diketahui dari sini (respons tidak menyertakan data site). Tambahkan manual ke keuangan_site_override.json.");
         return null;
     }
 
@@ -900,16 +950,19 @@ foreach ($remoteCustomers as $rc) {
 }
 
 $remoteSiteByName = [];
+$remoteSiteByNormalizedName = [];
 foreach ($remoteSitesList as $rs) {
     $sn = trim((string)($rs['site_name'] ?? ''));
     if ($sn !== '') {
         $remoteSiteByName[$sn] = $rs;
+        $remoteSiteByNormalizedName[normalizeAreaKey($sn)] = $rs;
     }
 }
 foreach ($remoteCustomers as $rc) {
     $siteObj = $rc['site'] ?? null;
     if (is_array($siteObj) && !empty($siteObj['site_name'])) {
         $remoteSiteByName[$siteObj['site_name']] = $siteObj;
+        $remoteSiteByNormalizedName[normalizeAreaKey((string)$siteObj['site_name'])] = $siteObj;
     }
 }
 
@@ -953,7 +1006,7 @@ if (!$resPelanggan) {
             continue;
         }
 
-        $site = resolveSite((string)($row['AREA'] ?? ''), $remoteSiteByName, $overrideMap);
+        $site = resolveSite((string)($row['AREA'] ?? ''), $remoteSiteByName, $overrideMap, $remoteSiteByNormalizedName);
 
         if (!$site || empty($site['id_site'])) {
             $areaName = trim((string)($row['AREA'] ?? ''));
@@ -966,6 +1019,11 @@ if (!$resPelanggan) {
                         'site_name' => $newSite['site_name'],
                     ];
                     $remoteSiteByName[$areaName] = $remoteSiteByName[$newSite['site_name']];
+                    // Update juga index ter-normalisasi supaya pelanggan lain di
+                    // AREA yang sama (walau beda kapitalisasi) di run yang sama
+                    // ikut ketemu site ini, bukan nyoba createRemoteSite() lagi.
+                    $remoteSiteByNormalizedName[normalizeAreaKey($newSite['site_name'])] = $remoteSiteByName[$newSite['site_name']];
+                    $remoteSiteByNormalizedName[normalizeAreaKey($areaName)] = $remoteSiteByName[$newSite['site_name']];
                     $site = $newSite;
                 }
             }

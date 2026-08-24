@@ -33,6 +33,16 @@ if ($checkTikorCol && mysqli_num_rows($checkTikorCol) === 0) {
     @mysqli_query($conn, "ALTER TABLE server ADD COLUMN TIKOR VARCHAR(64) NULL DEFAULT NULL");
 }
 
+// Kolom cache "kapan terakhir provisioning EXPIRED profile/pool/firewall
+// dicek" -- dipakai supaya connect ke Mikrotik utk provisioning itu (lihat
+// loop tabel server di bawah) TIDAK jalan di SETIAP kali halaman ini dibuka,
+// cukup sekali per EXPIRED_PROVISION_RECHECK_HOURS jam per server.
+$checkExpiredProvisionCol = @mysqli_query($conn, "SHOW COLUMNS FROM server LIKE 'expired_provision_checked_at'");
+if ($checkExpiredProvisionCol && mysqli_num_rows($checkExpiredProvisionCol) === 0) {
+    @mysqli_query($conn, "ALTER TABLE server ADD COLUMN expired_provision_checked_at DATETIME NULL DEFAULT NULL");
+}
+define('EXPIRED_PROVISION_RECHECK_HOURS', 12);
+
 // Tampilkan skrip MikroTik setelah server RADIUS_ONLY baru disimpan (lihat
 // proses/addserver.php dan proses/editserver.php -- redirect ke sini dengan
 // ?radius_script_for=<id>).
@@ -557,48 +567,81 @@ if($selected_ip){
                       // ini SENGAJA tidak punya kredensial API yang valid,
                       // jadi percobaan connect di sini cuma buang waktu
                       // (timeout) tiap kali halaman ini dibuka, tanpa hasil.
-                      $API = new RouterosAPI();
-                      if ($connectionMode !== 'RADIUS_ONLY' && $API->connect($ip, $pemilik, $password)) {
-                        // 1. PPPoE Profile EXPIRED
-                          // 1a. Buat pool EXPIRED (15.15.15.2-15.15.15.254)
-                          $pool = $API->comm('/ip/pool/print', ["?name" => "EXPIRED"]);
-                          if (empty($pool)) {
-                            $API->comm('/ip/pool/add', [
-                              "name" => "EXPIRED",
-                              "ranges" => "15.15.15.2-15.15.15.254"
+                      //
+                      // Connect ini SINKRON di tengah render halaman (bukan AJAX),
+                      // jadi SEBELUM HTML apapun terkirim ke browser -- makanya
+                      // dibatasi (throttle) pakai expired_provision_checked_at:
+                      // kalau server ini SUDAH pernah dicek dalam
+                      // EXPIRED_PROVISION_RECHECK_HOURS jam terakhir, lewati
+                      // total tanpa connect sama sekali (object2 EXPIRED-nya
+                      // idempotent, begitu ada di router ya tetap ada, tidak
+                      // perlu dicek ulang tiap kali halaman dibuka). Server yang
+                      // baru ditambah (kolom masih NULL) tetap langsung diprovisi
+                      // begitu halaman ini pertama kali dibuka, sama seperti
+                      // perilaku lama.
+                      $lastProvisionCheck = $data['expired_provision_checked_at'] ?? null;
+                      $needsProvisionCheck = ($connectionMode !== 'RADIUS_ONLY') && (
+                          empty($lastProvisionCheck) ||
+                          strtotime($lastProvisionCheck) < (time() - EXPIRED_PROVISION_RECHECK_HOURS * 3600)
+                      );
+                      if ($needsProvisionCheck) {
+                        $API = new RouterosAPI();
+                        // Default class (timeout 3 detik x 5 percobaan + jeda 3
+                        // detik antar percobaan) bisa menggantung sampai ~27
+                        // detik UNTUK SETIAP server offline/error -- sama pola
+                        // perbaikan yg sudah dipakai endpoint live lain (lihat
+                        // getdata/mikrotik_info.php).
+                        $API->timeout = 2;
+                        $API->attempts = 1;
+                        $API->delay = 0;
+                        if ($API->connect($ip, $pemilik, $password)) {
+                          // 1. PPPoE Profile EXPIRED
+                            // 1a. Buat pool EXPIRED (15.15.15.2-15.15.15.254)
+                            $pool = $API->comm('/ip/pool/print', ["?name" => "EXPIRED"]);
+                            if (empty($pool)) {
+                              $API->comm('/ip/pool/add', [
+                                "name" => "EXPIRED",
+                                "ranges" => "15.15.15.2-15.15.15.254"
+                              ]);
+                            }
+
+                          $profiles = $API->comm('/ppp/profile/print', ["?name" => "EXPIRED"]);
+                          if (empty($profiles)) {
+                            $API->comm('/ppp/profile/add', [
+                                "name" => "EXPIRED",
+                                "rate-limit" => "0/0",
+                                "local-address" => "15.15.15.1",
+                                "remote-address" => "EXPIRED"
                             ]);
                           }
 
-                        $profiles = $API->comm('/ppp/profile/print', ["?name" => "EXPIRED"]);
-                        if (empty($profiles)) {
-                          $API->comm('/ppp/profile/add', [
-                              "name" => "EXPIRED",
-                              "rate-limit" => "0/0",
-                              "local-address" => "15.15.15.1",
-                              "remote-address" => "EXPIRED"
-                          ]);
-                        }
+                          // 2. Firewall Address List EXPIRED 15.15.15.0/24
+                          $addrList = $API->comm('/ip/firewall/address-list/print', ["?list" => "EXPIRED", "?address" => "15.15.15.0/24"]);
+                          if (empty($addrList)) {
+                            $API->comm('/ip/firewall/address-list/add', [
+                              "list" => "EXPIRED",
+                              "address" => "15.15.15.0/24"
+                            ]);
+                          }
 
-                        // 2. Firewall Address List EXPIRED 15.15.15.0/24
-                        $addrList = $API->comm('/ip/firewall/address-list/print', ["?list" => "EXPIRED", "?address" => "15.15.15.0/24"]);
-                        if (empty($addrList)) {
-                          $API->comm('/ip/firewall/address-list/add', [
-                            "list" => "EXPIRED",
-                            "address" => "15.15.15.0/24"
-                          ]);
+                          // 3. Firewall Filter Rule src-address-list=EXPIRED action=drop
+                          $filterRule = $API->comm('/ip/firewall/filter/print', ["?src-address-list" => "EXPIRED", "?action" => "drop"]);
+                          if (empty($filterRule)) {
+                            $API->comm('/ip/firewall/filter/add', [
+                              "chain" => "forward",
+                              "src-address-list" => "EXPIRED",
+                              "action" => "drop",
+                              "comment" => "Auto block EXPIRED 15.15.15.0/24"
+                            ]);
+                          }
+                          $API->disconnect();
                         }
-
-                        // 3. Firewall Filter Rule src-address-list=EXPIRED action=drop
-                        $filterRule = $API->comm('/ip/firewall/filter/print', ["?src-address-list" => "EXPIRED", "?action" => "drop"]);
-                        if (empty($filterRule)) {
-                          $API->comm('/ip/firewall/filter/add', [
-                            "chain" => "forward",
-                            "src-address-list" => "EXPIRED",
-                            "action" => "drop",
-                            "comment" => "Auto block EXPIRED 15.15.15.0/24"
-                          ]);
-                        }
-                        $API->disconnect();
+                        // Update timestamp TERLEPAS dari sukses/gagal connect --
+                        // server yang lagi offline juga di-backoff, tidak dicoba
+                        // lagi tiap page load (tetap akan dicoba ulang otomatis
+                        // begitu masuk window EXPIRED_PROVISION_RECHECK_HOURS
+                        // berikutnya).
+                        mysqli_query($conn, "UPDATE server SET expired_provision_checked_at = NOW() WHERE id = " . (int) $id);
                       }
 
                   ?>

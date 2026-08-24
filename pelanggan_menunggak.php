@@ -126,14 +126,31 @@ function isSamePeriodAsToday($dateValue, $today)
     return date('Y-m', $tsDate) === date('Y-m', $tsToday);
 }
 
-function shouldCountAsMenunggak($row, $today)
+function shouldCountAsMenunggak($row, $today, $prabayarGracePeriod = 2)
 {
     $tipeBayar = strtolower(trim((string)($row['TIPE_BAYAR'] ?? 'prabayar')));
 
     // Prabayar: jika baru pasang di periode ini atau sudah bayar periode ini, belum menunggak.
     if ($tipeBayar !== 'pascabayar') {
-        if (isSamePeriodAsToday($row['TANGGALPASANG'] ?? '', $today)) {
-            return false;
+        // BUG (fixed): dulu TANGGALPASANG dicek pakai isSamePeriodAsToday() apa
+        // adanya -- toleransi SAMPAI AKHIR BULAN KALENDER -- padahal cabang ini
+        // cuma dicapai kalau pelanggan SUDAH PERNAH bayar (last_paid tidak
+        // kosong, cabang "belum pernah bayar" di atas sudah menangani kasus
+        // lain). Kalau TANGGALPASANG kebetulan jatuh di bulan berjalan (mis.
+        // data TANGGALPASANG ter-reset/di-edit ulang walau histori bayar jauh
+        // lebih lama), pelanggan dapat toleransi sampai akhir bulan walau sudah
+        // lama lewat "Waktu Tunggu Prabayar" (Payment Setting) -- bertentangan
+        // dgn tujuan setting itu sendiri. Sekarang selaras dgn cabang "belum
+        // pernah bayar": TANGGALPASANG cuma melindungi selama waktu tunggu.
+        $tanggalPasangRow = trim((string)($row['TANGGALPASANG'] ?? ''));
+        if ($tanggalPasangRow !== '' && strtotime($tanggalPasangRow) !== false) {
+            $graceP = max(0, (int)$prabayarGracePeriod);
+            $batasAman = $graceP > 0
+                ? date('Y-m-d', strtotime("+{$graceP} days", strtotime($tanggalPasangRow)))
+                : $tanggalPasangRow;
+            if (strtotime($batasAman) > strtotime((string)$today)) {
+                return false;
+            }
         }
         if (isSamePeriodAsToday($row['last_paid'] ?? '', $today)) {
             return false;
@@ -570,7 +587,7 @@ function evaluateMenunggakStatusForRow($paymentIndex, $row, $today, $fixedDueDay
         return $status;
     }
 
-    if (!shouldCountAsMenunggak($row, $today)) {
+    if (!shouldCountAsMenunggak($row, $today, $prabayarGracePeriod)) {
         return $status;
     }
 

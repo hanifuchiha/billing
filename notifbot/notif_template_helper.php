@@ -161,8 +161,59 @@ if (!function_exists('NOTIF_KHUSUS_TEMPLATE_COLUMNS')) {
         return [
             'pesan_registrasi', 'pesan_expired', 'pesan_reminder', 'pesan_ketentuan',
             'pesan_disable', 'pesan_aktif_manual', 'pesan_remainder_manual', 'pesan_dismantle_manual',
-            'pesan_gangguan', 'pesan_gangguan_selesai',
+            'pesan_gangguan', 'pesan_gangguan_selesai', 'pesan_pembayaran_berhasil',
         ];
+    }
+}
+
+if (!function_exists('notifTemplateDefaultPembayaranBerhasil')) {
+    /**
+     * Default teks "PEMBAYARAN BERHASIL" -- SEBELUMNYA di-hardcode identik di
+     * SEMUA 8 file callback gateway (tripay/duitku/midtrans/xendit/ipaymu/
+     * doku/faspay/dompetx), sama sekali tidak bisa diubah admin lewat
+     * Notification Setting. $linkBukti diisi si pemanggil (link download
+     * bukti beda antara callback pertama & callback resume/regenerate).
+     */
+    function notifTemplateDefaultPembayaranBerhasil(): string
+    {
+        return "[INI ADALAH PESAN OTOMATIS]\n*PEMBAYARAN BERHASIL*\n\n"
+            . "Hai bpk/ibu \$NAMAPELANGGAN \nPembayaran anda Telah kami terima.\n\n\n\n"
+            . "Dengan detail :\n"
+            . "- ID Pelanggan : \$USERNAMETRANASAKSI \n"
+            . "- Nama Pelanggan : \$NAMAPELANGGAN \n"
+            . "- Paket langganan : \$PAKETPELANGGAN \n"
+            . "- No Whatsapp : \$WHATSAPPELANGGAN \n"
+            . "- E-mail : \$EMAILPELANGGAN \n"
+            . "- Alamat : \$ALAMATPELANGGAN \n\n\n"
+            . "Data transaksi :\n"
+            . "- Periode pengunaan : \$periode\n"
+            . "- Tanggal bayar : \$tanggalbayar\n"
+            . "- Status INTERNET : AKTIF\n"
+            . "- Status Pembayaran : \$cekstatus \n"
+            . "- Nominal Bayar : \$amount \n"
+            . "- No Ref : \$invoiceref \n"
+            . "- Id pelanggan : \$USERNAMETRANASAKSI \n"
+            . "- Metode pembayaran : \$payment_method \n"
+            . "- Kode metode : \$payment_method_code\n\n"
+            . "\$linkBukti\n\n"
+            . "Pastikan modem Anda dalam keadaan menyala normal dan tidak ada lampu indikator merah (LOS).\n\n"
+            . "Jika dalam waktu 1 jam setelah notifikasi ini internet belum aktif,Silakan hubungi kami, atau cabut dan pasang kembali adaptor listrik modem Anda untuk mempercepat proses aktivasi.\n\n"
+            . "Demikian yang dapat kami sampaikan, terima kasih \n\n"
+            . "Terima kasih telah mempercayai kami dalam kebutuhan internet Anda\nSalam \$BRANDPELANGGAN";
+    }
+}
+
+if (!function_exists('notifTemplateGetPembayaranBerhasil')) {
+    /**
+     * Ambil template "Pembayaran Berhasil" custom milik $pemilik, fallback ke
+     * default (notifTemplateDefaultPembayaranBerhasil()) kalau belum pernah
+     * di-set -- supaya akun yang belum sentuh setting baru ini TIDAK berubah
+     * perilaku pesannya (sama persis dgn teks lama yang di-hardcode).
+     */
+    function notifTemplateGetPembayaranBerhasil(string $pemilik): string
+    {
+        $custom = notifTemplateGetKhususColumn($pemilik, 'pesan_pembayaran_berhasil');
+        return $custom !== '' ? $custom : notifTemplateDefaultPembayaranBerhasil();
     }
 }
 
@@ -289,5 +340,166 @@ if (!function_exists('notifTemplateGetSection')) {
     function notifTemplateGetSection(string $pemilik, string $section): string
     {
         return notifTemplateExtractSection(notifTemplateGetContent($pemilik), $section);
+    }
+}
+
+if (!function_exists('notifTemplateGetKhususColumn')) {
+    /**
+     * Getter generik utk kolom pesan_* di notif_khusus DI LUAR REGISTRASI/
+     * EXPIRED/REMAINDER (mis. pesan_dismantle_manual, pesan_gangguan) --
+     * kolom2 ini tidak lewat notifTemplateEnsureRow()/notifTemplateGetSection()
+     * krn bukan bagian dari 3 section utama itu. $column HARUS salah satu dari
+     * NOTIF_KHUSUS_TEMPLATE_COLUMNS() di atas.
+     */
+    function notifTemplateGetKhususColumn(string $pemilik, string $column): string
+    {
+        global $conn;
+        if (!$conn || !in_array($column, NOTIF_KHUSUS_TEMPLATE_COLUMNS(), true)) {
+            return '';
+        }
+
+        // Auto-migrasi kolom kalau belum ada -- notification.php juga sudah
+        // punya migrasi serupa, tapi itu cuma jalan kalau admin BUKA halaman
+        // itu dulu. Pemanggil kolom baru (mis. callback gateway pembayaran)
+        // bisa saja jalan DULUAN sebelum admin sempat buka Notification
+        // Setting, jadi dijamin di sini juga (idempoten, static per-request).
+        static $columnsChecked = [];
+        if (!isset($columnsChecked[$column])) {
+            $columnsChecked[$column] = true;
+            $checkCol = $conn->query("SHOW COLUMNS FROM notif_khusus LIKE '$column'");
+            if ($checkCol && $checkCol->num_rows === 0) {
+                $conn->query("ALTER TABLE notif_khusus ADD COLUMN `$column` TEXT");
+            }
+        }
+
+        $stmt = $conn->prepare("SELECT `$column` FROM notif_khusus WHERE pemilik = ? LIMIT 1");
+        if (!$stmt) {
+            return '';
+        }
+        $stmt->bind_param('s', $pemilik);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        return trim((string)($row[$column] ?? ''));
+    }
+}
+
+if (!function_exists('notifTemplateReplaceVars')) {
+    /**
+     * Replace placeholder "$namavar" literal di template dgn nilai dari $vars
+     * (key TANPA prefix $). Sama persis dgn fungsi replace_vars() lokal di
+     * proses/addcustomer.php, disatukan di sini supaya pemanggil lain (mis.
+     * proses_provisioning_action.php, tiket_manager.php) bisa pakai tanpa
+     * duplikasi regex.
+     */
+    function notifTemplateReplaceVars(string $template, array $vars): string
+    {
+        return preg_replace_callback('/\$([a-zA-Z0-9_]+)/', function ($m) use ($vars) {
+            $key = $m[1];
+            return array_key_exists($key, $vars) ? (string)$vars[$key] : $m[0];
+        }, $template);
+    }
+}
+
+if (!function_exists('notifSendWhatsappViaBot')) {
+    /**
+     * Kirim WA lewat bot milik $pemilik (tabel botwa) -- pola SAMA PERSIS dgn
+     * blok kirim WA di proses/addcustomer.php (curl langsung ke gateway gowa
+     * dgn device_id/X-Device-Id multi-device), disatukan di sini supaya bisa
+     * dipakai pemanggil lain tanpa duplikasi ~80 baris curl. $botCategory
+     * (opsional) baca bot_receiver_config-<pemilik>.json utk kategori bot
+     * tertentu (mis. "pendaftaran"), fallback ke bot default reminder-<pemilik>.
+     */
+    function notifSendWhatsappViaBot(mysqli $conn, string $pemilik, string $nowa, string $message, string $botCategory = ''): array
+    {
+        if (trim($nowa) === '' || trim($message) === '') {
+            return ['success' => false, 'message' => 'Nomor WA atau pesan kosong.'];
+        }
+
+        $botname = '';
+        if ($botCategory !== '') {
+            $botCategoryFile = __DIR__ . "/data/bot_receiver_config-$pemilik.json";
+            if (file_exists($botCategoryFile)) {
+                $botCategoryData = json_decode(file_get_contents($botCategoryFile), true);
+                if (is_array($botCategoryData) && !empty($botCategoryData[$botCategory])) {
+                    $botname = trim((string)$botCategoryData[$botCategory]);
+                }
+            }
+        }
+        if ($botname === '') {
+            $jsonFile = __DIR__ . "/data/reminder-$pemilik.json";
+            if (file_exists($jsonFile)) {
+                $data = json_decode(file_get_contents($jsonFile), true);
+                if (is_array($data)) {
+                    foreach ($data as $item) {
+                        if (!empty($item['botname'])) {
+                            $botname = trim((string)$item['botname']);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if ($botname === '') {
+            return ['success' => false, 'message' => 'Bot WA belum dikonfigurasi utk akun ini.'];
+        }
+
+        $waapi = '';
+        $passwordbot = '';
+        $sender = '';
+        $stmtBot = $conn->prepare('SELECT addressbot, password, sender FROM botwa WHERE namebot = ? AND pemilik = ? LIMIT 1');
+        $stmtBot->bind_param('ss', $botname, $pemilik);
+        $stmtBot->execute();
+        $rowBot = $stmtBot->get_result()->fetch_assoc();
+        $stmtBot->close();
+        if (!$rowBot) {
+            $stmtBot = $conn->prepare('SELECT addressbot, password, sender FROM botwa WHERE namebot = ? LIMIT 1');
+            $stmtBot->bind_param('s', $botname);
+            $stmtBot->execute();
+            $rowBot = $stmtBot->get_result()->fetch_assoc();
+            $stmtBot->close();
+        }
+        if ($rowBot) {
+            $waapi = (string)($rowBot['addressbot'] ?? '');
+            $passwordbot = (string)($rowBot['password'] ?? '');
+            $sender = (string)($rowBot['sender'] ?? '');
+        }
+        if ($waapi === '') {
+            return ['success' => false, 'message' => "Konfigurasi bot '$botname' tidak ditemukan."];
+        }
+
+        $phone = preg_replace('/[^0-9]/', '', $nowa) . '@s.whatsapp.net';
+        $deviceId = trim($sender);
+        $url = rtrim($waapi, '/') . '/send/message?session=' . urlencode($botname);
+        if ($deviceId !== '') {
+            $url .= '&device_id=' . urlencode($deviceId);
+        }
+        $headers = ['Content-Type: application/json'];
+        if ($deviceId !== '') {
+            $headers[] = "X-Device-Id: $deviceId";
+        }
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['phone' => $phone, 'message' => $message, 'sender' => $sender]));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_USERPWD, "$botname:$passwordbot");
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        if ($response === false) {
+            return ['success' => false, 'message' => "Gagal menghubungi gateway WA: $curlError"];
+        }
+
+        return [
+            'success' => ($httpCode >= 200 && $httpCode < 300),
+            'message' => (string)$response,
+        ];
     }
 }
