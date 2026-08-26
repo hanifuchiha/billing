@@ -107,7 +107,7 @@ define('SYNC_OVERRIDE_MAP_FILE', __DIR__ . '/keuangan_site_override.json');
 // { "cash": 1, "transfer": 7, "qris": 9 }
 define('SYNC_BANK_OVERRIDE_MAP_FILE', __DIR__ . '/keuangan_bank_override.json');
 
-// ---- Lokasi file bukti pembayaran (bukti_file WAJIB dikirim ke keuangan) ----
+// ---- Lokasi file bukti pembayaran (opsional) ----
 // Kolom `transaksi.BUKTI` di DB lokal biasanya berisi nama file / path relatif
 // hasil upload bukti transfer di CRM. EDIT daftar di bawah ini kalau folder
 // upload bukti pembayaran CRM Anda tidak ada di salah satu path berikut.
@@ -154,6 +154,8 @@ $summary = [
     'customers_updated' => 0,
     'customers_unchanged' => 0,
     'customers_site_reassigned' => 0,
+    'customers_remote_missing_repaired' => 0,
+    'customers_skipped_duplicate_remote' => 0,
     'customers_skipped_unmapped_area' => 0,
     'customers_skipped_empty_idpel' => 0,
     'customers_failed' => 0,
@@ -162,6 +164,7 @@ $summary = [
     'transaksi_synced' => 0,
     'transaksi_failed' => 0,
     'transaksi_skipped_missing_bukti' => 0,
+    'transaksi_without_bukti' => 0,
     'transaksi_skipped_unmapped_bank' => 0,
     'transaksi_skipped_already_exists' => 0,
     'transaksi_skipped_invalid_date' => 0,
@@ -253,8 +256,8 @@ function keuHttpRequest(string $method, string $url, ?array $payload = null): ar
 
 /**
  * Request multipart/form-data ke API keuangan - dipakai khusus untuk
- * pelanggan_payment_api karena field bukti_file WAJIB berupa file upload
- * (bukan base64/JSON). $fields adalah array asosiatif field biasa,
+ * pelanggan_payment_api karena bukti_file, jika tersedia, dikirim sebagai file
+ * upload (bukan base64/JSON). $fields adalah array asosiatif field biasa,
  * $filePath (kalau ada & valid) dikirim sebagai file bukti_file.
  */
 function keuHttpRequestMultipart(string $url, array $fields, ?string $filePath, string $fileMime): array
@@ -302,6 +305,11 @@ function keuHttpRequestMultipart(string $url, array $fields, ?string $filePath, 
  * SAMA, bukan dianggap belum ada lalu dibuatkan site DUPLIKAT di keuangan.
  */
 function normalizeAreaKey(string $value): string
+{
+    return mb_strtolower(trim($value), 'UTF-8');
+}
+
+function normalizeIdpelKey(string $value): string
 {
     return mb_strtolower(trim($value), 'UTF-8');
 }
@@ -471,12 +479,12 @@ function markPelangganSynced(mysqli $conn, int $localId, int $keuanganId, array 
  * WAJIB di pelanggan_payment_api). Sesuai dokumentasi bagian 5:
  * GET pelanggan_payment_api?meta=1
  */
-function fetchBankMeta(): array
+function fetchPaymentMeta(): array
 {
     $resp = keuHttpRequest('GET', KEU_PELANGGAN_PAYMENT_ENDPOINT . '?meta=1');
     if ($resp['http_code'] !== 200 || !is_array($resp['json'])) {
         syncLog('WARNING: gagal ambil metadata bank (meta=1). HTTP ' . $resp['http_code'] . ' - ' . ($resp['error'] ?: $resp['raw']));
-        return [];
+        return ['banks' => [], 'billing_bank_mappings' => []];
     }
     $banks = $resp['json']['banks'] ?? $resp['json']['data']['banks'] ?? [];
     $out = [];
@@ -487,14 +495,18 @@ function fetchBankMeta(): array
             $out[] = ['id' => (int)$id, 'nama' => $nama];
         }
     }
-    return $out;
+    $mappings = $resp['json']['billing_bank_mappings'] ?? $resp['json']['data']['billing_bank_mappings'] ?? [];
+    return [
+        'banks' => $out,
+        'billing_bank_mappings' => is_array($mappings) ? $mappings : [],
+    ];
 }
 
 /**
  * Cari bank_id yang cocok untuk METODE_BAYAR lokal (cash/transfer/gateway dst).
- * Urutan pencarian: override manual (keuangan_bank_override.json) -> cocok
- * berdasarkan kata kunci di nama bank remote. Return null kalau tidak ketemu
- * sama sekali - JANGAN menebak, karena bank_id salah akan salah catat kas/bank.
+ * Urutan pencarian: mapping Keuangan/override manual -> nama bank yang sama
+ * persis. Return null kalau tidak ketemu; metode umum seperti cash/transfer
+ * tidak boleh ditebak karena bisa salah mencatat saldo kas/bank.
  */
 function resolveBankId(string $metodeBayarRaw, array $banksList, array $bankOverrideMap): ?int
 {
@@ -507,27 +519,9 @@ function resolveBankId(string $metodeBayarRaw, array $banksList, array $bankOver
         return (int)$bankOverrideMap[$metode];
     }
 
-    $keywordMap = [
-        'cash'     => ['cash', 'tunai', 'kas kantor', 'kas'],
-        'transfer' => ['transfer', 'bank', 'va', 'virtual account'],
-    ];
-
-    $keywords = $keywordMap[$metode] ?? [$metode];
-
     foreach ($banksList as $b) {
-        $namaLower = strtolower($b['nama']);
-        foreach ($keywords as $kw) {
-            if ($kw !== '' && strpos($namaLower, $kw) !== false) {
-                return (int)$b['id'];
-            }
-        }
-    }
-
-    // Untuk metode selain cash/transfer (mis. payment gateway/QRIS), coba
-    // tebak dari kata umum sebelum menyerah.
-    foreach ($banksList as $b) {
-        $namaLower = strtolower($b['nama']);
-        if (strpos($namaLower, 'gateway') !== false || strpos($namaLower, 'tripay') !== false || strpos($namaLower, 'qris') !== false) {
+        $namaLower = strtolower(trim((string)$b['nama']));
+        if ($namaLower === $metode) {
             return (int)$b['id'];
         }
     }
@@ -885,24 +879,23 @@ function syncTransaksiForCustomer(
         if ($bankId === null) {
             $summary['transaksi_skipped_unmapped_bank']++;
             $msg = "SKIP transaksi id={$t['id']} IDPEL=$idpel: METODE_BAYAR='$metodeBayarRaw' tidak bisa dipetakan ke bank_id keuangan. "
-                . "Tambahkan mapping manual di " . SYNC_BANK_OVERRIDE_MAP_FILE . " (contoh: {\"$metodeBayarRaw\": 7}).";
+                . "Atur mapping pada Keuangan > Data Kas/Bank > Mapping Metode Billing.";
             $summary['errors'][] = $msg;
             syncLog($msg);
             continue;
         }
 
-        // ---- Resolve file bukti (WAJIB untuk pembayaran baru) ----
+        // ---- Resolve file bukti (opsional) ----
         $buktiValue = (string)($t['BUKTI'] ?? '');
         $buktiResolved = resolveBuktiFile($buktiValue);
+        $buktiPath = null;
+        $buktiMime = '';
         if ($buktiResolved === null) {
-            $summary['transaksi_skipped_missing_bukti']++;
-            $msg = "SKIP transaksi id={$t['id']} IDPEL=$idpel: file bukti pembayaran ('$buktiValue') tidak ditemukan/tidak valid "
-                . "(cek SYNC_BUKTI_BASE_DIRS, ekstensi harus jpg/jpeg/png/pdf, maks 10MB). API keuangan mewajibkan bukti_file untuk pembayaran baru.";
-            $summary['errors'][] = $msg;
-            syncLog($msg);
-            continue;
+            $summary['transaksi_without_bukti']++;
+            syncLog("INFO transaksi id={$t['id']} IDPEL=$idpel: bukti pembayaran ('$buktiValue') kosong/tidak ditemukan. Sinkron tetap dilanjutkan tanpa lampiran.");
+        } else {
+            [$buktiPath, $buktiMime] = $buktiResolved;
         }
-        [$buktiPath, $buktiMime] = $buktiResolved;
 
         $fields = [
             'source'        => (string)($customerPayload['source'] ?? 'site'),
@@ -921,12 +914,12 @@ function syncTransaksiForCustomer(
 
         // Hapus file temp hasil download URL remote (bukan file asli di disk CRM).
         // Pakai strpos() bukan str_starts_with() supaya tetap kompatibel PHP 7.x.
-        if (strpos($buktiPath, sys_get_temp_dir()) === 0) {
+        if ($buktiPath !== null && strpos($buktiPath, sys_get_temp_dir()) === 0) {
             @unlink($buktiPath);
         }
 
         $logLine = "Sync transaksi id={$t['id']} IDPEL=$idpel payload=" . json_encode($fields, JSON_UNESCAPED_UNICODE)
-            . " bukti_file=$buktiPath | HTTP {$resp['http_code']} | raw_response=" . ($resp['raw'] ?? $resp['error']);
+            . " bukti_file=" . ($buktiPath ?? '(tanpa bukti)') . " | HTTP {$resp['http_code']} | raw_response=" . ($resp['raw'] ?? $resp['error']);
         syncLog($logLine);
 
         $success = in_array($resp['http_code'], [200, 201], true) && !empty($resp['json']['ok']);
@@ -988,10 +981,19 @@ $remoteCustomers = $remoteResp['json']['customers'] ?? $remoteResp['json']['rows
 $remoteSitesList = $remoteResp['json']['sites'] ?? [];
 
 $remoteByIdpel = [];
+$remoteDuplicateIdpels = [];
 foreach ($remoteCustomers as $rc) {
     $ridpel = trim((string)($rc['IDPEL'] ?? ''));
     if ($ridpel !== '') {
-        $remoteByIdpel[$ridpel] = $rc;
+        $ridpelKey = normalizeIdpelKey($ridpel);
+        if (isset($remoteByIdpel[$ridpelKey])) {
+            if (!isset($remoteDuplicateIdpels[$ridpelKey])) {
+                $remoteDuplicateIdpels[$ridpelKey] = [(int)($remoteByIdpel[$ridpelKey]['id'] ?? 0)];
+            }
+            $remoteDuplicateIdpels[$ridpelKey][] = (int)($rc['id'] ?? 0);
+            continue;
+        }
+        $remoteByIdpel[$ridpelKey] = $rc;
     }
 }
 
@@ -1053,8 +1055,19 @@ if (file_exists(SYNC_BANK_OVERRIDE_MAP_FILE)) {
     }
 }
 
-// Ambil daftar bank/kas sekali di awal (dipakai untuk resolve bank_id per transaksi).
-$banksList = KEU_PAYMENT_SYNC_ENABLED ? fetchBankMeta() : [];
+// Ambil daftar bank/kas dan mapping resmi dari Keuangan sekali di awal.
+$paymentMeta = KEU_PAYMENT_SYNC_ENABLED
+    ? fetchPaymentMeta()
+    : ['banks' => [], 'billing_bank_mappings' => []];
+$banksList = $paymentMeta['banks'];
+foreach ((array)$paymentMeta['billing_bank_mappings'] as $mapping) {
+    $method = strtolower(trim((string)($mapping['billing_method'] ?? '')));
+    $bankId = (int)($mapping['bank_id'] ?? 0);
+    if ($method !== '' && $bankId > 0) {
+        // Mapping dari Keuangan menjadi sumber utama dan menimpa fallback JSON lokal.
+        $bankOverrideMap[$method] = $bankId;
+    }
+}
 if (KEU_PAYMENT_SYNC_ENABLED && empty($banksList) && empty($bankOverrideMap)) {
     syncLog('WARNING: daftar bank dari keuangan kosong dan tidak ada override manual. Sync transaksi kemungkinan akan gagal semua sampai ' . SYNC_BANK_OVERRIDE_MAP_FILE . ' diisi.');
 }
@@ -1079,6 +1092,20 @@ if (!$resPelanggan) {
             $summary['customers_skipped_empty_idpel']++;
             continue;
         }
+        $idpelKey = normalizeIdpelKey($idpel);
+        if (isset($remoteDuplicateIdpels[$idpelKey])) {
+            $summary['customers_skipped_duplicate_remote']++;
+            $summary['customers_failed']++;
+            $msg = 'SKIP IDPEL=' . $idpel . ': terduplikasi di Keuangan pada ID ['
+                . implode(',', array_values(array_unique($remoteDuplicateIdpels[$idpelKey])))
+                . ']. Gabungkan data duplikat sebelum sinkron dilanjutkan.';
+            $summary['errors'][] = $msg;
+            syncLog($msg);
+            if (!$dryRun) {
+                markPelangganSyncFailed($conn, (int)$row['id'], $msg);
+            }
+            continue;
+        }
         if (!$dryRun) {
             markPelangganSyncAttempt($conn, (int)$row['id']);
         }
@@ -1087,7 +1114,7 @@ if (!$resPelanggan) {
 
         if (!$site || empty($site['id_site'])) {
             $areaName = trim((string)($row['AREA'] ?? ''));
-            if (KEU_AUTO_CREATE_SITE && $areaName !== '') {
+            if (!$dryRun && KEU_AUTO_CREATE_SITE && $areaName !== '') {
                 $newSite = createRemoteSite($areaName, $row, $summary);
                 if ($newSite) {
                     $remoteSiteByName[$newSite['site_name']] = [
@@ -1130,7 +1157,7 @@ if (!$resPelanggan) {
         $payload = buildCustomerPayload($row, $site);
         $payloadHash = md5(json_encode($payload, JSON_UNESCAPED_UNICODE));
 
-        $existingRemote = $remoteByIdpel[$idpel] ?? null;
+        $existingRemote = $remoteByIdpel[$idpelKey] ?? null;
         $keuanganId = !empty($row['KEUANGAN_ID']) ? (int)$row['KEUANGAN_ID'] : null;
 
         if ($keuanganId === null && $existingRemote) {
@@ -1148,6 +1175,7 @@ if (!$resPelanggan) {
 
         if ($keuanganId) {
             $lastHash = (string)($row['KEUANGAN_LAST_HASH'] ?? '');
+            $remoteMissing = !$existingRemote;
 
             $siteMismatch = false;
             if ($existingRemote) {
@@ -1155,14 +1183,14 @@ if (!$resPelanggan) {
                 $remoteSiteSource = (string)($existingRemote['site_source'] ?? ($existingRemote['site']['source'] ?? ''));
                 $targetSiteRefId = (int)($site['id_site'] ?? 0);
                 $targetSiteSource = (string)($site['source'] ?? 'site');
-                if ($remoteSiteRefId > 0 && ($remoteSiteRefId !== $targetSiteRefId || strtolower($remoteSiteSource) !== strtolower($targetSiteSource))) {
+                if ($remoteSiteRefId !== $targetSiteRefId || strtolower($remoteSiteSource) !== strtolower($targetSiteSource)) {
                     $siteMismatch = true;
                     $areaLog = (string)($row['AREA'] ?? '');
                     syncLog("IDPEL=$idpel (AREA billing='$areaLog'): site di keuangan beda (site_ref_id=$remoteSiteRefId/$remoteSiteSource) dari seharusnya (site_ref_id=$targetSiteRefId/$targetSiteSource, site_name='{$site['site_name']}'). Dipaksa update supaya disamakan.");
                 }
             }
 
-            if ($lastHash === $payloadHash && !$siteMismatch) {
+            if ($lastHash === $payloadHash && !$siteMismatch && !$remoteMissing) {
                 $summary['customers_unchanged']++;
                 if (!$dryRun) {
                     markPelangganSynced($conn, (int)$row['id'], (int)$keuanganId, $site, $payloadHash);
@@ -1176,6 +1204,9 @@ if (!$resPelanggan) {
             if ($siteMismatch) {
                 $summary['customers_site_reassigned']++;
             }
+            if ($remoteMissing) {
+                syncLog("IDPEL=$idpel mempunyai KEUANGAN_ID=$keuanganId tetapi tidak ada pada snapshot Keuangan. Dipaksa upsert global berdasarkan IDPEL.");
+            }
 
             $updatePayload = $payload;
             $updatePayload['id'] = $keuanganId;
@@ -1185,8 +1216,17 @@ if (!$resPelanggan) {
             } else {
                 $resp = keuHttpRequest('POST', KEU_PELANGGAN_ENDPOINT, $updatePayload);
                 if ($resp['http_code'] === 200 && !empty($resp['json']['ok'])) {
-                    $summary['customers_updated']++;
-                    markPelangganSynced($conn, (int)$row['id'], (int)($resp['json']['id'] ?? $keuanganId), $site, $payloadHash);
+                    $operation = (string)($resp['json']['operation'] ?? 'updated');
+                    if ($operation === 'created') {
+                        $summary['customers_created']++;
+                    } else {
+                        $summary['customers_updated']++;
+                    }
+                    if ($remoteMissing) {
+                        $summary['customers_remote_missing_repaired']++;
+                    }
+                    $keuanganId = (int)($resp['json']['id'] ?? $keuanganId);
+                    markPelangganSynced($conn, (int)$row['id'], $keuanganId, $site, $payloadHash);
                 } else {
                     $summary['customers_failed']++;
                     $msg = "Update gagal IDPEL=$idpel: HTTP {$resp['http_code']} - " . ($resp['json']['message'] ?? $resp['error']);
@@ -1201,7 +1241,13 @@ if (!$resPelanggan) {
             } else {
                 $resp = keuHttpRequest('POST', KEU_PELANGGAN_ENDPOINT, $payload);
                 if ($resp['http_code'] === 200 && !empty($resp['json']['ok'])) {
-                    $summary['customers_created']++;
+                    $operation = (string)($resp['json']['operation'] ?? 'created');
+                    if ($operation === 'updated') {
+                        $summary['customers_updated']++;
+                        $summary['customers_remote_missing_repaired']++;
+                    } else {
+                        $summary['customers_created']++;
+                    }
                     $newId = (int)($resp['json']['id'] ?? 0);
                     markPelangganSynced($conn, (int)$row['id'], $newId, $site, $payloadHash);
                     if ($newId > 0) {

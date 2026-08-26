@@ -32,8 +32,11 @@ $limit = max(1, min(5, (int)($_GET['limit'] ?? 5)));
 $sql = "SELECT IDPEL
         FROM pelanggan
         WHERE TRIM(COALESCE(IDPEL, '')) <> ''
-          AND COALESCE(KEUANGAN_ID, 0) = 0
           AND COALESCE(KEUANGAN_SYNC_STATUS, 'pending') IN ('pending', 'failed')
+          AND (
+              COALESCE(KEUANGAN_ID, 0) = 0
+              OR COALESCE(KEUANGAN_SYNC_STATUS, 'pending') = 'failed'
+          )
           AND (
               KEUANGAN_SYNC_LAST_ATTEMPT IS NULL
               OR KEUANGAN_SYNC_LAST_ATTEMPT <= DATE_SUB(NOW(), INTERVAL
