@@ -1,0 +1,17 @@
+{
+  "Home-13960.01-16_Rusun_Ujung_Menteng_GEDUNG-A": {
+    "source": "site",
+    "id_site": 60,
+    "site_name": "Home-13960.01-16_Rusun_Ujung_Menteng_GEDUNG-A"
+  },
+  "Home-13960.01-16_Rusun_Ujung_Menteng_GEDUNG-B": {
+    "source": "site",
+    "id_site": 310,
+    "site_name": "Home-13960.01-16_Rusun_Ujung_Menteng_GEDUNG-B"
+  },
+  "Home-13960.02_Ujung_Menteng_HOME": {
+    "source": "site",
+    "id_site": 170,
+    "site_name": "Home-13960.02_Ujung_Menteng_HOME"
+  }
+}

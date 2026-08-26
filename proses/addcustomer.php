@@ -26,6 +26,45 @@ function appendProvisionLog($message) {
     $GLOBALS['provision_logs'][] = '[' . date('H:i:s') . '] ' . $message;
 }
 
+function triggerPelangganKeuanganSync($idpel) {
+    $idpel = trim((string)$idpel);
+    if ($idpel === '' || !function_exists('curl_init')) {
+        return ['ok' => false, 'message' => 'Sinkronisasi Keuangan tidak dapat dijalankan.'];
+    }
+
+    $scriptPath = str_replace('\\', '/', (string)($_SERVER['SCRIPT_NAME'] ?? ''));
+    $billingBasePath = rtrim(dirname(dirname($scriptPath)), '/');
+    if ($billingBasePath === '' || $billingBasePath === '.') {
+        $billingBasePath = '/keuangan/billing';
+    }
+    $syncUrl = 'http://127.0.0.1' . $billingBasePath
+        . '/getdata/api_hanif_cron_pelanggan.php?src=new_customer&only=' . rawurlencode($idpel);
+
+    $ch = curl_init($syncUrl);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 20);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: application/json']);
+    $raw = curl_exec($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = (string)curl_error($ch);
+    curl_close($ch);
+
+    $payload = is_string($raw) ? json_decode($raw, true) : null;
+    if ($httpCode === 200 && is_array($payload) && !empty($payload['ok']) && (int)($payload['customers_failed'] ?? 0) === 0) {
+        return ['ok' => true, 'message' => 'Pelanggan otomatis tersinkron ke Keuangan.'];
+    }
+
+    $message = is_array($payload) ? (string)($payload['message'] ?? '') : '';
+    if ($message === '' && is_array($payload) && !empty($payload['errors'])) {
+        $message = (string)reset($payload['errors']);
+    }
+    if ($message === '') {
+        $message = $curlError !== '' ? $curlError : 'HTTP ' . $httpCode;
+    }
+    return ['ok' => false, 'message' => $message];
+}
+
 function redirectToTop($url) {
     if (wantsJsonResponse()) {
         $buffered = ob_get_contents();
@@ -428,6 +467,13 @@ $filePath = notifTemplateFilePath($ceknama);
                 "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, STATUS, IDPEL, NAMA, PAKET, HARGA, BUKTI, CEK, PEMILIK, METODE_BAYAR) VALUES ('" . mysqli_real_escape_string($conn, $tanggal_penagihan) . "', '" . mysqli_real_escape_string($conn, $periode_penggunaan) . "', '" . mysqli_real_escape_string($conn, $status_penagihan) . "', '" . mysqli_real_escape_string($conn, $customerID) . "', '" . mysqli_real_escape_string($conn, $customerName) . "', '" . mysqli_real_escape_string($conn, $packages) . "', " . (int)$harga_penagihan . ", '" . mysqli_real_escape_string($conn, $bukti_penagihan) . "', '" . mysqli_real_escape_string($conn, $cek_penagihan) . "', '" . mysqli_real_escape_string($conn, $server) . "', '')"
             );
             appendProvisionLog('Invoice awal berhasil dibuat.');
+        }
+
+        $keuanganSync = triggerPelangganKeuanganSync($customerID);
+        if (!empty($keuanganSync['ok'])) {
+            appendProvisionLog((string)$keuanganSync['message']);
+        } else {
+            appendProvisionLog('Sinkronisasi Keuangan masuk antrean retry: ' . (string)($keuanganSync['message'] ?? 'gagal sementara'));
         }
     }
 

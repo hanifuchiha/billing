@@ -75,7 +75,16 @@ if (!$koneksiLoaded || !isset($conn) || !($conn instanceof mysqli)) {
 }
 
 // ================= KONFIGURASI =================
-define('KEU_BASE_URL', 'https://billing.broadbandairlink.com/web/keuangan/sistem-manajemen-keuangan/index.php/admin/site');
+$requestHost = strtolower(trim((string)($_SERVER['HTTP_HOST'] ?? '')));
+$requestHost = preg_replace('/:\d+$/', '', $requestHost);
+$isLocalRequest = in_array($requestHost, ['localhost', '127.0.0.1', '::1'], true);
+$configuredKeuanganBaseUrl = trim((string)getenv('KEUANGAN_SYNC_BASE_URL'));
+if ($configuredKeuanganBaseUrl === '') {
+    $configuredKeuanganBaseUrl = $isLocalRequest
+        ? 'http://127.0.0.1/keuangan/sistem-manajemen-keuangan/index.php/admin/site'
+        : 'https://billing.broadbandairlink.com/web/keuangan/sistem-manajemen-keuangan/index.php/admin/site';
+}
+define('KEU_BASE_URL', rtrim($configuredKeuanganBaseUrl, '/'));
 define('KEU_API_KEY', '9fa120bc7d157225c58238c91051c7f2baf37c5338d75f8c9c260082babe2de8');
 define('KEU_PELANGGAN_ENDPOINT', KEU_BASE_URL . '/pelanggan_api');
 define('KEU_AREA_SITE_ENDPOINT', KEU_BASE_URL . '/area_site_api');
@@ -178,6 +187,30 @@ function ensureColumnExists(mysqli $conn, string $table, string $column, string 
     }
 }
 
+function markPelangganSyncAttempt(mysqli $conn, int $localId): void
+{
+    mysqli_query(
+        $conn,
+        "UPDATE pelanggan
+         SET KEUANGAN_SYNC_STATUS='processing',
+             KEUANGAN_SYNC_ERROR=NULL,
+             KEUANGAN_SYNC_ATTEMPTS=COALESCE(KEUANGAN_SYNC_ATTEMPTS, 0) + 1,
+             KEUANGAN_SYNC_LAST_ATTEMPT=NOW()
+         WHERE id=$localId"
+    );
+}
+
+function markPelangganSyncFailed(mysqli $conn, int $localId, string $message): void
+{
+    $messageSafe = mysqli_real_escape_string($conn, mb_substr(trim($message), 0, 2000, 'UTF-8'));
+    mysqli_query(
+        $conn,
+        "UPDATE pelanggan
+         SET KEUANGAN_SYNC_STATUS='failed', KEUANGAN_SYNC_ERROR='$messageSafe'
+         WHERE id=$localId"
+    );
+}
+
 /**
  * Request JSON biasa (GET atau POST-JSON) ke API keuangan.
  */
@@ -273,12 +306,19 @@ function normalizeAreaKey(string $value): string
     return mb_strtolower(trim($value), 'UTF-8');
 }
 
-function resolveSite(string $area, array $remoteSiteByName, array $overrideMap, array $remoteSiteByNormalizedName = []): ?array
+function resolveSite(string $area, array $remoteSiteByName, array $overrideMap, array $remoteSiteByNormalizedName = [], array $overrideMapByNormalized = []): ?array
 {
     $areaTrim = trim($area);
 
     if ($areaTrim !== '' && isset($overrideMap[$areaTrim])) {
         return $overrideMap[$areaTrim];
+    }
+
+    if ($areaTrim !== '') {
+        $overrideKey = normalizeAreaKey($areaTrim);
+        if (isset($overrideMapByNormalized[$overrideKey])) {
+            return $overrideMapByNormalized[$overrideKey];
+        }
     }
 
     if ($areaTrim !== '' && isset($remoteSiteByName[$areaTrim])) {
@@ -319,6 +359,7 @@ function buildCustomerPayload(array $row, array $site): array
         'source'        => $site['source'] ?? 'site',
         'id_site'       => $site['id_site'] ?? null,
         'site_name'     => $site['site_name'] ?? null,
+        'billing_area'  => trim((string)($row['AREA'] ?? '')),
         'IDPEL'         => $row['IDPEL'],
         'NAMA'          => (string)($row['NAMA'] ?? ''),
         'TIPE_BAYAR'    => (string)($row['TIPE_BAYAR'] ?? 'prabayar'),
@@ -418,7 +459,9 @@ function markPelangganSynced(mysqli $conn, int $localId, int $keuanganId, array 
              KEUANGAN_SITE_REF_ID=$idSite,
              KEUANGAN_SITE_SOURCE='$source',
              KEUANGAN_LAST_HASH='$hashSafe',
-             KEUANGAN_LAST_SYNC=NOW()
+             KEUANGAN_LAST_SYNC=NOW(),
+             KEUANGAN_SYNC_STATUS='synced',
+             KEUANGAN_SYNC_ERROR=NULL
          WHERE id=$localId"
     );
 }
@@ -920,7 +963,10 @@ ensureColumnExists($conn, 'pelanggan', 'KEUANGAN_SITE_REF_ID', 'INT NULL DEFAULT
 ensureColumnExists($conn, 'pelanggan', 'KEUANGAN_SITE_SOURCE', 'VARCHAR(20) NULL DEFAULT NULL');
 ensureColumnExists($conn, 'pelanggan', 'KEUANGAN_LAST_HASH', 'VARCHAR(64) NULL DEFAULT NULL');
 ensureColumnExists($conn, 'pelanggan', 'KEUANGAN_LAST_SYNC', 'DATETIME NULL DEFAULT NULL');
-
+ensureColumnExists($conn, 'pelanggan', 'KEUANGAN_SYNC_STATUS', "VARCHAR(20) NOT NULL DEFAULT 'pending'");
+ensureColumnExists($conn, 'pelanggan', 'KEUANGAN_SYNC_ERROR', 'TEXT NULL DEFAULT NULL');
+ensureColumnExists($conn, 'pelanggan', 'KEUANGAN_SYNC_ATTEMPTS', 'INT NOT NULL DEFAULT 0');
+ensureColumnExists($conn, 'pelanggan', 'KEUANGAN_SYNC_LAST_ATTEMPT', 'DATETIME NULL DEFAULT NULL');
 ensureColumnExists($conn, 'transaksi', 'KEUANGAN_SYNCED', 'TINYINT(1) NOT NULL DEFAULT 0');
 ensureColumnExists($conn, 'transaksi', 'KEUANGAN_PAYMENT_ID', 'VARCHAR(64) NULL DEFAULT NULL');
 ensureColumnExists($conn, 'transaksi', 'KEUANGAN_SYNC_AT', 'DATETIME NULL DEFAULT NULL');
@@ -970,6 +1016,34 @@ $overrideMap = [];
 if (file_exists(SYNC_OVERRIDE_MAP_FILE)) {
     $overrideMap = json_decode((string)file_get_contents(SYNC_OVERRIDE_MAP_FILE), true) ?: [];
 }
+$overrideMapByNormalized = [];
+foreach ($overrideMap as $billingArea => $targetSite) {
+    $overrideMapByNormalized[normalizeAreaKey((string)$billingArea)] = $targetSite;
+}
+
+// Mapping yang dikelola di Keuangan adalah sumber utama. Mapping ikut dibawa
+// oleh pelanggan_api agar satu snapshot pelanggan + site memakai patokan sama.
+$keuanganMappings = $remoteResp['json']['billing_site_mappings'] ?? null;
+if (!is_array($keuanganMappings)) {
+    $keuanganMappings = [];
+    syncLog('WARNING: pelanggan_api Keuangan belum menyertakan mapping AREA Billing; memakai fallback lokal.');
+}
+if (!empty($keuanganMappings)) {
+    foreach ($keuanganMappings as $mapping) {
+        $billingArea = trim((string)($mapping['billing_area'] ?? ''));
+        $siteId = (int)($mapping['id_site'] ?? $mapping['site_ref_id'] ?? 0);
+        if ($billingArea === '' || $siteId <= 0) {
+            continue;
+        }
+        $targetSite = [
+            'source' => (string)($mapping['source'] ?? 'site'),
+            'id_site' => $siteId,
+            'site_name' => (string)($mapping['site_name'] ?? $billingArea),
+        ];
+        $overrideMap[$billingArea] = $targetSite;
+        $overrideMapByNormalized[normalizeAreaKey($billingArea)] = $targetSite;
+    }
+}
 
 $bankOverrideMap = [];
 if (file_exists(SYNC_BANK_OVERRIDE_MAP_FILE)) {
@@ -1005,8 +1079,11 @@ if (!$resPelanggan) {
             $summary['customers_skipped_empty_idpel']++;
             continue;
         }
+        if (!$dryRun) {
+            markPelangganSyncAttempt($conn, (int)$row['id']);
+        }
 
-        $site = resolveSite((string)($row['AREA'] ?? ''), $remoteSiteByName, $overrideMap, $remoteSiteByNormalizedName);
+        $site = resolveSite((string)($row['AREA'] ?? ''), $remoteSiteByName, $overrideMap, $remoteSiteByNormalizedName, $overrideMapByNormalized);
 
         if (!$site || empty($site['id_site'])) {
             $areaName = trim((string)($row['AREA'] ?? ''));
@@ -1031,7 +1108,11 @@ if (!$resPelanggan) {
 
         if (!$site || empty($site['id_site'])) {
             $summary['customers_skipped_unmapped_area']++;
-            syncLog("SKIP IDPEL=$idpel: AREA '{$row['AREA']}' (PEMILIK '{$row['PEMILIK']}') tidak ketemu site di keuangan & gagal auto-create. Tambahkan mapping manual di " . SYNC_OVERRIDE_MAP_FILE);
+            $msg = "SKIP IDPEL=$idpel: AREA '{$row['AREA']}' (PEMILIK '{$row['PEMILIK']}') tidak ketemu site di keuangan & gagal auto-create. Tambahkan mapping manual di " . SYNC_OVERRIDE_MAP_FILE;
+            syncLog($msg);
+            if (!$dryRun) {
+                markPelangganSyncFailed($conn, (int)$row['id'], $msg);
+            }
             continue;
         }
 
@@ -1083,6 +1164,9 @@ if (!$resPelanggan) {
 
             if ($lastHash === $payloadHash && !$siteMismatch) {
                 $summary['customers_unchanged']++;
+                if (!$dryRun) {
+                    markPelangganSynced($conn, (int)$row['id'], (int)$keuanganId, $site, $payloadHash);
+                }
                 if (KEU_PAYMENT_SYNC_ENABLED) {
                     syncTransaksiForCustomer($conn, $idpel, (int)$keuanganId, $payload, $banksList, $bankOverrideMap, $summary, $dryRun);
                 }
@@ -1108,6 +1192,7 @@ if (!$resPelanggan) {
                     $msg = "Update gagal IDPEL=$idpel: HTTP {$resp['http_code']} - " . ($resp['json']['message'] ?? $resp['error']);
                     $summary['errors'][] = $msg;
                     syncLog($msg);
+                    markPelangganSyncFailed($conn, (int)$row['id'], $msg);
                 }
             }
         } else {
@@ -1127,11 +1212,13 @@ if (!$resPelanggan) {
                     $msg = "IDPEL=$idpel konflik (409) di site {$site['site_name']} - IDPEL sudah dipakai pelanggan lain, cek manual.";
                     $summary['errors'][] = $msg;
                     syncLog($msg);
+                    markPelangganSyncFailed($conn, (int)$row['id'], $msg);
                 } else {
                     $summary['customers_failed']++;
                     $msg = "Create gagal IDPEL=$idpel: HTTP {$resp['http_code']} - " . ($resp['json']['message'] ?? $resp['error']);
                     $summary['errors'][] = $msg;
                     syncLog($msg);
+                    markPelangganSyncFailed($conn, (int)$row['id'], $msg);
                 }
             }
         }
