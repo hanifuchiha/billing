@@ -1007,18 +1007,24 @@ if ($LAYANAN == "PPPOE") {
             $sql1 = "UPDATE `pelanggan` SET `IDPEL`='$USERNAMETRANASAKSI',`NAMA`='$NAMAPELANGGAN',`PAKET`='$PAKETPELANGGAN',`NOWA`='$WHATSAPPELANGGAN',`EMAIL`='$EMAILPELANGGAN',`MODE`='$MODEPELANGGAN',`ODP`='$ODPPELANGGAN' WHERE `id`='$ID'";
             if ($conn->query($sql1) === TRUE) {
 
-                $query300 = mysqli_query($conn, "SELECT * FROM `transaksi` WHERE `IDPEL` ='$USERNAMETRANASAKSI' AND `PENGUNAAN`='$periode' AND `STATUS`='BERHASIL'");
-                if ($query300->num_rows > 0) {
-
-                    $sql12 = "DELETE FROM `transaksi` WHERE `IDPEL` ='$USERNAMETRANASAKSI' AND `PENGUNAAN`='$periode' AND `STATUS`='BERHASIL'";
-                    if ($conn->query($sql12) === TRUE) {
-                    }
-                }
-
-                $sql11 = "INSERT INTO `transaksi`( `TANGGALBAYAR`,`PENGUNAAN`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `STATUS`, `BUKTI`,`PEMILIK`,`CEK`) VALUES ('$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$user100','')";
+                // Guard callback: jangan pernah hapus transaksi BERHASIL yang sudah ada.
+                // INSERT ... SELECT membuat callback Tripay idempotent untuk ref/periode yang sama.
+                $sql11 = "INSERT INTO `transaksi` (`TANGGALBAYAR`,`PENGUNAAN`,`IDPEL`,`NAMA`,`PAKET`,`HARGA`,`STATUS`,`BUKTI`,`PEMILIK`,`CEK`)
+                          SELECT '$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$user100',''
+                          WHERE NOT EXISTS (
+                              SELECT 1 FROM `transaksi`
+                              WHERE `IDPEL`='$USERNAMETRANASAKSI'
+                                AND `PENGUNAAN`='$periode'
+                                AND `STATUS`='BERHASIL'
+                                AND `BUKTI`='$invoiceref'
+                          )";
                 if ($conn->query($sql11) === TRUE) {
 
-                    $sql12 = "DELETE FROM `transaksi` WHERE BUKTI='$invoiceref' AND `STATUS`='PERMINTAAN KODE'";
+                    $sql12 = "DELETE FROM `transaksi`
+                              WHERE `IDPEL`='$USERNAMETRANASAKSI'
+                                AND `PENGUNAAN`='$periode'
+                                AND `BUKTI`='$invoiceref'
+                                AND `STATUS`='PERMINTAAN KODE'";
                     if ($conn->query($sql12) === TRUE) {
                     }
 
@@ -1317,13 +1323,24 @@ if ($LAYANAN == "HOTPSOT") {
                                         restartFreeradius();
                                        
                                         // Masukkan data ke database transaksi
-                                        $sql = "INSERT INTO `transaksi`(`TANGGALBAYAR`,`STATUS`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `BUKTI`, `CEK`, `PEMILIK`) 
-                                                VALUES ('$tanggalbayar','BERHASIL','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKET','$voucher_amount','$invoiceref','', '$BRANDPELANGGAN')";
-                                        $conn->query($sql);
+                                        $sql = "INSERT INTO `transaksi` (`TANGGALBAYAR`,`STATUS`,`IDPEL`,`NAMA`,`PAKET`,`HARGA`,`BUKTI`,`CEK`,`PEMILIK`)
+                                                SELECT '$tanggalbayar','BERHASIL','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKET','$voucher_amount','$invoiceref','','$BRANDPELANGGAN'
+                                                WHERE NOT EXISTS (
+                                                    SELECT 1 FROM `transaksi`
+                                                    WHERE `IDPEL`='$USERNAMETRANASAKSI'
+                                                      AND `BUKTI`='$invoiceref'
+                                                      AND `STATUS`='BERHASIL'
+                                                )";
 
-                                        // Hapus transaksi permintaan kode lama
-                                        $sql12 = "DELETE FROM `transaksi` WHERE BUKTI='$invoiceref' AND `STATUS`='PERMINTAAN KODE'";
-                                        $conn->query($sql12);
+                                        // Permintaan kode hanya boleh dihapus setelah transaksi
+                                        // berhasil tersimpan atau memang sudah pernah tercatat.
+                                        if ($conn->query($sql) === TRUE) {
+                                            $sql12 = "DELETE FROM `transaksi`
+                                                      WHERE `IDPEL`='$USERNAMETRANASAKSI'
+                                                        AND `BUKTI`='$invoiceref'
+                                                        AND `STATUS`='PERMINTAAN KODE'";
+                                            $conn->query($sql12);
+                                        }
                                     } else {
 
                                     }
@@ -1454,18 +1471,24 @@ if ($LAYANAN == "VPNQ") {
             $sql1 = "UPDATE `pelanggan` SET `IDPEL`='$USERNAMETRANASAKSI',`NAMA`='$NAMAPELANGGAN',`PAKET`='$PAKETPELANGGAN',`NOWA`='$WHATSAPPELANGGAN',`EMAIL`='$EMAILPELANGGAN',`MODE`='$MODEPELANGGAN',`ODP`='$ODPPELANGGAN' WHERE `id`='$ID'";
             if ($conn->query($sql1) === TRUE) {
 
-                $query300 = mysqli_query($conn, "SELECT * FROM `transaksi` WHERE `IDPEL` ='$USERNAMETRANASAKSI' AND `PENGUNAAN`='$periode' AND `STATUS`='BERHASIL'");
-                if ($query300->num_rows > 0) {
-
-                    $sql12 = "DELETE FROM `transaksi` WHERE `IDPEL` ='$USERNAMETRANASAKSI' AND `PENGUNAAN`='$periode' AND `STATUS`='BERHASIL'";
-                    if ($conn->query($sql12) === TRUE) {
-                    }
-                }
-
-                $sql11 = "INSERT INTO `transaksi`( `TANGGALBAYAR`,`PENGUNAAN`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `STATUS`, `BUKTI`,`PEMILIK`,`CEK`) VALUES ('$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$BRANDPELANGGAN','')";
+                // Guard callback: transaksi BERHASIL lama dipertahankan dan ref yang sama
+                // tidak dimasukkan ulang ketika Tripay mengirim callback lebih dari sekali.
+                $sql11 = "INSERT INTO `transaksi` (`TANGGALBAYAR`,`PENGUNAAN`,`IDPEL`,`NAMA`,`PAKET`,`HARGA`,`STATUS`,`BUKTI`,`PEMILIK`,`CEK`)
+                          SELECT '$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$BRANDPELANGGAN',''
+                          WHERE NOT EXISTS (
+                              SELECT 1 FROM `transaksi`
+                              WHERE `IDPEL`='$USERNAMETRANASAKSI'
+                                AND `PENGUNAAN`='$periode'
+                                AND `STATUS`='BERHASIL'
+                                AND `BUKTI`='$invoiceref'
+                          )";
                 if ($conn->query($sql11) === TRUE) {
 
-                    $sql12 = "DELETE FROM `transaksi` WHERE `STATUS`='PERMINTAAN KODE'";
+                    $sql12 = "DELETE FROM `transaksi`
+                              WHERE `IDPEL`='$USERNAMETRANASAKSI'
+                                AND `PENGUNAAN`='$periode'
+                                AND `BUKTI`='$invoiceref'
+                                AND `STATUS`='PERMINTAAN KODE'";
                     if ($conn->query($sql12) === TRUE) {
                     }
 

@@ -30,6 +30,25 @@ function paymentSyncEnsureColumn(mysqli $conn, string $column, string $definitio
     }
 }
 
+function paymentSyncDeletePaidInvoice(mysqli $conn, string $idpel, string $periode): bool
+{
+    $stmt = mysqli_prepare(
+        $conn,
+        "DELETE FROM transaksi
+         WHERE TRIM(IDPEL)=?
+           AND TRIM(COALESCE(PENGUNAAN, ''))=?
+           AND TRIM(UPPER(COALESCE(STATUS, '')))='PENAGIHAN'"
+    );
+    if (!$stmt) {
+        return false;
+    }
+
+    mysqli_stmt_bind_param($stmt, 'ss', $idpel, $periode);
+    $ok = mysqli_stmt_execute($stmt);
+    mysqli_stmt_close($stmt);
+    return $ok;
+}
+
 if (!isset($conn) || !($conn instanceof mysqli)) {
     paymentSyncJson(['ok' => false, 'message' => 'Koneksi database Billing tidak tersedia.'], 500);
 }
@@ -92,6 +111,11 @@ $existingResult = mysqli_stmt_get_result($existingStmt);
 $existing = $existingResult ? mysqli_fetch_assoc($existingResult) : null;
 mysqli_stmt_close($existingStmt);
 if ($existing) {
+    // Self-heal callback ulang: pembayaran sudah aman tersimpan, sehingga
+    // invoice periode yang sama boleh dibersihkan jika sebelumnya tertinggal.
+    if (!paymentSyncDeletePaidInvoice($conn, $idpel, $periode)) {
+        paymentSyncJson(['ok' => false, 'message' => 'Pembayaran sudah tercatat, tetapi invoice Billing gagal dibersihkan.'], 500);
+    }
     paymentSyncJson([
         'ok' => true,
         'duplicate' => true,
@@ -131,6 +155,8 @@ $paket = (string)($customer['PAKET'] ?? '');
 $pemilik = (string)($customer['PEMILIK'] ?? '');
 $keuanganPaymentId = (string)$originPaymentId;
 
+mysqli_begin_transaction($conn);
+
 $stmt = mysqli_prepare($conn, "
     INSERT INTO transaksi
         (TANGGALBAYAR, PENGUNAAN, STATUS, IDPEL, NAMA, PAKET, HARGA,
@@ -165,6 +191,7 @@ $errorNumber = mysqli_stmt_errno($stmt);
 mysqli_stmt_close($stmt);
 
 if (!$ok) {
+    mysqli_rollback($conn);
     if ($errorNumber === 1062) {
         $retry = mysqli_prepare($conn, 'SELECT id FROM transaksi WHERE KEUANGAN_SOURCE_PAYMENT_ID=? LIMIT 1');
         mysqli_stmt_bind_param($retry, 'i', $originPaymentId);
@@ -173,10 +200,24 @@ if (!$ok) {
         $retryRow = $retryResult ? mysqli_fetch_assoc($retryResult) : null;
         mysqli_stmt_close($retry);
         if ($retryRow) {
+            if (!paymentSyncDeletePaidInvoice($conn, $idpel, $periode)) {
+                paymentSyncJson(['ok' => false, 'message' => 'Pembayaran sudah tercatat, tetapi invoice Billing gagal dibersihkan.'], 500);
+            }
             paymentSyncJson(['ok' => true, 'duplicate' => true, 'billing_transaction_id' => (int)$retryRow['id']]);
         }
     }
     paymentSyncJson(['ok' => false, 'message' => 'Transaksi Billing gagal disimpan: ' . $error], 500);
+}
+
+// Invoice hanya dihapus setelah transaksi BERHASIL benar-benar tersimpan.
+// Jika penghapusan gagal, rollback menjaga agar proses dapat dicoba ulang utuh.
+if (!paymentSyncDeletePaidInvoice($conn, $idpel, $periode)) {
+    mysqli_rollback($conn);
+    paymentSyncJson(['ok' => false, 'message' => 'Pembayaran gagal difinalisasi karena invoice Billing tidak dapat dibersihkan.'], 500);
+}
+if (!mysqli_commit($conn)) {
+    mysqli_rollback($conn);
+    paymentSyncJson(['ok' => false, 'message' => 'Pembayaran gagal difinalisasi di Billing.'], 500);
 }
 
 paymentSyncJson([
