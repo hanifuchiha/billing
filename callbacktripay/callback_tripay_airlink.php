@@ -1023,7 +1023,6 @@ if ($LAYANAN == "PPPOE") {
                     $sql12 = "DELETE FROM `transaksi`
                               WHERE `IDPEL`='$USERNAMETRANASAKSI'
                                 AND `PENGUNAAN`='$periode'
-                                AND `BUKTI`='$invoiceref'
                                 AND `STATUS`='PERMINTAAN KODE'";
                     if ($conn->query($sql12) === TRUE) {
                     }
@@ -1487,7 +1486,6 @@ if ($LAYANAN == "VPNQ") {
                     $sql12 = "DELETE FROM `transaksi`
                               WHERE `IDPEL`='$USERNAMETRANASAKSI'
                                 AND `PENGUNAAN`='$periode'
-                                AND `BUKTI`='$invoiceref'
                                 AND `STATUS`='PERMINTAAN KODE'";
                     if ($conn->query($sql12) === TRUE) {
                     }

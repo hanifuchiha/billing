@@ -1,0 +1,74 @@
+CATATAN PERUBAHAN BILLING
+Tanggal: 28 Agustus 2026
+Resume Code: 01a046fe-5f7e-7402-bef4-368619f93ed1
+
+1. MASALAH YANG DIPERIKSA
+
+- Terdapat informasi bahwa transaksi Billing kadang hilang atau terhapus.
+- Callback pembayaran Tripay Airlink sebelumnya menghapus transaksi BERHASIL
+  lama sebelum memasukkan transaksi BERHASIL pengganti.
+- Salah satu cabang callback sebelumnya dapat menghapus seluruh transaksi
+  berstatus PERMINTAAN KODE tanpa pembatas pelanggan.
+- Pembayaran yang dibuat di Keuangan dan dikirim ke Billing sebelumnya hanya
+  menambahkan transaksi BERHASIL, tetapi belum membersihkan invoice PENAGIHAN.
+  Akibatnya invoice masih dapat terlihat dan berisiko dibayar dua kali.
+
+2. PERUBAHAN CALLBACK TRIPAY AIRLINK
+
+- Transaksi BERHASIL yang sudah ada tidak dihapus lagi.
+- Callback dengan ID pelanggan, periode, dan nomor referensi yang sama dibuat
+  idempotent sehingga tidak memasukkan transaksi pembayaran yang sama dua kali.
+- Invoice PENAGIHAN hanya dihapus setelah transaksi BERHASIL berhasil disimpan
+  atau pembayaran yang sama memang sudah tercatat.
+- Setelah satu pembayaran berhasil, seluruh PERMINTAAN KODE untuk IDPEL dan
+  periode yang sama dibersihkan, termasuk kode lama dengan referensi berbeda.
+  Data pelanggan atau periode lain tidak ikut terhapus.
+- Guard yang sama diterapkan pada cabang pembayaran voucher/hotspot Airlink.
+
+File:
+callbacktripay/callback_tripay_airlink.php
+
+3. PERUBAHAN SINKRONISASI KEUANGAN KE BILLING
+
+- Pembayaran nyata dari Keuangan, misalnya Tunai Kantor yang dipetakan menjadi
+  metode cash, dibuat sebagai transaksi BERHASIL baru di Billing.
+- Setelah pembayaran berhasil tersimpan, invoice PENAGIHAN dengan IDPEL dan
+  periode yang sama dihapus agar tidak dapat dibayar kembali.
+- Penyimpanan pembayaran dan penghapusan invoice dijalankan dalam database
+  transaction. Jika salah satu gagal, proses di-rollback dan dapat dicoba ulang.
+- ID pembayaran asal Keuangan menjadi guard agar pengiriman ulang tidak membuat
+  transaksi ganda.
+- Callback ulang juga membersihkan invoice PENAGIHAN yang sebelumnya tertinggal.
+- Transaksi BERHASIL lain, termasuk kompensasi_free, tidak ditimpa atau dihapus.
+
+File:
+getdata/api_keuangan_payment_to_billing.php
+
+4. ATURAN KOMPENSASI FREE
+
+- kompensasi_free disimpan di Billing sebagai BERHASIL dengan nominal Rp0.
+- kompensasi_free dibaca validator isolir sebagai pelunasan untuk IDPEL dan
+  periode yang sesuai, sehingga pelanggan tidak diisolir.
+- kompensasi_free tidak dikirim ke Keuangan karena bukan penerimaan kas/bank.
+- Jika kemudian ada pembayaran Tunai Kantor dari Keuangan, Billing menyimpan
+  kedua riwayat: kompensasi Rp0 dan pembayaran tunai dengan nominal sebenarnya.
+- Keuangan hanya mencatat pembayaran tunai sebagai penerimaan.
+
+5. PEMERIKSAAN PELANGGAN FERA ERLINDA
+
+- IDPEL: UJMG0202.23.0807.020624
+- Area: Rusun Ujung Menteng Gedung A.
+- Fera sempat terkena isolir karena saat validator berjalan belum ada transaksi
+  BERHASIL untuk Agustus 2026. Pembayaran terakhir yang terbaca adalah Juni 2026.
+- Kompensasi Agustus 2026 baru tercatat sebagai BERHASIL Rp0 sekitar pukul 17:31.
+- Setelah kompensasi tercatat, periode Agustus dianggap lunas dan pelanggan
+  kembali memenuhi validasi agar tidak diisolir.
+
+6. COMMIT DAN PUSH
+
+- Commit lokal perubahan guard: 8f68bf4
+- Commit pada GitHub origin/master: 30e678f
+- Pesan commit: Guard billing payment transaction replacement
+- Remote: git@github.com:hanifuchiha/billing.git
+
+Catatan ini dibuat sebagai resume teknis untuk penelusuran perubahan berikutnya.
