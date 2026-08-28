@@ -4857,7 +4857,10 @@ function resetPemakaian(btn, idPel, nama) {
                                         }
                                     }
 
-                                    if ($rowsIsLosOnly) {
+                                    if (!$rowsHasAnyFilter && !$rowsIsLosOnly) {
+                                        // Halaman awal sengaja tidak menampilkan data; summary juga harus 0
+                                        // supaya tidak terlihat seperti filter aktif menghitung semua pelanggan.
+                                    } elseif ($rowsIsLosOnly) {
                                         $summaryTotalPelanggan = isset($rowsOfflineIdpel) && is_array($rowsOfflineIdpel) ? count($rowsOfflineIdpel) : 0;
                                         $summaryLos = $summaryTotalPelanggan;
                                         if ($summaryTotalPelanggan > 0) {
