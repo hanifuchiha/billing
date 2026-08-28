@@ -593,21 +593,33 @@ function getLastTransaction($idpel)
 
                     
                     
-            // Cek dulu apakah ada data dengan STATUS = 'konfirmasi'
+            // Manual Active harus idempotent per periode. Satu pelanggan dapat
+            // mempunyai beberapa invoice bulan berbeda yang dibayar pada hari
+            // dan dengan paket yang sama, sehingga pencarian berdasarkan IDPEL
+            // saja (atau penghapusan berdasarkan tanggal+paket) dapat menimpa
+            // penanda pembayaran periode sebelumnya.
             $idpel_sql = mysqli_real_escape_string($conn, $idpel);
             $nama_sql = mysqli_real_escape_string($conn, $nama);
             $paket_sql = mysqli_real_escape_string($conn, $paket);
             $periode_sql = mysqli_real_escape_string($conn, $periode);
             $tanggalbayar_sql = mysqli_real_escape_string($conn, $tanggalbayar);
             $paketHarga_sql = mysqli_real_escape_string($conn, $paketHarga);
+            $user_sql = mysqli_real_escape_string($conn, $user);
+            $transaksi_id_tersimpan = 0;
 
-            $queryCheck = "SELECT `id` FROM `transaksi` WHERE `STATUS` = 'KONFIRMASI' and `IDPEL`='$idpel_sql' LIMIT 1";
+            $queryCheck = "SELECT `id` FROM `transaksi`
+                           WHERE `IDPEL` = '$idpel_sql'
+                             AND `PENGUNAAN` = '$periode_sql'
+                             AND UPPER(TRIM(`STATUS`)) IN ('KONFIRMASI', 'PENAGIHAN', 'BERHASIL')
+                           ORDER BY FIELD(UPPER(TRIM(`STATUS`)), 'KONFIRMASI', 'PENAGIHAN', 'BERHASIL'), `id` DESC
+                           LIMIT 1";
             $result = $conn->query($queryCheck);
 
             if ($result && $result->num_rows > 0) {
-                // Jika ada, ambil id dan lakukan UPDATE
+                // Ubah hanya invoice/transaksi milik periode yang dipilih.
                 $row = $result->fetch_assoc();
-                $id = $row['id'];
+                $transaksi_id = (int) $row['id'];
+                $transaksi_id_tersimpan = $transaksi_id;
 
                 $sql = "UPDATE `transaksi`
                         SET `TANGGALBAYAR` = '$tanggalbayar_sql',
@@ -619,24 +631,16 @@ function getLastTransaction($idpel)
                             `HARGA`       = '$paketHarga_sql',
                             `BUKTI`       = '$bukti_db_value_sql',
                             `CEK`         = 'Manual admin ($metode_bayar_sql)',
-                            `PEMILIK`     = '$user',
+                            `PEMILIK`     = '$user_sql',
                             `METODE_BAYAR` = '$metode_bayar_sql',
                             `MANUAL_ACTIVE_BY` = '$manual_active_by_sql',
                             `MANUAL_ACTIVE_SESSION` = '$manual_active_session_sql'
-                        WHERE `id` = '$id'";
+                        WHERE `id` = $transaksi_id";
                 $aksi = 'update';
             } else {
-
-                  // Cek dan hapus jika sudah ada data yang sama
-            $cek_sql = "DELETE FROM `transaksi`
-            WHERE `IDPEL` = '$idpel_sql'
-              AND `TANGGALBAYAR` = '$tanggalbayar_sql'
-              AND `PAKET` = '$paket_sql'";
-            $conn->query($cek_sql);
-
                 // Jika tidak ada, lakukan INSERT baru
         $sql = "INSERT INTO `transaksi`(`TANGGALBAYAR`,`PENGUNAAN`,`STATUS`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `BUKTI`, `CEK`, `PEMILIK`, `METODE_BAYAR`, `MANUAL_ACTIVE_BY`, `MANUAL_ACTIVE_SESSION`)
-                        VALUES ('$tanggalbayar_sql','$periode_sql','BERHASIL','$idpel_sql','$nama_sql','$paket_sql','$paketHarga_sql','$bukti_db_value_sql','Manual admin ($metode_bayar_sql)', '$user', '$metode_bayar_sql', '$manual_active_by_sql', '$manual_active_session_sql')";
+                        VALUES ('$tanggalbayar_sql','$periode_sql','BERHASIL','$idpel_sql','$nama_sql','$paket_sql','$paketHarga_sql','$bukti_db_value_sql','Manual admin ($metode_bayar_sql)', '$user_sql', '$metode_bayar_sql', '$manual_active_by_sql', '$manual_active_session_sql')";
                 $aksi = 'insert';
             }
 
@@ -645,7 +649,11 @@ if ($conn->query($sql) !== TRUE) {
     exit;
 }
 
-$sql_hapus_penagihan = "DELETE FROM `transaksi` WHERE `IDPEL`='$idpel' AND `PENGUNAAN`='$periode' AND UPPER(TRIM(`STATUS`))='PENAGIHAN'";
+$sql_hapus_penagihan = "DELETE FROM `transaksi`
+                        WHERE `IDPEL` = '$idpel_sql'
+                          AND `PENGUNAAN` = '$periode_sql'
+                          AND UPPER(TRIM(`STATUS`)) IN ('PENAGIHAN', 'KONFIRMASI')"
+                        . ($transaksi_id_tersimpan > 0 ? " AND `id` <> $transaksi_id_tersimpan" : '');
 $conn->query($sql_hapus_penagihan);
 
             $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] Mencatat transaksi manual untuk $idpel ($nama), paket $paket, Rp$paketHarga, metode: Manual admin ($metode_bayar), periode: $periode, tanggal bayar: $tanggalbayar, dicatat oleh: $manual_active_by";
