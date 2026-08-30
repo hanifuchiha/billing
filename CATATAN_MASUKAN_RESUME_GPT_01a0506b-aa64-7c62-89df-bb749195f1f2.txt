@@ -67,3 +67,38 @@ CATATAN OPERASIONAL
 Crontab yang dipasang:
 * * * * * php /var/www/html/crm/billing/getdata/cron_activate_paid_customers.php >/dev/null 2>&1
 
+RENCANA SKALABILITAS 1.000+ PEMBAYARAN
+=====================================
+Mekanisme retry saat ini aman sebagai jaring pengaman, tetapi belum optimal
+untuk lonjakan 1.000 atau lebih pembayaran bersamaan. Pemrosesan satu koneksi
+MikroTik per pelanggan dapat membebani router dan memperpanjang antrean.
+
+Solusi pengembangan berikutnya:
+1. Buat tabel payment_activation_queue dengan data ID transaksi, IDPEL,
+   periode, server/router, status, jumlah percobaan, jadwal retry, pesan error,
+   dan waktu aktivasi.
+2. Gunakan unique key pada ID transaksi agar callback berulang tidak membuat
+   pekerjaan aktivasi ganda.
+3. Setelah transaksi berstatus BERHASIL, callback hanya mencatat pekerjaan ke
+   antrean dan segera memberikan respons sukses kepada payment gateway.
+4. Worker mengambil pekerjaan pending dan mengelompokkannya berdasarkan
+   MikroTik. Satu koneksi router dipakai untuk memproses banyak pelanggan.
+5. Ubah hanya pelanggan yang profilnya masih EXPIRED. Pelanggan dengan profil
+   normal dilewati tanpa memutus sesi.
+6. Setelah profil diubah, putus sesi PPPoE pelanggan terkait dan verifikasi
+   bahwa profil paket normal sudah diterapkan.
+7. Batasi paralelisme, misalnya maksimal lima router diproses bersamaan dan
+   100-200 pelanggan per batch pada satu router.
+8. Gunakan status antrean pending, processing, success, dan failed. Pekerjaan
+   yang gagal dicoba ulang setelah 1, 2, 5, 10, lalu 30 menit.
+9. Setelah melewati batas percobaan, pekerjaan ditandai failed dan tersedia
+   untuk retry manual oleh admin.
+10. Sediakan halaman monitoring yang menampilkan jumlah pending, processing,
+    success, failed, durasi aktivasi, serta pesan kegagalan per pelanggan.
+11. Pertahankan cron rekonsiliasi saat ini sebagai pengaman terakhir sampai
+    worker antrean batch terbukti stabil.
+
+Contoh kapasitas:
+Jika 1.000 pelanggan tersebar pada 10 MikroTik, worker cukup membuka sekitar
+10 koneksi router dan memproses pelanggan secara batch, bukan membuka 1.000
+koneksi MikroTik secara terpisah.
