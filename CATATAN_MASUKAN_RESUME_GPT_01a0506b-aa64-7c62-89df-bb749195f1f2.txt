@@ -102,3 +102,28 @@ Contoh kapasitas:
 Jika 1.000 pelanggan tersebar pada 10 MikroTik, worker cukup membuka sekitar
 10 koneksi router dan memproses pelanggan secara batch, bukan membuka 1.000
 koneksi MikroTik secara terpisah.
+
+SKENARIO 1 MIKROTIK UNTUK 1.000+ PELANGGAN
+=========================================
+Jika seluruh pelanggan berada pada satu MikroTik, beban aktivasi terkonsentrasi
+pada router tersebut. Sistem tidak boleh membuka satu koneksi API untuk setiap
+pelanggan karena 1.000 koneksi bersamaan dapat membebani atau membuat API router
+tidak responsif.
+
+Ketentuan pemrosesan:
+1. Gunakan satu antrean aktivasi khusus untuk MikroTik tersebut.
+2. Hanya satu worker boleh memproses satu MikroTik pada waktu yang sama.
+3. Worker membuka satu koneksi API dan menggunakan kembali koneksi itu untuk
+   seluruh pelanggan dalam batch.
+4. Proses sekitar 100-200 pelanggan per batch, sehingga 1.000 pelanggan dapat
+   diselesaikan dalam sekitar 5-10 batch.
+5. Periksa profil terlebih dahulu dan hanya ubah pelanggan yang masih EXPIRED.
+6. Putus hanya sesi PPPoE pelanggan yang profilnya benar-benar berubah.
+7. Berikan jeda kecil antarbatch jika penggunaan CPU/router atau respons API
+   mulai melambat.
+8. Simpan checkpoint pelanggan terakhir. Jika koneksi API terputus, worker
+   melanjutkan dari pekerjaan pending dan tidak mengulangi pekerjaan success.
+9. Pelanggan di akhir antrean dapat menunggu beberapa menit, tetapi proses
+   tetap terkontrol dan tidak membanjiri MikroTik.
+10. Mekanisme retry saat ini tetap menjadi pengaman, tetapi worker batch harus
+    diterapkan sebelum menghadapi lonjakan 1.000 pembayaran pada satu router.
