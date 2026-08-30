@@ -1,0 +1,69 @@
+CATATAN MASUKAN / RESUME GPT
+ID: 01a0506b-aa64-7c62-89df-bb749195f1f2
+Tanggal: 30 Agustus 2026 (WIB)
+
+KENDALA
+=======
+1. Pelanggan RINTO AZIS (IDPEL 1413004190909.0101.09@airlink.co.id)
+   masih memakai profil MikroTik EXPIRED walaupun telah memiliki transaksi
+   pembayaran yang sah.
+2. Transaksi yang ditemukan:
+   - ID 3436, periode Agustus 2026, Rp0, metode kompensasi_free,
+     status BERHASIL.
+   - ID 3439, periode September 2026, Rp176.000, payment gateway TRIPAY,
+     status BERHASIL, tercatat 28 Agustus 2026 pukul 15:05:36 WIB.
+3. Transaksi TRIPAY ID 3439 berasal dari CRM/billing dan telah tersinkron ke
+   keuangan (payment ID 2552, transaksi keuangan ID 4268).
+4. Callback payment gateway seharusnya langsung mengaktifkan profil pelanggan,
+   tetapi tidak ada bukti log aktivasi MikroTik yang berhasil untuk Rinto pada
+   waktu pembayaran. Profil tetap EXPIRED sampai rekonsiliasi dijalankan.
+5. Proses cek_tagihan_harian sebelumnya hanya menyimpan ringkasan jumlah profil
+   yang dipulihkan. Alasan kegagalan per pelanggan tidak tercatat dengan cukup
+   rinci, sehingga kegagalan koneksi/API atau jalur aktivasi yang terlewati sulit
+   dibedakan.
+
+PERILAKU YANG DIHARAPKAN
+=======================
+1. Setiap transaksi dengan STATUS=BERHASIL dan periode yang relevan dianggap
+   lunas, termasuk kompensasi_free dengan nominal Rp0.
+2. Jika profil pelanggan masih EXPIRED, billing mengubah profil MikroTik ke
+   paket normal, memastikan secret aktif, lalu memutus sesi PPPoE lama agar
+   pelanggan login ulang dengan profil baru.
+3. Jika profil sudah normal, MikroTik tidak diubah dan sesi tidak diputus.
+4. kompensasi_free tidak dicatat sebagai pendapatan keuangan, tetapi tetap sah
+   untuk mencegah isolir atau membuka isolir pada periode terkait.
+
+SOLUSI YANG DITERAPKAN
+======================
+1. Menambahkan payment_activation_helper.php sebagai fungsi aktivasi bersama
+   yang aman dipanggil berulang kali (idempotent).
+2. Helper memvalidasi periode pembayaran, membaca pelanggan dan server,
+   memeriksa profil PPP secret, serta hanya mengubah profil jika masih EXPIRED.
+3. Menambahkan getdata/cron_activate_paid_customers.php sebagai jaring pengaman
+   untuk transaksi BERHASIL yang aktivasi langsungnya gagal atau masuk melalui
+   jalur transaksi lain.
+4. Retry dijalankan setiap menit melalui crontab www-data dan memakai cache
+   status PPPoE sebagai pre-filter, sehingga router hanya dihubungi untuk profil
+   yang terdeteksi EXPIRED.
+5. Menambahkan lock non-blocking agar dua proses retry tidak berjalan bersamaan.
+6. Menambahkan log rinci ke logs/payment_activation.log dengan status SUCCESS,
+   SKIP, atau PENDING beserta sumber transaksi, IDPEL, periode, dan hasilnya.
+
+HASIL VERIFIKASI
+================
+1. Kedua file PHP lulus pemeriksaan php -l.
+2. Retry membaca kompensasi Agustus transaksi ID 3436 sebagai pembayaran sah.
+3. Profil Rinto berhasil dipulihkan dari EXPIRED ke AirHome - 165k.
+4. Transaksi September ID 3439 kemudian dilewati dengan benar karena profil
+   sudah normal; tidak ada perubahan atau pemutusan sesi kedua.
+5. Verifikasi langsung ke MikroTik menghasilkan:
+   success=true, changed=false, pending=false,
+   message="profil sudah normal, MikroTik tidak diubah".
+6. Pembayaran September 2026 mencegah isolir untuk periode September. Untuk
+   Oktober 2026 tetap diperlukan pembayaran atau kompensasi periode Oktober.
+
+CATATAN OPERASIONAL
+===================
+Crontab yang dipasang:
+* * * * * php /var/www/html/crm/billing/getdata/cron_activate_paid_customers.php >/dev/null 2>&1
+
