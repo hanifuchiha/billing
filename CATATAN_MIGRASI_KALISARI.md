@@ -45,3 +45,11 @@ Migrasi pelanggan dan transaksi diprioritaskan menggunakan API, bukan impor Exce
 - Jika `IDPEL` tidak ditemukan atau ganda, transaksi ditahan untuk pemeriksaan.
 - Proses API harus aman dijalankan ulang tanpa membuat pelanggan atau transaksi ganda.
 - Pelanggan yang sudah membayar dan masih berprofil `EXPIRED` harus dipulihkan otomatis ke profil paket normal.
+
+## Ketentuan isolir tanggal 1 September
+
+- Pelanggan Kalisari yang diimpor pada 1 September dengan `TIPE_TEMPO = mengikuti_tanggal_tempo` tidak terkena isolir otomatis pada tanggal tersebut.
+- Konfigurasi Airlink saat ini menggunakan tanggal 1 untuk reminder dan tanggal 10 sebagai tanggal pemeriksaan isolir.
+- Pelanggan baru harus memakai profil MikroTik/RADIUS normal, bukan `EXPIRED`.
+- Pembayaran periode aktif harus selesai disinkronkan sebelum tanggal 10.
+- Pengecualian: pelanggan dengan `TIPE_TEMPO = tanggal_tetap_personal` dapat diisolir tanggal 1 jika tanggal pemasangannya juga tanggal 1.
