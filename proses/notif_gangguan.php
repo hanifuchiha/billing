@@ -1,6 +1,7 @@
 <?php
 require '../cek-sesi.php';
 require_once __DIR__ . '/../notifbot/mailer_helper.php';
+require_once __DIR__ . '/../notifbot/notifphp/whatsapp_notification_log_helper.php';
 
 @set_time_limit(0);
 @ini_set('max_execution_time', '0');
@@ -586,8 +587,57 @@ while ($resultTarget && ($row = $resultTarget->fetch_assoc())) {
 $stmtTarget->close();
 
 $tanggalSekarang = date('Y-m-d');
-$periodeTagihan = tanggal_indo($tanggalSekarang, 1);
+$periodeTagihan = tanggal_indo($tanggalSekarang, 0);
 $jatuhTempo = '-';
+
+// Mode tagihan hanya menargetkan pelanggan yang BELUM mempunyai transaksi
+// BERHASIL untuk periode yang sedang ditampilkan. Tanggal bayar tidak menjadi
+// patokan: pembayaran Agustus untuk PENGUNAAN September tetap dihitung lunas,
+// sedangkan BERHASIL PENGUNAAN Agustus tidak menutup tagihan September.
+$skippedPaidCount = 0;
+$skippedFreeCount = 0;
+if ($mode === 'tagihan' && !empty($targets)) {
+    $targetIds = [];
+    foreach ($targets as $targetRow) {
+        $targetId = trim((string)($targetRow['IDPEL'] ?? ''));
+        if ($targetId !== '') {
+            $targetIds[$targetId] = true;
+        }
+    }
+
+    $paidPeriodMap = [];
+    if (!empty($targetIds)) {
+        $escapedIds = [];
+        foreach (array_keys($targetIds) as $targetId) {
+            $escapedIds[] = "'" . $conn->real_escape_string($targetId) . "'";
+        }
+        $periodeEscaped = $conn->real_escape_string(trim($periodeTagihan));
+        $paidSql = "SELECT DISTINCT IDPEL
+                    FROM transaksi
+                    WHERE UPPER(TRIM(COALESCE(STATUS, ''))) = 'BERHASIL'
+                      AND LOWER(TRIM(COALESCE(PENGUNAAN, ''))) = LOWER('$periodeEscaped')
+                      AND IDPEL IN (" . implode(',', $escapedIds) . ")";
+        $paidResult = $conn->query($paidSql);
+        if (!$paidResult) {
+            $abortRequest('Gagal memeriksa pembayaran periode tagihan.', 500, ['db_error' => $conn->error]);
+        }
+        while ($paidRow = $paidResult->fetch_assoc()) {
+            $paidPeriodMap[(string)$paidRow['IDPEL']] = true;
+        }
+    }
+
+    $targets = array_values(array_filter($targets, function ($targetRow) use ($paidPeriodMap, &$skippedPaidCount, &$skippedFreeCount) {
+        if (stripos((string)($targetRow['PAKET'] ?? ''), 'FREE') !== false) {
+            $skippedFreeCount++;
+            return false;
+        }
+        if (!empty($paidPeriodMap[(string)($targetRow['IDPEL'] ?? '')])) {
+            $skippedPaidCount++;
+            return false;
+        }
+        return true;
+    }));
+}
 
 $stmtUser = $conn->prepare("SELECT USERNAME FROM user WHERE server LIKE ? LIMIT 1");
 if ($stmtUser) {
@@ -627,6 +677,7 @@ $telegramFailedCount = 0;
 $telegramBotUsage = [];
 $emailSuccessCount = 0;
 $emailFailedCount = 0;
+$skippedAlreadySentCount = 0;
 $totalTarget = count($targets);
 
 if ($totalTarget > 1) {
@@ -692,6 +743,41 @@ foreach ($targets as $index => $target) {
 
     $text = buildNaturalVariant($textBase, $idpel, $nama, $mode);
 
+    // Gunakan kunci deduplikasi yang sama dengan cron reminder. Dengan begitu
+    // broadcast tagihan tidak mengirim ulang pelanggan yang sudah sukses pada
+    // periode ini, tetapi status failed tetap dapat dicoba kembali.
+    $waNotifLogId = 0;
+    if ($mode === 'tagihan') {
+        $notifLog = waNotifQueueAndClaim($conn, [
+            'pemilik' => $ceknama,
+            'idpel' => $idpel,
+            'nomor_wa' => $nowaRaw,
+            'periode' => $periodeTagihan,
+            'jenis_notifikasi' => 'payment_reminder_fixed',
+            'message' => $text,
+            'bot_name' => $currentBotName,
+        ]);
+        if (!$notifLog['claimed']) {
+            $skippedAlreadySentCount++;
+            if ($streamMode) {
+                outStream('PROGRESS', [
+                    'processed' => $index + 1,
+                    'total' => $totalTarget,
+                    'success_count' => $successCount,
+                    'failed_count' => $failedCount,
+                    'skipped_count' => $skippedAlreadySentCount,
+                    'idpel' => $idpel,
+                    'nama' => $nama,
+                    'botname' => $currentBotName,
+                    'wa_ok' => true,
+                    'status_text' => 'Dilewati: reminder periode ini sudah terkirim/diproses',
+                ]);
+            }
+            continue;
+        }
+        $waNotifLogId = (int)$notifLog['id'];
+    }
+
     // Kanal Telegram: dicoba TERLEPAS dari status NOWA (pelanggan bisa saja cuma
     // link Telegram, tanpa WA valid) -- dilewati diam2 kalau pool kosong atau
     // pelanggan belum pernah "/start" (TELEGRAM_CHAT_ID kosong).
@@ -745,6 +831,9 @@ foreach ($targets as $index => $target) {
     }
 
     if ($nowa === '') {
+        if ($waNotifLogId > 0) {
+            waNotifFinish($conn, $waNotifLogId, false, 0, 'Nomor WA kosong/tidak valid');
+        }
         $failedCount++;
         $botUsage[$currentBotName]++;
         $processed = $index + 1;
@@ -821,6 +910,15 @@ foreach ($targets as $index => $target) {
     curl_close($ch);
 
     $waOk = ($curlError === '' && $httpCode >= 200 && $httpCode < 300);
+    if ($waNotifLogId > 0) {
+        waNotifFinish(
+            $conn,
+            $waNotifLogId,
+            $waOk,
+            $httpCode,
+            $curlError !== '' ? ('cURL: ' . $curlError . ' | ' . (string)$response) : (string)$response
+        );
+    }
     if ($waOk) {
         $successCount++;
     } else {
@@ -858,6 +956,9 @@ foreach ($targets as $index => $target) {
             'total' => $totalTarget,
             'success_count' => $successCount,
             'failed_count' => $failedCount,
+            'skipped_paid_count' => $skippedPaidCount,
+            'skipped_free_count' => $skippedFreeCount,
+            'skipped_already_sent_count' => $skippedAlreadySentCount,
             'idpel' => $idpel,
             'nama' => $nama,
             'botname' => $currentBotName,
@@ -889,6 +990,9 @@ if ($streamMode) {
             'total_target' => $totalTarget,
             'success_count' => $successCount,
             'failed_count' => $failedCount,
+            'skipped_paid_count' => $skippedPaidCount,
+            'skipped_free_count' => $skippedFreeCount,
+            'skipped_already_sent_count' => $skippedAlreadySentCount,
             'telegram_bot_pool_count' => $telegramBotPoolCount,
             'telegram_bot_usage' => $telegramBotUsage,
             'telegram_success_count' => $telegramSuccessCount,
@@ -918,6 +1022,9 @@ if ($debugMode) {
             'total_target' => $totalTarget,
             'success_count' => $successCount,
             'failed_count' => $failedCount,
+            'skipped_paid_count' => $skippedPaidCount,
+            'skipped_free_count' => $skippedFreeCount,
+            'skipped_already_sent_count' => $skippedAlreadySentCount,
             'telegram_bot_pool_count' => $telegramBotPoolCount,
             'telegram_bot_usage' => $telegramBotUsage,
             'telegram_success_count' => $telegramSuccessCount,

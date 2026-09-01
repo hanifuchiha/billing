@@ -425,6 +425,37 @@ function tagihanCekAdaPenagihanPendingBulk(mysqli $conn, array $idpels): array
     return $map;
 }
 
+// Status lunas untuk reminder Fixed Due Date harus mengikuti periode invoice
+// yang sedang diingatkan, bukan sekadar hasil aritmetika siklus pembayaran.
+// Contoh: transaksi BERHASIL Agustus tidak boleh membuat reminder September
+// dilewati; hanya BERHASIL dengan PENGUNAAN "September 2026" yang dianggap lunas.
+function tagihanCekSudahBayarPeriodeBulk(mysqli $conn, array $idpels, string $periode): array
+{
+    $escaped = [];
+    foreach (array_unique($idpels) as $v) {
+        $v = trim((string) $v);
+        if ($v === '') continue;
+        $escaped[] = "'" . $conn->real_escape_string($v) . "'";
+    }
+    if (empty($escaped)) return [];
+
+    $inList = implode(',', $escaped);
+    $periodeEscaped = $conn->real_escape_string(trim($periode));
+    $sql = "SELECT DISTINCT IDPEL
+            FROM transaksi
+            WHERE UPPER(TRIM(COALESCE(STATUS, ''))) = 'BERHASIL'
+              AND LOWER(TRIM(COALESCE(PENGUNAAN, ''))) = LOWER('$periodeEscaped')
+              AND IDPEL IN ($inList)";
+    $result = $conn->query($sql);
+    $map = [];
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $map[(string) $row['IDPEL']] = true;
+        }
+    }
+    return $map;
+}
+
 // Fungsi cek apakah sudah pernah dikirim notifikasi
 function hasBeenNotified($history, $type, $identifier, $date = null)
 {
@@ -606,15 +637,14 @@ if (isFixedReminderWindowOpen((int)$hariinitgl, (int)$tanggal_reminder, (int)$ja
             shuffle($pelangganList);
         }
 
-        // Bulk fetch riwayat pembayaran sekali per server/area (bukan per pelanggan)
-        // -- dipakai tagihanHitungStatus() di bawah utk cek "sudah bayar periode ini
-        // atau belum" yang benar per TIPE_TEMPO, sama seperti tables.php/portal_bayar.php.
+        // Bulk fetch pembayaran periode yang sedang diingatkan sekali per area.
+        // Untuk Fixed Due Date, status lunas harus exact STATUS=BERHASIL dan
+        // PENGUNAAN=$periode; pembayaran periode sebelumnya tidak boleh menutup
+        // reminder periode berjalan.
         $remainderIdpelList = array_map(static function ($row) {
             return (string) ($row['IDPEL'] ?? '');
         }, $pelangganList);
-        $remainderLastPaymentMap = tagihanGetLastPaymentsBulk($conn, $remainderIdpelList);
-        $remainderLastPaidUsageMap = tagihanGetLastPaidUsageMapBulk($conn, $remainderIdpelList);
-        $remainderPendingPenagihanMap = tagihanCekAdaPenagihanPendingBulk($conn, $remainderIdpelList);
+        $remainderPaidPeriodMap = tagihanCekSudahBayarPeriodeBulk($conn, $remainderIdpelList, $periode);
 
         // Loop melalui pelanggan (sudah ter-shuffle jika random mode)
         foreach ($pelangganList as $data1) {
@@ -654,35 +684,7 @@ if($TIPE_TEMPO_NORM=="mengikuti_tanggal_tempo"){
             }
             if (stripos($PAKET, 'FREE') === false) {
 
-                //////////////////////BUKA BUKU TRANSAKSI CEK SUDAH BAYAR ATAU BELUM/////////////////////////////////
-                // SEBELUMNYA: "SELECT ... WHERE PENGUNAAN LIKE '%$periode%'" dgn $periode
-                // dihitung SEKALI di awal script pakai heuristik tutup-buku generik --
-                // tidak konsultasi setting Periode Tercatat (Payment Setting -> Konfigurasi
-                // Fixed Due Date), jadi gampang meleset dari label PENGUNAAN yang
-                // sebenarnya ditulis invoice_generator_penagihan.php begitu admin pakai
-                // mode 'berikutnya'. Sekarang pakai tagihanHitungStatus() (fungsi yang
-                // SAMA dipakai cek_tagihan_harian.php/tables.php/portal_bayar.php) supaya
-                // "sudah bayar periode ini" dicek dgn cara yang konsisten di seluruh sistem.
-                $statusRemainderFixed = tagihanHitungStatus($conn, [
-                    'IDPEL' => $IDPEL,
-                    'TANGGALPASANG' => (string) $TANGGALPASANG,
-                    'TIPE_BAYAR' => (string) $TIPE_BAYAR,
-                    'TIPE_TEMPO' => $TIPE_TEMPO_NORM,
-                    'TEMPO' => (string) ($data1['TEMPO'] ?? ''),
-                    'TANGGAL_MONTHVERSARY' => (string) ($data1['TANGGAL_MONTHVERSARY'] ?? ''),
-                ], [
-                    'hari_ini' => $cektanggal,
-                    'jatuh_tempo_hari' => (int) $jatuh_tempo,
-                    'lastPaymentMap' => $remainderLastPaymentMap,
-                    'lastPaidUsageMap' => $remainderLastPaidUsageMap,
-                    'prabayar_grace_period' => $prabayarGracePeriodRemainder,
-                ]);
-                $cek = $statusRemainderFixed['sudah_bayar'] ? 1 : 0;
-                if ($cek == 1 && !empty($remainderPendingPenagihanMap[$IDPEL])) {
-                    // tagihanHitungStatus() bilang lunas (aritmetika siklus), TAPI ada
-                    // baris PENAGIHAN yang nyata-nyata masih menunggu bayar -- jangan skip.
-                    $cek = 0;
-                }
+                $cek = !empty($remainderPaidPeriodMap[$IDPEL]) ? 1 : 0;
                 $url_cari = "https://$domain/crm/billing/broadband/portal.php?cari=" . urlencode($IDPEL);
 
                 if ($cek == 1 && $filterSudahBayarReminder) {

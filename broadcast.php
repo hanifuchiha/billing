@@ -571,11 +571,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 if (isProcessing) {
                     processStatus.style.display = 'flex';
                     sendBtn.disabled = true;
+                    sendBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Mengirim...';
                     stopBtn.style.display = '';
                     processSpinner.style.display = '';
                 } else {
                     processStatus.style.display = 'flex';
                     sendBtn.disabled = false;
+                    sendBtn.textContent = 'Kirim';
                     stopBtn.style.display = 'none';
                     processSpinner.style.display = 'none';
                 }
@@ -590,7 +592,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 progressBar.style.width = '0%';
                 progressBar.textContent = '0%';
                 progressBar.classList.add('progress-bar-animated');
-                progressMeta.textContent = '0/0 • Berhasil: 0 • Gagal: 0';
+                progressMeta.textContent = '0/0 • Berhasil: 0 • Gagal: 0 • Dilewati: 0';
             }
 
             function updateProgressUI(payload) {
@@ -602,12 +604,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 const total = Number(payload.total || payload.total_target || 0);
                 const successCount = Number(payload.success_count || 0);
                 const failedCount = Number(payload.failed_count || 0);
+                const skippedCount = Number(payload.skipped_count ?? payload.skipped_already_sent_count ?? 0);
                 const percent = total > 0 ? Math.round((processed / total) * 100) : 0;
 
                 progressWrap.style.display = 'block';
                 progressBar.style.width = percent + '%';
                 progressBar.textContent = percent + '%';
-                progressMeta.textContent = processed + '/' + total + ' • Berhasil: ' + successCount + ' • Gagal: ' + failedCount;
+                progressMeta.textContent = processed + '/' + total + ' • Berhasil: ' + successCount + ' • Gagal: ' + failedCount + ' • Dilewati: ' + skippedCount;
 
                 if (percent >= 100) {
                     progressBar.classList.remove('progress-bar-animated');
@@ -778,7 +781,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                     processed: payload.summary.total_target || 0,
                                     total: payload.summary.total_target || 0,
                                     success_count: payload.summary.success_count || 0,
-                                    failed_count: payload.summary.failed_count || 0
+                                    failed_count: payload.summary.failed_count || 0,
+                                    skipped_count: payload.summary.skipped_already_sent_count || 0
                                 });
                             }
                         } else if (eventName === 'ERROR') {
@@ -813,10 +817,16 @@ document.addEventListener('DOMContentLoaded', function() {
                         const successCount = finalSummary ? Number(finalSummary.success_count || 0) : 0;
                         const failedCount = finalSummary ? Number(finalSummary.failed_count || 0) : 0;
                         const totalTarget = finalSummary ? Number(finalSummary.total_target || 0) : 0;
+                        const skippedPaid = finalSummary ? Number(finalSummary.skipped_paid_count || 0) : 0;
+                        const skippedFree = finalSummary ? Number(finalSummary.skipped_free_count || 0) : 0;
+                        const skippedSent = finalSummary ? Number(finalSummary.skipped_already_sent_count || 0) : 0;
                         const finishedAt = new Date().toLocaleString('id-ID');
+                        const skippedText = (skippedPaid + skippedFree + skippedSent) > 0
+                            ? ' | Dilewati: sudah bayar ' + skippedPaid + ', FREE ' + skippedFree + ', sudah terkirim ' + skippedSent
+                            : '';
 
-                        setProcessState(false, 'Notifikasi selesai. Total: ' + totalTarget + ' | Berhasil: ' + successCount + ' | Gagal: ' + failedCount, 'success');
-                        showFinalSummary('success', 'Selesai pada ' + finishedAt + '. Total: ' + totalTarget + ' | Berhasil: ' + successCount + ' | Gagal: ' + failedCount);
+                        setProcessState(false, 'Notifikasi selesai. Total target: ' + totalTarget + ' | Berhasil: ' + successCount + ' | Gagal: ' + failedCount + skippedText, 'success');
+                        showFinalSummary('success', 'Selesai pada ' + finishedAt + '. Total target: ' + totalTarget + ' | Berhasil: ' + successCount + ' | Gagal: ' + failedCount + skippedText);
                         alert('Notifikasi selesai diproses.');
                     }
                 } catch (error) {

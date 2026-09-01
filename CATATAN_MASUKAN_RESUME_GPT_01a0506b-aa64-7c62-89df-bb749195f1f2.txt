@@ -198,7 +198,48 @@ JENDELA RETRY REMINDER HARIAN - 1 SEPTEMBER 2026
 PENYESUAIAN JADWAL REMINDER - 1 SEPTEMBER 2026
 ==============================================
 1. Generator invoice Airlink tetap berjalan setiap hari pukul 07.00 WIB.
-2. Reminder pembayaran Airlink digeser dari 07.00 menjadi 07.10 WIB agar
-   generator memiliki waktu menyelesaikan pembuatan invoice terlebih dahulu.
-3. Nilai menit_reminder pada reminder-airlink.json diubah menjadi 10 dan
-   crontab www-data diverifikasi menggunakan jadwal 10 7 * * *.
+2. Reminder pembayaran Airlink digeser menjadi pukul 07.15 WIB agar generator
+   memiliki waktu 15 menit untuk menyelesaikan pembuatan invoice terlebih dahulu.
+3. Nilai jam_reminder=7 dan menit_reminder=15 disimpan di tabel
+   reminder_settings sebagai sumber konfigurasi utama, lalu otomatis disinkronkan
+   ke mirror notifbot/data/reminder-airlink.json.
+4. Crontab www-data diverifikasi menggunakan jadwal berikut:
+   - 0 7 * * * untuk generator invoice Fixed Due Date.
+   - 0 7 * * * untuk generator invoice Rolling/Monthversary.
+   - 15 7 * * * untuk reminder pembayaran Airlink.
+
+ALUR INVOICE DAN NOTIFIKASI WHATSAPP - 1 SEPTEMBER 2026
+=======================================================
+1. Pukul 07.00 WIB generator memeriksa invoice periode berjalan. Invoice yang
+   sudah ada tidak dibuat ulang, sehingga ID dan histori transaksi tetap stabil.
+2. Pelanggan dengan harga efektif Rp0 tidak dibuatkan invoice PENAGIHAN.
+3. Pukul 07.15 WIB reminder mulai diproses setelah jeda 15 menit.
+4. Pembayaran hanya dianggap lunas apabila STATUS=BERHASIL dan PENGUNAAN sama
+   persis dengan periode yang sedang diingatkan. Transaksi BERHASIL Agustus tidak
+   menyebabkan reminder September dilewati.
+5. Pelanggan yang sudah membayar periode berjalan dilewati apabila filter
+   "Sudah Bayar" aktif.
+6. Paket yang namanya mengandung kata FREE dilewati oleh reminder. Paket Rp0
+   dengan nama lain, misalnya GRATIS atau Paket 6ratis, sudah tidak mendapat
+   invoice dari generator, tetapi filter reminder saat ini belum membaca harga
+   paket; hal ini dicatat sebagai penyempurnaan berikutnya.
+7. Deduplikasi database mencegah pelanggan yang sudah berstatus sent untuk
+   periode yang sama menerima reminder ulang. Status failed boleh dicoba lagi
+   pada jadwal berikutnya selama masih berada dalam jendela reminder.
+8. Mode broadcast tagihan memakai periode bulan berjalan, melewati transaksi
+   BERHASIL periode tersebut, paket bernama FREE, dan notifikasi yang sudah
+   pernah berhasil dikirim.
+9. Halaman broadcast menampilkan status Mengirim/loading, progres berhasil,
+   gagal, dan dilewati, serta ringkasan akhir proses.
+
+LOG PENGIRIMAN NOTIFIKASI
+=========================
+1. Audit per pelanggan disimpan di tabel whatsapp_notification_log.
+2. Data yang dicatat meliputi pemilik, ID pelanggan, nomor WhatsApp, periode,
+   jenis notifikasi, hash/pesan, bot pengirim, jumlah percobaan, waktu jadwal,
+   waktu terkirim, kode HTTP, respons gateway, dan alasan dilewati.
+3. Status yang tersedia adalah pending, sending, sent, failed, dan skipped.
+4. Nomor yang tidak terdaftar di WhatsApp, misalnya respons INVALID_JID, tetap
+   tercatat sebagai failed beserta kode dan pesan kesalahannya.
+5. Output standar cron diarahkan ke /dev/null, tetapi hasil pengiriman setiap
+   pelanggan tetap tersimpan dan dapat diaudit melalui tabel database tersebut.
