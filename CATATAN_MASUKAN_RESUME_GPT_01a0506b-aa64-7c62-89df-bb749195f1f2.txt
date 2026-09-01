@@ -127,3 +127,40 @@ Ketentuan pemrosesan:
    tetap terkontrol dan tidak membanjiri MikroTik.
 10. Mekanisme retry saat ini tetap menjadi pengaman, tetapi worker batch harus
     diterapkan sebelum menghadapi lonjakan 1.000 pembayaran pada satu router.
+
+PERBAIKAN INVOICE GENERATOR FIXED DUE DATE - 1 SEPTEMBER 2026
+=============================================================
+MASALAH
+1. Konfigurasi notifbot/data/invoice_generator-airlink.json berisi array kosong,
+   sehingga cron invoice yang sudah terpasang selalu berhenti dengan pesan
+   "Generator nonaktif".
+2. Generator Fixed Due Date selalu menargetkan bulan berikutnya. Konfigurasi
+   jatuh tempo tanggal 10 dan terbit H-9 seharusnya membuat invoice tanggal 1,
+   tetapi target keburu berpindah ke bulan berikutnya.
+3. Pembersihan invoice terlalu awal memakai fungsi untuk histori pembayaran
+   BERHASIL. Fungsi itu menambahkan satu bulan, sehingga invoice PENAGIHAN bulan
+   berjalan salah dianggap masih terlalu awal.
+4. Invoice PENAGIHAN yang sudah ada dihapus dan dibuat ulang pada setiap cron,
+   sehingga ID transaksi dan histori invoice tidak stabil.
+
+SOLUSI
+1. Aktifkan generator Airlink setiap hari pukul 07.00 dengan days_before_due=9.
+2. Targetkan jatuh tempo bulan berjalan selama tanggal jatuh tempo belum lewat;
+   setelah lewat, baru pindah ke bulan berikutnya.
+3. Hitung tanggal invoice lama langsung dari PENGUNAAN dengan memperhitungkan
+   mode periode berjalan/berikutnya, tanpa menambahkan satu bulan secara keliru.
+4. Jadikan generator idempoten: PENAGIHAN, BERHASIL, KONFIRMASI, dan PERMINTAAN
+   KODE yang sudah ada untuk periode tersebut dilewati, bukan dibuat ulang.
+5. Terapkan perbaikan pada template dan salinan Airlink agar tidak tertimpa saat
+   file cron per-akun digenerasi ulang.
+
+HASIL
+1. Simulasi kalender: 1 September -> jatuh tempo 10 September -> H-9 -> generate.
+2. Generator membuat 658 invoice PENAGIHAN September dan melewati 12 transaksi
+   yang sudah diproses/BERHASIL, termasuk Dedeh Setianingsih.
+3. Run verifikasi kedua menghasilkan Inserted=0, Regenerated=0, dan
+   Invoice Terlalu Awal Dihapus=0; generator terbukti idempoten.
+4. Status akhir September: 658 pelanggan PENAGIHAN dan 12 pelanggan BERHASIL.
+5. Pada run pertama, 46 invoice lama sempat terkena bug pembersihan lalu dibuat
+   kembali sebagai bagian dari 658 invoice baru. Isi tagihan tetap tersedia,
+   tetapi ID transaksi lama berubah.

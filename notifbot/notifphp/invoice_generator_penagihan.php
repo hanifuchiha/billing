@@ -145,22 +145,29 @@ $bulanIndo = [
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
 
-// Fixed Due Date: cuma 1 periode ke depan (bulan depan) yang digenerate tiap
-// run, BUKAN 2 bulan sekaligus -- supaya admin masih bisa manual generate
-// periode lain sendiri lewat menu Transaksi bila perlu.
+// Fixed Due Date: pilih jatuh tempo terdekat yang belum lewat. Selama tanggal
+// jatuh tempo bulan berjalan belum lewat, target tetap bulan berjalan; setelah
+// lewat, target berpindah ke bulan berikutnya. Ini penting agar konfigurasi
+// jatuh tempo tanggal 10 dan terbit H-9 benar-benar membuat invoice tanggal 1.
 //
 // Label PENGUNAAN-nya ikut setting "Periode Tercatat" (Payment Setting ->
 // Konfigurasi Fixed Due Date, reminder-{PEMILIK}.json) via tagihanResolvePeriodeTercatat():
 // 'berjalan' (default) = periode sama dgn bulan jatuh tempo, 'berikutnya' = +1 bulan
-// dari bulan jatuh tempo. Tanggal jatuh tempo (TANGGALBAYAR) sendiri TIDAK berubah --
-// tetap dihitung dari bulan depan ($offset 1) seperti sebelumnya.
+// dari bulan jatuh tempo.
 $periodeTercatatMode = tagihanLoadPeriodeTercatatMode($reminderConfigPath);
-$dueMonthTs = strtotime('+1 month', strtotime(date('Y-m-01')));
+$currentMonthTs = strtotime(date('Y-m-01'));
+$currentMonthDueDate = tagihanBuildMonthlyDate(
+    (int)date('Y', $currentMonthTs),
+    (int)date('n', $currentMonthTs),
+    $jatuhTempoHari
+);
+$targetOffset = ($currentMonthDueDate !== null && strtotime($today) <= strtotime($currentMonthDueDate)) ? 0 : 1;
+$dueMonthTs = strtotime("+{$targetOffset} month", $currentMonthTs);
 $periodeTargets = [
-    1 => tagihanResolvePeriodeTercatat((int)date('n', $dueMonthTs), (int)date('Y', $dueMonthTs), $periodeTercatatMode),
+    $targetOffset => tagihanResolvePeriodeTercatat((int)date('n', $dueMonthTs), (int)date('Y', $dueMonthTs), $periodeTercatatMode),
 ];
 
-// Tanggal jatuh tempo utk periode target (bulan depan, tanggal = $jatuhTempoHari,
+// Tanggal jatuh tempo utk periode target terdekat (tanggal = $jatuhTempoHari,
 // di-clamp ke jumlah hari bulan tsb) -- dipakai utk gerbang "Terbit H- sblm
 // jatuh tempo" di bawah, MENGGANTIKAN gerbang lama start_day/scheduleMode.
 $dueDateForTarget = tagihanBuildMonthlyDate((int)date('Y', $dueMonthTs), (int)date('n', $dueMonthTs), $jatuhTempoHari);
@@ -278,7 +285,24 @@ while ($server = $serverRes->fetch_assoc()) {
         $cleanupStaleRes = $cleanupStaleStmt->get_result();
         $staleInvoiceIds = [];
         while ($staleRow = $cleanupStaleRes->fetch_assoc()) {
-            $staleDue = tagihanGetFirstDueDateFixedByUsagePeriod((string)($staleRow['PENGUNAAN'] ?? ''), $jatuhTempoHari);
+            // PENGUNAAN pada baris PENAGIHAN adalah periode invoice itu sendiri,
+            // bukan periode BERHASIL terakhir. Jangan memakai
+            // tagihanGetFirstDueDateFixedByUsagePeriod() karena fungsi tersebut
+            // sengaja menambah satu bulan untuk histori pembayaran terakhir.
+            $stalePeriod = tagihanParseIndoMonthYear((string)($staleRow['PENGUNAAN'] ?? ''));
+            $staleDue = null;
+            if ($stalePeriod) {
+                $staleDueMonth = (int)$stalePeriod['month'];
+                $staleDueYear = (int)$stalePeriod['year'];
+                if ($periodeTercatatMode === 'berikutnya') {
+                    $staleDueMonth--;
+                    if ($staleDueMonth < 1) {
+                        $staleDueMonth = 12;
+                        $staleDueYear--;
+                    }
+                }
+                $staleDue = tagihanBuildMonthlyDate($staleDueYear, $staleDueMonth, $jatuhTempoHari);
+            }
             if ($staleDue === null) {
                 continue;
             }
@@ -303,7 +327,7 @@ while ($server = $serverRes->fetch_assoc()) {
             continue;
         }
 
-        // Proses periode target (cuma 1: bulan depan).
+        // Proses satu periode target: bulan berjalan atau bulan berikutnya.
         foreach ($periodeTargets as $offset => $periode) {
             $periodeNormalized = mb_strtoupper(trim($periode), 'UTF-8');
             $isRegenerated = false;
@@ -317,12 +341,11 @@ while ($server = $serverRes->fetch_assoc()) {
 
             if ($found) {
                 if ($existingStatusNorm === 'PENAGIHAN') {
-                    // Sudah ada penagihan (belum bayar) untuk periode ini: hapus dulu, buat ulang di bawah.
-                    $delStmt = $conn->prepare("DELETE FROM transaksi WHERE id = ?");
-                    $delStmt->bind_param('i', $existingId);
-                    $delStmt->execute();
-                    $delStmt->close();
-                    $isRegenerated = true;
+                    // Idempotensi cron: invoice periode ini sudah ada, jangan hapus
+                    // dan buat ulang setiap hari karena ID serta histori harus stabil.
+                    $totalSkipped++;
+                    $ringkasanPerPeriode[$periode]['skipped'] = ($ringkasanPerPeriode[$periode]['skipped'] ?? 0) + 1;
+                    continue;
                 } else {
                     // Status lain (BERHASIL/KONFIRMASI/PERMINTAAN KODE): jangan disentuh, skip.
                     $totalSkipped++;
