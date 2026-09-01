@@ -194,3 +194,11 @@ JENDELA RETRY REMINDER HARIAN - 1 SEPTEMBER 2026
 5. Pelanggan yang sudah membayar tetap dilewati sebelum proses pengiriman.
 6. Simulasi lulus untuk jendela 1-10, jendela lintas bulan 25-5, dan Rolling
    H-9 sampai hari jatuh tempo. Endpoint WA tidak dijalankan saat pengujian.
+
+PENYESUAIAN JADWAL REMINDER - 1 SEPTEMBER 2026
+==============================================
+1. Generator invoice Airlink tetap berjalan setiap hari pukul 07.00 WIB.
+2. Reminder pembayaran Airlink digeser dari 07.00 menjadi 07.10 WIB agar
+   generator memiliki waktu menyelesaikan pembuatan invoice terlebih dahulu.
+3. Nilai menit_reminder pada reminder-airlink.json diubah menjadi 10 dan
+   crontab www-data diverifikasi menggunakan jadwal 10 7 * * *.
