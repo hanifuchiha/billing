@@ -17,6 +17,19 @@ function sleepAman($min = 4, $max = 6)
     $delay = rand($min * 1000, $max * 1000);
     usleep($delay * 1000);
 }
+
+// Jendela Fixed Due Date bisa normal (mis. reminder 1, jatuh tempo 10)
+// atau melintasi pergantian bulan (mis. reminder 25, jatuh tempo 5).
+function isFixedReminderWindowOpen(int $currentDay, int $reminderDay, int $dueDay): bool
+{
+    if ($currentDay < 1 || $currentDay > 31 || $reminderDay < 1 || $reminderDay > 31 || $dueDay < 1 || $dueDay > 31) {
+        return false;
+    }
+    if ($reminderDay <= $dueDay) {
+        return $currentDay >= $reminderDay && $currentDay <= $dueDay;
+    }
+    return $currentDay >= $reminderDay || $currentDay <= $dueDay;
+}
 ////////////////////////////////////////
 // Simpan konfigurasi
 $config_file ='../../config.json'; // Lokasi file di folder yang sama
@@ -458,7 +471,7 @@ function hasBeenNotified($history, $type, $identifier, $date = null)
 ////////////////////////////////////////////////////////////////////
 //info ke pusat jika mau notif pembayaran 
 
-if ($hariinitgl == $tanggal_reminder) {
+if (isFixedReminderWindowOpen((int)$hariinitgl, (int)$tanggal_reminder, (int)$jatuh_tempo)) {
 
     $history[] = "[ system billing - " . date('Y-m-d H:i:s') . " ] Proses bot remainder pembayaran client dimulai";
     // Simpan ke file history
@@ -958,17 +971,15 @@ if (trim($remainder_parsed) === '') {
 
 // ===================================================================
 // REMINDER ROLLING (mengikuti_tanggal_bayar) & MONTHVERSARY
-// Purpose: Blok Fixed Due Date di atas SENGAJA cuma jalan pada 1 tanggal
-// kalender bersama ($tanggal_reminder, setting "Tanggal Reminder" di
-// Payment Setting -> Konfigurasi Fixed Due Date) krn jatuh tempo mereka
-// memang SATU tanggal yang sama utk semua pelanggan Fixed Due Date --
-// itu TIDAK diubah, tetap ikut Payment Setting seperti sebelumnya.
+// Purpose: Blok Fixed Due Date di atas berjalan tiap hari dalam jendela
+// Tanggal Reminder sampai Tanggal Jatuh Tempo. Tabel notifikasi memastikan
+// status sent tidak dikirim ulang, sedangkan failed/belum terkirim dapat
+// dicoba kembali pada hari berikutnya.
 //
 // Rolling & Monthversary TIDAK begitu -- jatuh tempo tiap pelanggan
 // berbeda-beda (siklus 30 hari dari tanggal bayar / anchor tanggal pasang
-// masing-masing), jadi blok ini jalan TIAP HARI cron ini dipanggil (di
-// LUAR gate $hariinitgl == $tanggal_reminder di atas), dan tiap pelanggan
-// dicek H-berapa hari lagi jatuh tempo MASING-MASING (pakai field "hari
+// masing-masing), jadi blok ini jalan TIAP HARI cron ini dipanggil, dan tiap
+// pelanggan dicek dalam jendela H-N sampai jatuh tempo MASING-MASING (pakai field "hari
 // sebelum" yang sama dgn setting Fixed Due Date), dgn fungsi yang SAMA
 // persis dipakai tables.php/portal_bayar.php/cron generator
 // (tagihanHitungJatuhTempoBerikutnya()/tagihanHitungStatus()).
@@ -1050,8 +1061,11 @@ while ($dataServerRolling = mysqli_fetch_array($queryServerRolling)) {
         // H-berapa hari lagi jatuh tempo pelanggan ini -- pakai "hari_sebelum" yang
         // sama dgn setting Fixed Due Date (satu-satunya field itu di Payment Setting).
         $triggerDateRolling = date('Y-m-d', strtotime("-{$hari_sebelum} days", strtotime($dueDateRolling)));
-        echo "[DEBUG ROLLING] $IDPEL jatuh tempo $dueDateRolling | trigger tanggal $triggerDateRolling | hari ini $cektanggal<br>";
-        if ($cektanggal !== $triggerDateRolling) {
+        echo "[DEBUG ROLLING] $IDPEL jatuh tempo $dueDateRolling | jendela mulai $triggerDateRolling | hari ini $cektanggal<br>";
+        $todayRollingTs = strtotime($cektanggal);
+        $triggerRollingTs = strtotime($triggerDateRolling);
+        $dueRollingTs = strtotime($dueDateRolling);
+        if ($todayRollingTs < $triggerRollingTs || $todayRollingTs > $dueRollingTs) {
             continue;
         }
 

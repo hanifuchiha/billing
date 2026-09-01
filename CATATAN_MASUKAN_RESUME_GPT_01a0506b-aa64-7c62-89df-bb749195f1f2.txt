@@ -180,3 +180,17 @@ PENYIMPANAN NOTIFIKASI WHATSAPP KE DATABASE - 1 SEPTEMBER 2026
 6. File history-airlink.json tetap ditulis sebagai log cadangan selama transisi.
 7. Uji tanpa pengiriman WA berhasil: klaim pertama diterima, status diselesaikan
    menjadi sent, klaim duplikat ditolak, lalu baris uji dibersihkan.
+
+JENDELA RETRY REMINDER HARIAN - 1 SEPTEMBER 2026
+================================================
+1. Fixed Due Date tidak lagi hanya berjalan tepat pada Tanggal Reminder.
+   Cron memproses reminder setiap hari sejak Tanggal Reminder sampai Tanggal
+   Jatuh Tempo, termasuk konfigurasi yang melintasi pergantian bulan.
+2. Untuk konfigurasi Airlink, jendela Fixed terbuka tanggal 1 sampai 10.
+3. Rolling dan Monthversary tidak lagi hanya diproses tepat pada tanggal H-N.
+   Keduanya diproses setiap hari sejak H-N sampai jatuh tempo masing-masing.
+4. Status sent pada whatsapp_notification_log mencegah kirim ulang. Status
+   failed atau pekerjaan yang belum tercatat dapat dicoba lagi esok hari.
+5. Pelanggan yang sudah membayar tetap dilewati sebelum proses pengiriman.
+6. Simulasi lulus untuk jendela 1-10, jendela lintas bulan 25-5, dan Rolling
+   H-9 sampai hari jatuh tempo. Endpoint WA tidak dijalankan saat pengujian.
