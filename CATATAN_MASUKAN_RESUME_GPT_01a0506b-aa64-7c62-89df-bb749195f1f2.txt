@@ -164,3 +164,19 @@ HASIL
 5. Pada run pertama, 46 invoice lama sempat terkena bug pembersihan lalu dibuat
    kembali sebagai bagian dari 658 invoice baru. Isi tagihan tetap tersedia,
    tetapi ID transaksi lama berubah.
+
+PENYIMPANAN NOTIFIKASI WHATSAPP KE DATABASE - 1 SEPTEMBER 2026
+================================================================
+1. Menambahkan tabel whatsapp_notification_log dengan status pending, sending,
+   sent, failed, dan skipped; respons gateway, kode HTTP, jumlah percobaan,
+   pesan, bot, periode, serta waktu kirim disimpan terstruktur.
+2. Deduplikasi memakai SHA-256 dari pemilik + IDPEL + periode + jenis notifikasi.
+   Unique key database mencegah dua cron mengirim reminder yang sama bersamaan.
+3. Proses mengantrekan notifikasi sebagai pending, mengklaim secara atomik menjadi
+   sending, lalu menyimpan hasil sebagai sent atau failed.
+4. Klaim sending yang macet lebih dari 15 menit boleh diambil ulang. Status failed
+   juga dapat dicoba kembali, sedangkan sent tidak dikirim ulang.
+5. Reminder Fixed Due Date, Rolling, dan Monthversary sudah memakai tabel ini.
+6. File history-airlink.json tetap ditulis sebagai log cadangan selama transisi.
+7. Uji tanpa pengiriman WA berhasil: klaim pertama diterima, status diselesaikan
+   menjadi sent, klaim duplikat ditolak, lalu baris uji dibersihkan.

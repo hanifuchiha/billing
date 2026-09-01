@@ -3,9 +3,11 @@ include '../../koneksidb.php';
 include "../phpmailer/classes/class.phpmailer.php";
 require_once __DIR__ . '/tagihan_status_lib.php';
 require_once __DIR__ . '/../notif_template_helper.php';
+require_once __DIR__ . '/whatsapp_notification_log_helper.php';
 if ($conn->connect_error) {
     die("Koneksi gagal: " . $conn->connect_error);
 }
+waNotifEnsureSchema($conn);
 
 
 
@@ -712,6 +714,21 @@ if (trim($remainder_parsed) === '') {
                         $currentBotPass = $currentBotConfig['password'];
                         $currentWAAPI = $currentBotConfig['addressbot'];
                     }
+
+                    $notifLog = waNotifQueueAndClaim($conn, [
+                        'pemilik' => $pemilik,
+                        'idpel' => $IDPEL,
+                        'nomor_wa' => $NOWA,
+                        'periode' => $periode,
+                        'jenis_notifikasi' => 'payment_reminder_fixed',
+                        'message' => $remainder_parsed,
+                        'bot_name' => $currentBotName,
+                    ]);
+                    if (!$notifLog['claimed']) {
+                        echo "[DEBUG FIXED] SKIP $IDPEL: status DB " . htmlspecialchars((string)$notifLog['status']) . " untuk periode $periode<br>";
+                        $cntSkipSudahNotifHariIni++;
+                        continue;
+                    }
                     
                     $session = $currentBotName; // Nama sesi yang telah Anda buat
                     // Nomor tujuan dan pesan
@@ -761,6 +778,13 @@ if (trim($remainder_parsed) === '') {
                     // dikirimi reminder hari ini walau pesannya sebenarnya gagal terkirim,
                     // sehingga tidak pernah di-retry dan tidak ada jejak kegagalan di log.
                     $waOk = ($curlErr === '' && $httpCode >= 200 && $httpCode < 300);
+                    waNotifFinish(
+                        $conn,
+                        (int)$notifLog['id'],
+                        $waOk,
+                        (int)$httpCode,
+                        $curlErr !== '' ? ('cURL: ' . $curlErr . ' | ' . (string)$response) : (string)$response
+                    );
                     if ($waOk) {
                         $cntTerkirim++;
                         $history[] = "[ system billing - " . date('Y-m-d H:i:s') . " ] Bot mengirim pesan WHATSAPP ke $NOWA dengan pesan $remainder_parsed | Bot: $currentBotName | HTTP: $httpCode";
@@ -1077,6 +1101,25 @@ while ($dataServerRolling = mysqli_fetch_array($queryServerRolling)) {
             $currentWAAPI = $currentBotConfig['addressbot'];
         }
 
+        $periodeRolling = tagihanBulanTahunIndo($dueDateRolling, 0);
+        $jenisNotifRolling = $TIPE_TEMPO_NORM === 'monthversary'
+            ? 'payment_reminder_monthversary'
+            : 'payment_reminder_rolling';
+        $notifLogRolling = waNotifQueueAndClaim($conn, [
+            'pemilik' => $pemilik,
+            'idpel' => $IDPEL,
+            'nomor_wa' => $NOWA,
+            'periode' => $periodeRolling,
+            'jenis_notifikasi' => $jenisNotifRolling,
+            'message' => $remainder_parsed,
+            'bot_name' => $currentBotName,
+        ]);
+        if (!$notifLogRolling['claimed']) {
+            echo "[DEBUG ROLLING] SKIP $IDPEL: status DB " . htmlspecialchars((string)$notifLogRolling['status']) . " untuk periode $periodeRolling<br>";
+            $cntSkipSudahNotifHariIni++;
+            continue;
+        }
+
         $session = $currentBotName;
         $phone = "$NOWA@s.whatsapp.net";
         $dataSendRolling = [
@@ -1110,6 +1153,13 @@ while ($dataServerRolling = mysqli_fetch_array($queryServerRolling)) {
         }
 
         $waOkRolling = ($curlErrRolling === '' && $httpCodeRolling >= 200 && $httpCodeRolling < 300);
+        waNotifFinish(
+            $conn,
+            (int)$notifLogRolling['id'],
+            $waOkRolling,
+            (int)$httpCodeRolling,
+            $curlErrRolling !== '' ? ('cURL: ' . $curlErrRolling . ' | ' . (string)$responseRolling) : (string)$responseRolling
+        );
         if ($waOkRolling) {
             $cntTerkirim++;
             $history[] = "[ system billing - " . date('Y-m-d H:i:s') . " ] Bot mengirim pesan WHATSAPP ke $NOWA dengan pesan $remainder_parsed | Bot: $currentBotName | HTTP: $httpCodeRolling | Rolling/Monthversary, jatuh tempo $dueDateRolling";
