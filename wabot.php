@@ -1517,7 +1517,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_integrasi_unoffi
             );
             $stmt->execute();
             $stmt->close();
-            $_SESSION['wa_unofficial_message'] = "Integrasi '$namaIntegrasi' berhasil diperbarui.";
+
+            // Jika integrasi sedang aktif, perubahan session/alamat/password
+            // harus langsung disalin ke botwa. Tanpa ini pengirim lama tetap
+            // memakai kredensial sebelumnya dan GOWA membalas HTTP 401.
+            $activeStmt = wu_prepare_or_throw($conn, "SELECT status, target_botwa_id FROM integrasi_whatsapp_unofficial WHERE id=? AND pemilik=? LIMIT 1");
+            $activeStmt->bind_param('is', $id, $waUnofficialPemilik);
+            $activeStmt->execute();
+            $activeIntegration = $activeStmt->get_result()->fetch_assoc();
+            $activeStmt->close();
+
+            if ($activeIntegration && (int)$activeIntegration['status'] === 1 && (int)$activeIntegration['target_botwa_id'] > 0) {
+                $syncResult = wu_activate_integration(
+                    $conn,
+                    $id,
+                    (int)$activeIntegration['target_botwa_id'],
+                    '',
+                    $waUnofficialGatewayBaseUrl
+                );
+                if (!$syncResult['success']) {
+                    throw new RuntimeException('Integrasi tersimpan tetapi gagal disinkronkan ke bot aktif: ' . ($syncResult['error'] ?? 'unknown error'));
+                }
+            }
+
+            $_SESSION['wa_unofficial_message'] = "Integrasi '$namaIntegrasi' berhasil diperbarui dan konfigurasi bot aktif sudah disinkronkan.";
         } else {
             $sql = "INSERT INTO integrasi_whatsapp_unofficial (pemilik, nama_integrasi, provider, base_url, api_token, secret_key, instance_id, sender_number, auth_header_type, auth_header_name, custom_endpoint_path, custom_body_template, gowa_version) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
             $stmt = $conn->prepare($sql);
