@@ -320,3 +320,23 @@ PENUTUPAN DIRECTORY LISTING APACHE - 3 SEPTEMBER 2026
    daftar file tidak lagi tampil. Aplikasi /crm/billing/ tetap HTTP 200.
 6. Perlindungan ini hanya mencegah Apache membuat daftar isi folder. File yang
    URL lengkapnya diketahui tetap dapat diakses sesuai izin dan aturan aplikasi.
+
+TEMUAN HEALTH CHECK SETELAH SINKRONISASI GIT - 3 SEPTEMBER 2026
+===============================================================
+1. Layanan utama dalam kondisi aktif: Apache, MySQL, dan cron berjalan.
+2. Halaman utama Billing, broadcast, dan print struk merespons HTTP 200.
+3. Ditemukan dua endpoint HTTP 500 yang sudah ada dan bukan disebabkan reset
+   branch, karena sinkronisasi Git dilakukan dengan reset --mixed yang tidak
+   mengubah isi file pada worktree produksi.
+4. api/chat_contacts.php gagal memuat header_api.php. Endpoint ini menyediakan
+   daftar kontak/percakapan untuk fitur live chat, sehingga dampaknya adalah
+   daftar kontak chat dapat tidak muncul atau terus loading.
+5. getdata/olt-cache.php gagal memuat header.php. Endpoint ini menyediakan data
+   cache OLT/ONU berdasarkan akses pengguna, sehingga data perangkat OLT/ONU
+   dapat tidak tampil atau tidak diperbarui.
+6. Kedua file header sebenarnya tersedia di root Billing. Perbaikan berikutnya
+   adalah menggunakan path absolut berbasis __DIR__ yang benar:
+   - api/chat_contacts.php -> __DIR__ . '/../header_api.php'
+   - getdata/olt-cache.php -> __DIR__ . '/../header.php'
+7. Temuan ini belum diperbaiki pada tahap pencatatan ini. Fitur pelanggan,
+   pembayaran, invoice, broadcast WhatsApp, dan struk tetap berjalan.
