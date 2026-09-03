@@ -305,3 +305,18 @@ BACKUP
 ======
 Snapshot sebelum migrasi disimpan di:
 /root/kalisari-migration-backup-20260903-2300
+
+PENUTUPAN DIRECTORY LISTING APACHE - 3 SEPTEMBER 2026
+=====================================================
+1. Directory listing Apache dinonaktifkan untuk seluruh path di bawah /var/www,
+   bukan hanya /crm, menggunakan directive Options -Indexes.
+2. Konfigurasi aktif berada di:
+   /etc/apache2/conf-available/disable-directory-listing.conf
+3. Salinan untuk deployment dan petunjuk pemasangan disimpan di repository:
+   deployment/apache/disable-directory-listing.conf
+   deployment/apache/README.md
+4. Konfigurasi lulus apache2ctl configtest dan Apache berhasil di-reload.
+5. Verifikasi publik menghasilkan HTTP 403 untuk /crm/ dan /web/, sehingga
+   daftar file tidak lagi tampil. Aplikasi /crm/billing/ tetap HTTP 200.
+6. Perlindungan ini hanya mencegah Apache membuat daftar isi folder. File yang
+   URL lengkapnya diketahui tetap dapat diakses sesuai izin dan aturan aplikasi.
