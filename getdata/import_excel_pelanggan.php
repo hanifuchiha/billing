@@ -221,7 +221,7 @@ function getServerCreds($conn, string $pemilik, string $area): ?array
 
     $q = mysqli_query(
         $conn,
-        "SELECT IP, PASSWORD, TEMPO FROM `server` WHERE `PEMILIK` = '$pemilikEsc' AND `AREA` = '$areaEsc' LIMIT 1"
+        "SELECT IP, PASSWORD FROM `server` WHERE `PEMILIK` = '$pemilikEsc' AND `AREA` = '$areaEsc' LIMIT 1"
     );
     if ($q && mysqli_num_rows($q) > 0) {
         $row = mysqli_fetch_assoc($q);
@@ -229,7 +229,11 @@ function getServerCreds($conn, string $pemilik, string $area): ?array
             'ip'       => $row['IP'],
             'user'     => $pemilik,
             'password' => $row['PASSWORD'],
-            'tempo'    => $row['TEMPO'] ?? '',
+            // Kolom TEMPO berada pada data pelanggan, bukan tabel server pada
+            // skema saat ini. Monthversary memakai TANGGAL_MONTHVERSARY dan
+            // Fixed Due Date membaca konfigurasi reminder, jadi nilai kosong
+            // adalah fallback yang aman untuk proses import pelanggan baru.
+            'tempo'    => '',
         ];
     }
     return null;

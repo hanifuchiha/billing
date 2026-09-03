@@ -243,3 +243,65 @@ LOG PENGIRIMAN NOTIFIKASI
    tercatat sebagai failed beserta kode dan pesan kesalahannya.
 5. Output standar cron diarahkan ke /dev/null, tetapi hasil pengiriman setiap
    pelanggan tetap tersimpan dan dapat diaudit melalui tabel database tersebut.
+
+MIGRASI PELANGGAN KALISARI - 3 SEPTEMBER 2026
+=============================================
+SUMBER DAN MAPPING
+1. Sumber import adalah Data Pelanggan Kalisari1.xlsx dengan 102 pelanggan.
+2. Site Keuangan Air-13790_KALISARI (ID site 23) dipetakan ke area Billing
+   Home-13790.01-12_Signal_Kalisari.
+3. Mapping disimpan di database Keuangan dan fallback Billing pada
+   getdata/keuangan_site_override.json.
+4. Keuangan memiliki 103 pelanggan. Sebanyak 102 IDPEL cocok dengan Excel;
+   satu data tambahan, Moch. Busroh (IDPEL 6415400030), tidak diimpor karena
+   tidak ada di Excel dan tidak mempunyai transaksi.
+
+HASIL IMPORT DAN ODP
+1. Sebanyak 102 pelanggan berhasil diimpor ke Billing tanpa error atau duplikat.
+2. Seluruh pelanggan memakai TIPE_TEMPO monthversary dan MODE API MODE.
+3. Seluruh pelanggan mempunyai ODP: terdapat 29 kode ODP unik, tidak ada ODP
+   kosong, dan semua kode yang dipakai valid pada master ODP area Kalisari.
+4. Terdapat 9 pelanggan paket AirHome - Free dengan harga Rp0.
+
+SINKRONISASI TRANSAKSI KEUANGAN KE BILLING
+1. Sebanyak 192 transaksi dari 80 pelanggan berhasil disinkronkan seluruhnya,
+   dengan total nominal Rp35.333.000.
+2. Rincian transaksi: April 27, Mei 39, Juni 46, Juli 1, Agustus 77, dan
+   September 2 transaksi.
+3. Verifikasi per transaksi menghasilkan nol selisih untuk ID transaksi sumber,
+   IDPEL, nominal, tanggal pembayaran, dan status BERHASIL.
+4. Sinkronisasi diperbaiki agar memakai IDPEL terbaru dari master pelanggan,
+   bukan snapshot IDPEL lama pada riwayat pembayaran.
+5. Endpoint default Keuangan diperbaiki dari URL lokal yang menghasilkan HTTP
+   301 ke endpoint HTTPS Billing yang benar. Retry tetap idempoten karena setiap
+   transaksi memakai KEUANGAN_SOURCE_PAYMENT_ID yang unik.
+
+HASIL SIMULASI STATUS ISOLIR PER 3 SEPTEMBER 2026
+1. Simulasi memakai fungsi status tagihan yang sama dengan cron dan dilakukan
+   secara read-only, tanpa mengubah profil MikroTik.
+2. Sebanyak 9 pelanggan paket Free otomatis dilewati proses isolir.
+3. Sebanyak 65 pelanggan berbayar berstatus aman menurut siklus saat ini.
+4. Sebanyak 28 pelanggan memang berpotensi diisolir: 14 belum pernah mempunyai
+   pembayaran dan 14 mempunyai pembayaran terakhir yang sudah melewati siklus.
+   Dari jumlah tersebut, 9 jatuh tempo pada September dan 19 telah jatuh tempo
+   sebelum September. Data ini bukan kegagalan sinkronisasi transaksi.
+
+PEMERIKSAAN OTOMATIS DAN MIKROTIK
+1. Status koneksi/PPPoE dipindai otomatis setiap menit.
+2. cron_activate_paid_customers.php berjalan setiap menit untuk memulihkan
+   profil EXPIRED milik pelanggan yang mempunyai pembayaran BERHASIL.
+3. cek_tagihan_harian_airlink.php berjalan setiap 20 menit untuk mengevaluasi
+   status pembayaran dan isolir.
+4. Ketika MikroTik kembali aktif, secret yang sudah ada akan diperiksa otomatis
+   dan profil EXPIRED yang memenuhi syarat akan dipulihkan.
+5. Pemeriksaan otomatis tidak membuat secret PPPoE yang sama sekali belum ada.
+   Secret yang gagal dibuat saat import harus diprovision ulang setelah koneksi
+   MikroTik tersedia.
+6. Saat import dan verifikasi, API MikroTik Kalisari belum berhasil login, jadi
+   pembuatan maupun profil 102 secret di router belum dapat dipastikan. Data
+   pelanggan, mapping, ODP, dan transaksi di Billing sudah lengkap.
+
+BACKUP
+======
+Snapshot sebelum migrasi disimpan di:
+/root/kalisari-migration-backup-20260903-2300
