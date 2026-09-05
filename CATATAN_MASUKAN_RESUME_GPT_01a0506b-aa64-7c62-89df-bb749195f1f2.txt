@@ -475,3 +475,33 @@ PERBAIKAN BIAYA ADMIN TRIPAY GANDA - 5 SEPTEMBER 2026
    QRIS (flat Rp750 + 0,7%), gerai retail (sekitar Rp3.500), dan VA bank lain
    (sekitar Rp4.250). Nilai aktual tetap mengikuti tarif aktif akun Tripay.
 7. Pemeriksaan sintaks PHP pada kedua file perbaikan berhasil tanpa error.
+
+PERBAIKAN CRON RETRY BILLING KE KEUANGAN - 5 SEPTEMBER 2026
+===========================================================
+1. Jalur ini adalah sinkronisasi dari Billing ke Keuangan, khusus untuk mencoba
+   ulang pelanggan dengan KEUANGAN_SYNC_STATUS pending atau failed. Jalur ini
+   berbeda dari sinkronisasi transaksi Keuangan ke Billing untuk validasi lunas.
+2. Endpoint sinkronisasi telah dilindungi dengan API key untuk request jaringan.
+   Sebelumnya cron retry belum mengirim key sehingga request melalui URL publik
+   berpotensi ditolak HTTP 403.
+3. Cron retry sekarang mempertahankan hostname HTTPS yang sesuai sertifikat,
+   tetapi koneksinya diarahkan langsung ke Apache lokal 127.0.0.1 melalui cURL
+   resolve. Request tidak keluar dari server dan dikenali endpoint sebagai
+   loopback. Jika BILLING_SYNC_BASE_URL eksternal digunakan, cron mendukung
+   pengiriman BILLING_CRON_API_KEY melalui header X-API-Key.
+4. Uji autentikasi memakai ID pelanggan fiktif dan dry_run berhasil memperoleh
+   HTTP 200 dengan customers_checked=0 dan customers_failed=0. Tidak ada data
+   pelanggan atau transaksi yang diubah oleh pengujian tersebut.
+5. Eksekusi retry sebenarnya memeriksa dua pelanggan failed. Tidak ada data baru
+   yang dibuat karena keduanya terdeteksi sudah terduplikasi di Keuangan:
+   - Abdullah Arsha, IDPEL 139600215B905.0102.09@airlink.co.id, ditemukan pada
+     ID Keuangan 2093 dan 2090.
+   - Rofii Asyaani, IDPEL 14120000001, ditemukan pada ID Keuangan 2236, 2230,
+     2089, dan 1849.
+6. Hasil retry: checked=2, synced=0, failed=2, locked=0. Ini membuktikan guard
+   duplikat bekerja: Billing melewati data ambigu dan tidak menambah duplikat.
+   Duplikat lama harus digabungkan lebih dahulu di Keuangan sebelum retry dapat
+   menyelesaikan mapping pelanggan tersebut.
+7. Sinkronisasi transaksi hanya memproses transaksi BERHASIL setelah baseline
+   production. kompensasi_free dikecualikan karena bukan penerimaan kas/bank,
+   sedangkan transaksi yang sudah tersinkron atau sudah ada di Keuangan dilewati.

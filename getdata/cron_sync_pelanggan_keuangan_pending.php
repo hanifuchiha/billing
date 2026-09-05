@@ -65,14 +65,30 @@ while ($row = mysqli_fetch_assoc($result)) {
 }
 
 $summary = ['ok' => true, 'checked' => count($idpels), 'synced' => 0, 'failed' => 0, 'locked' => 0];
+$billingBaseUrl = trim((string)getenv('BILLING_SYNC_BASE_URL'));
+$useLocalBillingRoute = ($billingBaseUrl === '');
+if ($billingBaseUrl === '') {
+    // Pertahankan hostname sertifikat TLS tetapi arahkan koneksi langsung ke
+    // Apache lokal. Endpoint akan melihat REMOTE_ADDR loopback dan tidak perlu
+    // API key, sementara request tidak pernah keluar dari server.
+    $billingBaseUrl = 'https://billing.broadbandairlink.com/crm/billing';
+}
+$billingCronApiKey = trim((string)getenv('BILLING_CRON_API_KEY'));
 foreach ($idpels as $idpel) {
-    $url = 'http://127.0.0.1/keuangan/billing/getdata/api_hanif_cron_pelanggan.php'
+    $url = rtrim($billingBaseUrl, '/') . '/getdata/api_hanif_cron_pelanggan.php'
         . '?src=pending_retry&only=' . rawurlencode($idpel);
     $ch = curl_init($url);
     curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
     curl_setopt($ch, CURLOPT_TIMEOUT, 25);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Accept: application/json']);
+    if ($useLocalBillingRoute) {
+        curl_setopt($ch, CURLOPT_RESOLVE, ['billing.broadbandairlink.com:443:127.0.0.1']);
+    }
+    $requestHeaders = ['Accept: application/json'];
+    if ($billingCronApiKey !== '') {
+        $requestHeaders[] = 'X-API-Key: ' . $billingCronApiKey;
+    }
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $requestHeaders);
     $raw = curl_exec($ch);
     $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);

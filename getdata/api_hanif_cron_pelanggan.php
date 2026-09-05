@@ -106,6 +106,14 @@ define('SYNC_OVERRIDE_MAP_FILE', __DIR__ . '/keuangan_site_override.json');
 // pencarian otomatis by nama bank gagal/ambigu. Format file JSON:
 // { "cash": 1, "transfer": 7, "qris": 9 }
 define('SYNC_BANK_OVERRIDE_MAP_FILE', __DIR__ . '/keuangan_bank_override.json');
+// Baseline transaksi saat sinkronisasi production diaktifkan. Hanya transaksi
+// dengan id lebih besar dari nilai ini yang boleh dikirim ke Keuangan, sehingga
+// transaksi historis tidak ikut ter-backfill pada run pertama.
+define('SYNC_TRANSACTION_START_ID_FILE', __DIR__ . '/keuangan_transaction_start_id.txt');
+$syncTransactionStartId = is_file(SYNC_TRANSACTION_START_ID_FILE)
+    ? (int)trim((string)file_get_contents(SYNC_TRANSACTION_START_ID_FILE))
+    : PHP_INT_MAX;
+define('SYNC_TRANSACTION_START_ID', max(0, $syncTransactionStartId));
 
 // ---- Lokasi file bukti pembayaran (opsional) ----
 // Kolom `transaksi.BUKTI` di DB lokal biasanya berisi nama file / path relatif
@@ -121,17 +129,26 @@ define('SYNC_BUKTI_BASE_DIRS', [
 define('SYNC_BUKTI_MAX_BYTES', 10 * 1024 * 1024); // 10MB sesuai batas API keuangan
 define('SYNC_BUKTI_ALLOWED_EXT', ['jpg', 'jpeg', 'png', 'pdf']);
 
-define('SYNC_SECRET', '');
+define('SYNC_SECRET', trim((string)getenv('BILLING_CRON_API_KEY')));
 
 $onlyIdpel = trim((string)($_GET['only'] ?? $_POST['only'] ?? ''));
 $dryRun    = !empty($_GET['dry_run']) || !empty($_POST['dry_run']);
 $source    = (string)($_GET['src'] ?? 'manual');
 
-if (SYNC_SECRET !== '') {
-    $secretGiven = (string)($_GET['secret'] ?? '');
-    if (!hash_equals(SYNC_SECRET, $secretGiven)) {
+// Pemanggilan HTTP dari jaringan wajib diautentikasi. Request loopback hanya
+// dapat berasal dari server ini, sehingga cron lokal tidak perlu menyimpan API
+// key di URL. Jika memakai URL publik, kirim key lewat header X-API-Key.
+$requestRemoteAddress = trim((string)($_SERVER['REMOTE_ADDR'] ?? ''));
+$isLoopbackRequest = in_array($requestRemoteAddress, ['127.0.0.1', '::1'], true);
+if (PHP_SAPI !== 'cli' && !$isLoopbackRequest) {
+    $expectedCronKey = SYNC_SECRET !== '' ? SYNC_SECRET : KEU_API_KEY;
+    $providedCronKey = trim((string)($_SERVER['HTTP_X_API_KEY'] ?? ''));
+    if ($providedCronKey === '') {
+        $providedCronKey = trim((string)($_GET['secret'] ?? ''));
+    }
+    if ($expectedCronKey === '' || !hash_equals($expectedCronKey, $providedCronKey)) {
         http_response_code(403);
-        echo json_encode(['ok' => false, 'message' => 'Secret tidak valid.']);
+        echo json_encode(['ok' => false, 'message' => 'API key cron tidak valid.']);
         exit;
     }
 }
@@ -149,6 +166,7 @@ $summary = [
     'started_at' => date('Y-m-d H:i:s'),
     'source' => $source,
     'dry_run' => $dryRun,
+    'transaction_start_id' => SYNC_TRANSACTION_START_ID,
     'customers_checked' => 0,
     'customers_created' => 0,
     'customers_updated' => 0,
@@ -165,6 +183,7 @@ $summary = [
     'transaksi_failed' => 0,
     'transaksi_skipped_missing_bukti' => 0,
     'transaksi_without_bukti' => 0,
+    'transaksi_skipped_excluded_method' => 0,
     'transaksi_skipped_unmapped_bank' => 0,
     'transaksi_skipped_already_exists' => 0,
     'transaksi_skipped_invalid_date' => 0,
@@ -746,6 +765,7 @@ function reconcileTransaksiSyncFlags(mysqli $conn, string $idpel, array $existin
         $conn,
         "SELECT id, KEUANGAN_PAYMENT_ID FROM transaksi
          WHERE TRIM(IDPEL)='$idpelSafe'
+           AND id > " . SYNC_TRANSACTION_START_ID . "
            AND TRIM(UPPER(COALESCE(STATUS,'')))='BERHASIL'
            AND KEUANGAN_SYNCED = 1"
     );
@@ -788,6 +808,7 @@ function syncTransaksiForCustomer(
         $conn,
         "SELECT * FROM transaksi
          WHERE TRIM(IDPEL)='$idpelSafe'
+           AND id > " . SYNC_TRANSACTION_START_ID . "
            AND TRIM(UPPER(COALESCE(STATUS,'')))='BERHASIL'
            AND (KEUANGAN_SYNCED = 0 OR KEUANGAN_SYNCED IS NULL)
          ORDER BY id ASC"
@@ -839,6 +860,14 @@ function syncTransaksiForCustomer(
         $keterangan = (string)($t['CEK'] ?? '') !== ''
             ? (string)$t['CEK']
             : ('Sync otomatis dari CRM - ' . (string)($t['BUKTI'] ?? ''));
+
+        // Kompensasi gratis bukan penerimaan kas/bank dan tidak boleh dicatat
+        // sebagai pendapatan di Keuangan, sekalipun mapping bank tersedia.
+        if ($metodeBayarRaw === 'kompensasi_free') {
+            $summary['transaksi_skipped_excluded_method']++;
+            syncLog("SKIP transaksi id={$t['id']} IDPEL=$idpel: METODE_BAYAR='kompensasi_free' dikecualikan dari sinkronisasi pendapatan.");
+            continue;
+        }
 
         if ($dryRun) {
             syncLog("DRYRUN sync transaksi id={$t['id']} IDPEL=$idpel tanggal_bayar=$tanggalBayar jumlah_bayar=$jumlahBayar (belum benar-benar dikirim)");
