@@ -453,3 +453,25 @@ AUDIT ISOLIR HARIAN DAN NOTIFIKASI WA - 5 SEPTEMBER 2026
    kode INVALID_JID. Penyebab yang terlihat adalah nomor tidak terdaftar di
    WhatsApp atau format nomor tidak internasional (misalnya masih diawali 0).
    Nomor pelanggan perlu diperbaiki agar notifikasi berikutnya dapat diterima.
+
+PERBAIKAN BIAYA ADMIN TRIPAY GANDA - 5 SEPTEMBER 2026
+=====================================================
+1. Ditemukan billing menambahkan fee_customer ke tagihan pokok sebelum membuat
+   transaksi Tripay. Tripay kemudian menambahkan fee_customer kanal sekali lagi,
+   sehingga pelanggan dapat dikenai biaya admin dua kali.
+2. Contoh kasus Elsa: tagihan pokok Rp165.000 melalui BCA VA. Billing sebelumnya
+   mengirim Rp170.500 dan Tripay menambahkan Rp5.500 lagi, sehingga total menjadi
+   Rp176.000. Seharusnya billing mengirim Rp165.000 dan total di Tripay menjadi
+   Rp170.500 setelah satu biaya admin BCA VA.
+3. Perbaikan diterapkan pada portal web broadband/portal_bayar.php dan API
+   aplikasi api/tagihanwifiku/payment_create.php. Kedua jalur sekarang hanya
+   mengirim tagihan pokok sebagai amount dan harga order item. Penentuan biaya
+   pelanggan diserahkan kepada Tripay sesuai kanal yang dipilih.
+4. Estimasi biaya pada tampilan portal tetap dipertahankan sebagai informasi;
+   estimasi tersebut tidak lagi ditambahkan ke nominal request oleh backend.
+5. Transaksi yang telah selesai, termasuk transaksi Elsa, tidak diubah. Perbaikan
+   berlaku untuk kode pembayaran Tripay baru yang dibuat setelah pembaruan.
+6. Alternatif kanal yang terpantau lebih murah daripada BCA VA Rp5.500 adalah
+   QRIS (flat Rp750 + 0,7%), gerai retail (sekitar Rp3.500), dan VA bank lain
+   (sekitar Rp4.250). Nilai aktual tetap mengikuti tarif aktif akun Tripay.
+7. Pemeriksaan sintaks PHP pada kedua file perbaikan berhasil tanpa error.

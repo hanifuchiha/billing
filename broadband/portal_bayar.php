@@ -2268,34 +2268,10 @@ if (!function_exists('portalBayarPayDetailJson')) {
                 // Proses Tripay Payment (existing code)
                 elseif (isset($_POST['method'])) {
                     $method = $_POST['method'];
-                    $tripayAmount = (float)$totalTagihan;
-                    $channelFeeCustomerFlat = 0.0;
-                    $channelFeeCustomerPercent = 0.0;
-                    $channelMinimumFee = 0.0;
-                    $channelMaximumFee = 0.0;
-
-                    if (!empty($payment_channels) && is_array($payment_channels)) {
-                        foreach ($payment_channels as $channelRow) {
-                            if (($channelRow['code'] ?? '') !== $method) {
-                                continue;
-                            }
-                            $channelFeeCustomerFlat = (float)($channelRow['fee_customer']['flat'] ?? 0);
-                            $channelFeeCustomerPercent = (float)($channelRow['fee_customer']['percent'] ?? 0);
-                            $channelMinimumFee = (float)($channelRow['minimum_fee'] ?? 0);
-                            $channelMaximumFee = (float)($channelRow['maximum_fee'] ?? 0);
-                            break;
-                        }
-                    }
-
-                    $channelCustomerFee = $channelFeeCustomerFlat + ((float)$totalTagihan * ($channelFeeCustomerPercent / 100));
-                    if ($channelCustomerFee > 0 && $channelMinimumFee > 0 && $channelCustomerFee < $channelMinimumFee) {
-                        $channelCustomerFee = $channelMinimumFee;
-                    }
-                    if ($channelCustomerFee > 0 && $channelMaximumFee > 0 && $channelCustomerFee > $channelMaximumFee) {
-                        $channelCustomerFee = $channelMaximumFee;
-                    }
-                    $tripayAmount = max(0, $tripayAmount + max(0, $channelCustomerFee));
-                    $tripayAmount = (int)round($tripayAmount);
+                    // Kirim tagihan pokok saja. Tripay akan menambahkan fee_customer
+                    // sesuai kanal pembayaran. Menambahkan fee di sini menyebabkan
+                    // biaya admin dikenakan dua kali (oleh billing dan oleh Tripay).
+                    $tripayAmount = (int)round(max(0, (float)$totalTagihan));
 
                     $signature = hash_hmac('sha256', $merchantCode . $merchantRef . $tripayAmount, $privateKey);
 

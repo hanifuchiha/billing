@@ -144,79 +144,6 @@ if ($customerEmail === '') {
 $customerPhone = (string)($pelanggan['NOWA'] ?? '');
 $paket = (string)($pelanggan['PAKET'] ?? 'Internet');
 
-/**
- * Fetch Tripay channel fee and compute customer/admin fee from selected method.
- */
-function twk_get_tripay_channel_fee(string $apiKey, string $methodCode, float $baseAmount): array
-{
-    if ($apiKey === '' || $methodCode === '' || $baseAmount <= 0) {
-        return [
-            'customer_fee' => 0.0,
-            'info_fee' => 0.0,
-        ];
-    }
-
-    $ch = curl_init();
-    curl_setopt_array($ch, [
-        CURLOPT_URL => 'https://tripay.co.id/api/merchant/payment-channel',
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $apiKey,
-            'Content-Type: application/json',
-        ],
-        CURLOPT_CONNECTTIMEOUT => 3,
-        CURLOPT_TIMEOUT => 8,
-        CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4,
-    ]);
-    $raw = curl_exec($ch);
-    curl_close($ch);
-
-    $json = json_decode((string)$raw, true);
-    $channels = is_array($json['data'] ?? null) ? $json['data'] : [];
-    if (empty($channels)) {
-        return [
-            'customer_fee' => 0.0,
-            'info_fee' => 0.0,
-        ];
-    }
-
-    foreach ($channels as $channel) {
-        if (strtoupper((string)($channel['code'] ?? '')) !== strtoupper($methodCode)) {
-            continue;
-        }
-
-        $feeCustomerFlat = (float)($channel['fee_customer']['flat'] ?? 0);
-        $feeCustomerPercent = (float)($channel['fee_customer']['percent'] ?? 0);
-        $totalFeeFlat = (float)($channel['total_fee']['flat'] ?? 0);
-        $totalFeePercent = (float)($channel['total_fee']['percent'] ?? 0);
-        $minimumFee = (float)($channel['minimum_fee'] ?? 0);
-        $maximumFee = (float)($channel['maximum_fee'] ?? 0);
-
-        $customerFee = $feeCustomerFlat + ($baseAmount * ($feeCustomerPercent / 100));
-        if ($customerFee > 0 && $minimumFee > 0 && $customerFee < $minimumFee) {
-            $customerFee = $minimumFee;
-        }
-        if ($customerFee > 0 && $maximumFee > 0 && $customerFee > $maximumFee) {
-            $customerFee = $maximumFee;
-        }
-        $customerFee = max(0.0, $customerFee);
-
-        $infoFee = $customerFee > 0
-            ? $customerFee
-            : max(0.0, $totalFeeFlat + ($baseAmount * ($totalFeePercent / 100)));
-
-        return [
-            'customer_fee' => $customerFee,
-            'info_fee' => $infoFee,
-        ];
-    }
-
-    return [
-        'customer_fee' => 0.0,
-        'info_fee' => 0.0,
-    ];
-}
-
 if ($gateway === 'tripay') {
     $tripayCfg = twk_get_tripay_config($conn, $pemilik);
     $apiKey = twk_pick((array)$tripayCfg, ['apikey', 'api_key']);
@@ -240,8 +167,8 @@ if ($gateway === 'tripay') {
         twk_response(422, ['success' => false, 'message' => 'Pilih metode pembayaran Tripay terlebih dahulu.']);
     }
 
-    $tripayFee = twk_get_tripay_channel_fee($apiKey, $methodCode, $totalAmount);
-    $totalAmount += (float)($tripayFee['customer_fee'] ?? 0.0);
+    // Kirim tagihan pokok. Tripay menambahkan fee_customer berdasarkan kanal;
+    // menambahkannya di aplikasi akan membuat pelanggan dikenai biaya dua kali.
     $totalAmount = (int)round(max(0.0, $totalAmount));
 
     $signature = hash_hmac('sha256', $merchantCode . $idpel . (int)round($totalAmount), $privateKey);
