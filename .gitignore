@@ -6,9 +6,33 @@
 /Genie-ACS-alijayanet/
 /virtualparameter/
 
+# Runtime databases, caches, sessions, and generated state
+/acs_containers/*/mongo/
+/api/trafik-cache/
+/api/tagihanwifiku/sessions_livechat_payment/
+/getdata/cache/
+/getdata/traffic/
+/notifbot/data/history-*.json
+/notifbot/data/*_state-*.json
+/notifbot/data/invoice_generator-*.json
+/notifbot/data/reminder-*.json
+/notifdata/acs_activity_log.json
+/notifdata/acs_devices_cache.json
+/serverlog/
+
+*.lastrun
+*.lock
+*.log
+*.log.bak
+
+# Machine-local synchronization cursor and diagnostic output
+/getdata/keuangan_transaction_start_id.txt
+/getdata/mikrotik_debug.log
+/api/debug_status_realtime.log
+/tester_debug.log
+
 *.sql
 *.zip
-*.log
 
 .DS_Store
 Thumbs.db
