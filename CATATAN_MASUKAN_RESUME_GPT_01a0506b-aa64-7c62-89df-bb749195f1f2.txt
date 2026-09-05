@@ -426,3 +426,30 @@ KESIMPULAN
    koreksi transaksi wajib memakai IDPEL dan ID sumber Keuangan.
 4. Profil aktual MikroTik adalah sumber status isolir; kata EXPIRED pada comment
    saja tidak berarti profil pelanggan masih EXPIRED.
+
+AUDIT ISOLIR HARIAN DAN NOTIFIKASI WA - 5 SEPTEMBER 2026
+========================================================
+1. Pemeriksaan sampai pukul 07:57 WIB tidak menemukan catatan pelanggan baru
+   yang profilnya diubah ke EXPIRED pada 5 September 2026. Cron isolir tetap
+   berjalan pada pukul 07:00 dan cek tagihan harian berjalan berkala.
+2. Ringkasan cek tagihan pukul 07:40 mencatat 845 pelanggan: 90 sudah bayar dan
+   149 belum bayar. Angka 149 adalah total status belum bayar/expired yang sudah
+   ada, bukan jumlah pelanggan yang baru diisolir tanggal 5 September.
+3. Satu MikroTik area Home-12190.01-15 tidak dapat dihubungi, sehingga status
+   profil aktual pelanggan pada area tersebut belum dapat dipastikan pada saat
+   audit.
+4. Untuk pelanggan prabayar, konfigurasi aktif memakai waktu tunggu 2 hari.
+   Kode menetapkan batas isolir = tanggal jatuh tempo + 2 hari dan pelanggan
+   mulai memenuhi syarat isolir ketika tanggal batas tersebut tercapai. Contoh
+   jatuh tempo tanggal 10: tanggal 10 dan 11 masih aman, mulai tanggal 12 dapat
+   diisolir jika belum ada transaksi BERHASIL atau kompensasi_free.
+5. Sistem mencoba mengirim reminder sebelum jatuh tempo dan notifikasi isolir
+   ketika pelanggan diproses. Setelah itu profil MikroTik dapat diubah menjadi
+   EXPIRED sesuai hasil validasi pembayaran.
+6. Pengiriman WA tidak dijadikan syarat keberhasilan isolir. Jika WA gagal,
+   proses isolir tetap dapat berjalan. Karena itu status pengiriman dan status
+   layanan harus diaudit secara terpisah.
+7. Log tanggal 5 September menunjukkan sejumlah kegagalan WA HTTP 400 dengan
+   kode INVALID_JID. Penyebab yang terlihat adalah nomor tidak terdaftar di
+   WhatsApp atau format nomor tidak internasional (misalnya masih diawali 0).
+   Nomor pelanggan perlu diperbaiki agar notifikasi berikutnya dapat diterima.
