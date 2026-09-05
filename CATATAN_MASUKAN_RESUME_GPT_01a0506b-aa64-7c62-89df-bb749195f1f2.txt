@@ -340,3 +340,89 @@ TEMUAN HEALTH CHECK SETELAH SINKRONISASI GIT - 3 SEPTEMBER 2026
    - getdata/olt-cache.php -> __DIR__ . '/../header.php'
 7. Temuan ini belum diperbaiki pada tahap pencatatan ini. Fitur pelanggan,
    pembayaran, invoice, broadcast WhatsApp, dan struk tetap berjalan.
+
+AUDIT ISOLIR DAN PEMULIHAN PASCAPEMBAYARAN - 4-5 SEPTEMBER 2026
+================================================================
+MEKANISME PEMULIHAN OTOMATIS
+1. Akar masalah yang ditemukan adalah transaksi pembayaran dari Keuangan dapat
+   masuk ke Billing setelah cron isolir lebih dahulu berjalan. Pada saat
+   pemeriksaan, pelanggan dianggap belum membayar dan profil dapat berubah
+   menjadi EXPIRED walaupun pembayaran historis sebenarnya sudah ada di
+   Keuangan.
+2. Jaring pengaman getdata/cron_activate_paid_customers.php telah dijadwalkan
+   setiap menit melalui crontab. Cron mencari transaksi BERHASIL yang relevan,
+   memeriksa pelanggan yang masih memakai profil EXPIRED, mengembalikan profil
+   ke paket normal, lalu memutus sesi lama agar PPPoE login ulang.
+3. Proses bersifat idempoten: profil normal tidak diubah. Jika MikroTik tidak
+   dapat dihubungi, aktivasi ditunda dan akan dicoba kembali setelah router dan
+   cache status tersedia.
+4. Urutan operasional yang disarankan adalah sinkron pembayaran Keuangan ke
+   Billing, validasi transaksi BERHASIL/kompensasi_free, pemulihan pelanggan
+   lunas, kemudian isolir pelanggan yang benar-benar belum membayar.
+
+KASUS NIA SUMARTINI - KALISARI
+1. IDPEL: 13790120321.0101.04@airlink.co.id, paket AirHome - 165k,
+   prabayar monthversary dengan acuan tanggal 22.
+2. Cron isolir berjalan 4 September 2026 sekitar pukul 07:00 WIB. Saat itu
+   Billing baru memiliki transaksi PENAGIHAN dan belum memiliki pembayaran
+   BERHASIL untuk Nia.
+3. Pembayaran Agustus bertanggal 22 Agustus 2026 dari Keuangan baru masuk ke
+   Billing pada 4 September 2026 pukul 12:33:55 WIB. Akibat keterlambatan urutan
+   sinkronisasi tersebut, Nia sempat dianggap belum membayar dan menjadi
+   EXPIRED.
+4. Setelah transaksi masuk, status tagihannya aman sampai siklus berikutnya,
+   yaitu 22 September 2026. Pemulihan MikroTik akan dicoba otomatis oleh cron
+   ketika router Kalisari dapat diakses.
+
+KASUS MUHAMMAD FADHLY - KALISARI
+1. Ditemukan dua IDPEL dengan nama yang sama:
+   - 13790040545.0103.04.03@airlink.co.id, paket AirHome - 188k.
+   - 13790040500.0303.02.01@airlink.co.id, paket AirHome - Free.
+2. Transaksi BERHASIL Juni Rp188.000 (ID 4397/sumber Keuangan 1458) dan Agustus
+   Rp188.000 (ID 4443/sumber Keuangan 2105) semula terkait ke ID paket Free,
+   sedangkan ID paket 188k berada pada profil EXPIRED tanpa transaksi berhasil.
+3. Kedua transaksi dipindahkan ke IDPEL paket 188k. PAY_DETAIL masing-masing
+   transaksi diberi catatan koreksi agar perpindahan tetap dapat diaudit.
+4. Pada 4 September 2026 pukul 14:37:22 WIB cron berhasil memulihkan profil
+   MikroTik dari EXPIRED ke AirHome - 188k. Secret aktif (disabled=false) dan
+   komentar MikroTik diperbarui menjadi LUNAS Muhammad Fadhly.
+
+KASUS DEWI - MANGGA NET
+1. IDPEL: Dewi.02.02.041122@mangga.net, area Home-14270.01-15_Mangga,
+   prabayar mengikuti tanggal tempo, paket Billing AirHome - 115k.
+2. Pembayaran Agustus berstatus BERHASIL melalui kompensasi_free. Tagihan
+   September mempunyai jatuh tempo 10 September 2026.
+3. Pemeriksaan langsung menunjukkan secret MikroTik aktif dan profil aktual
+   Up To 10 Mbps, bukan EXPIRED. Pelanggan saat pemeriksaan sedang offline.
+4. Tulisan EXPIRED pada comment secret merupakan komentar lama, bukan status
+   profil. Jika pelanggan tidak tersambung, pemeriksaan diarahkan ke ONT,
+   koneksi fisik, atau autentikasi PPPoE, bukan ke mekanisme isolir.
+5. Terdapat perbedaan nama paket antara Billing (AirHome - 115k) dan profil
+   MikroTik (Up To 10 Mbps) yang perlu diperhatikan pada pengelolaan paket.
+
+KASUS SULISNO - UJUNG MENTENG HOME
+1. IDPEL: 13960021115K.0301.09@airlink.co.id, area
+   Home-13960.02_Ujung_Menteng_HOME, paket AirHome - 128k, prabayar mengikuti
+   tanggal tempo, dan tanggal pemasangan 2 September 2026.
+2. Kolom TEMPO kosong. Sebelum malam 4 September, Billing hanya mempunyai
+   transaksi Tripay berstatus PERMINTAAN KODE pada pukul 07:36, sehingga belum
+   dapat dianggap sebagai pembayaran berhasil.
+3. Transaksi kompensasi_free September baru dicatat BERHASIL pada 4 September
+   2026 pukul 21:02:03 WIB. Karena kompensasi dimasukkan setelah pemeriksaan,
+   Sulisno sempat dianggap belum membayar dan terkena isolir.
+4. Setelah kompensasi berhasil, profil kembali ke AirHome - 128k. Pemeriksaan
+   5 September menunjukkan secret aktif, pelanggan online, IP 10.10.174.254,
+   dan bukan EXPIRED.
+5. Transaksi Tripay yang masih berstatus PERMINTAAN KODE tidak mengalahkan
+   transaksi kompensasi_free yang sudah BERHASIL.
+
+KESIMPULAN
+==========
+1. Status pembayaran harus ditentukan oleh transaksi BERHASIL pada IDPEL yang
+   tepat; PERMINTAAN KODE belum berarti lunas.
+2. kompensasi_free berstatus BERHASIL sah untuk mencegah atau membuka isolir,
+   termasuk ketika nominalnya Rp0.
+3. Nama pelanggan tidak cukup sebagai kunci karena dapat ganda. Pemeriksaan dan
+   koreksi transaksi wajib memakai IDPEL dan ID sumber Keuangan.
+4. Profil aktual MikroTik adalah sumber status isolir; kata EXPIRED pada comment
+   saja tidak berarti profil pelanggan masih EXPIRED.
