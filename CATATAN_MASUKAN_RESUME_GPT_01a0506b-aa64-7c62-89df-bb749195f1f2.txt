@@ -871,3 +871,10 @@ REKONSILIASI TRIPAY PAID YANG TIDAK MASUK BILLING - 12 SEPTEMBER 2026
     BERHASIL dan profil tidak lagi EXPIRED. Backfill isolir lama dihentikan;
     pesan koreksi kepada pelanggan hanya boleh dikirim setelah persetujuan
     operasional agar tidak melakukan komunikasi eksternal tanpa verifikasi.
+11. Pengiriman pesan koreksi telah disetujui dan dicoba secara bertahap kepada
+    12 pelanggan tersebut. Seluruh percobaan ditolak gateway dengan respons
+    INVALID_WA_CLI karena sesi/perangkat WhatsApp Airlink sedang offline; tidak
+    ada pesan koreksi yang terkirim. Status dicatat sebagai failed dengan
+    deduplikasi isolation_correction_paid. Atas keputusan operasional, retry
+    ditunda sampai WhatsApp kembali online. Gangguan WA ini tidak memengaruhi
+    transaksi, pemulihan profil pelanggan, atau cron rekonsiliasi Tripay.
