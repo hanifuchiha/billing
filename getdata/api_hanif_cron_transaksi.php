@@ -86,6 +86,7 @@ set_time_limit(0); // sinkron bisa lama kalau data banyak, jangan sampai timeout
 
 // Koneksi DB (harus mendefinisikan $conn = mysqli_connect(...))
 require '../koneksibilling.php';
+require_once __DIR__ . '/../routeros_api.class.php';
 
 $apiUrl = "https://billing.broadbandairlink.com/web/keuangan/sistem-manajemen-keuangan/index.php/admin/site/pelanggan_api";
 $apiKey = "9fa120bc7d157225c58238c91051c7f2baf37c5338d75f8c9c260082babe2de8";
@@ -331,6 +332,73 @@ function insertTransaksi(
     return $ok;
 }
 
+/**
+ * Pulihkan layanan setelah transaksi dari Keuangan berhasil disimpan.
+ * Hanya profile EXPIRED yang disentuh; pelanggan aktif tidak diputus.
+ */
+function activateFinancePaymentIfExpired($conn, string $idpel): string
+{
+    $stmt = mysqli_prepare($conn, "SELECT IDPEL, NAMA, PAKET, AREA, PEMILIK, MODE FROM pelanggan WHERE IDPEL = ? LIMIT 1");
+    mysqli_stmt_bind_param($stmt, 's', $idpel);
+    mysqli_stmt_execute($stmt);
+    $pel = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+    mysqli_stmt_close($stmt);
+    if (!$pel) {
+        return 'CUSTOMER_NOT_FOUND';
+    }
+
+    $mode = strtoupper(trim((string)($pel['MODE'] ?? 'API MODE')));
+    if (!in_array($mode, ['API MODE', 'MULTI MODE'], true)) {
+        return 'NON_API_MODE_SKIP';
+    }
+
+    $stmt = mysqli_prepare($conn, "SELECT IP, PEMILIK, PASSWORD FROM server WHERE AREA = ? AND PEMILIK = ? LIMIT 1");
+    mysqli_stmt_bind_param($stmt, 'ss', $pel['AREA'], $pel['PEMILIK']);
+    mysqli_stmt_execute($stmt);
+    $server = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+    mysqli_stmt_close($stmt);
+    if (!$server) {
+        return 'SERVER_NOT_FOUND';
+    }
+
+    $api = new RouterosAPI();
+    if (!$api->connect($server['IP'], $server['PEMILIK'], $server['PASSWORD'])) {
+        return 'ROUTER_CONNECT_FAILED';
+    }
+
+    $secret = $api->comm('/ppp/secret/getall', [
+        '.proplist' => '.id,profile',
+        '?name' => $idpel,
+    ]);
+    if (empty($secret[0]['.id'])) {
+        return 'SECRET_NOT_FOUND';
+    }
+
+    $currentProfile = trim((string)($secret[0]['profile'] ?? ''));
+    if (strcasecmp($currentProfile, 'EXPIRED') !== 0) {
+        return strcasecmp($currentProfile, (string)$pel['PAKET']) === 0
+            ? 'ALREADY_ACTIVE_SKIP'
+            : 'PROFILE_MISMATCH_SKIP';
+    }
+
+    $api->comm('/ppp/secret/set', [
+        '.id' => $secret[0]['.id'],
+        'profile' => $pel['PAKET'],
+        'comment' => 'LUNAS ' . $pel['NAMA'] . ' - pembayaran sinkron Keuangan',
+    ]);
+    $api->comm('/ppp/secret/enable', ['numbers' => $secret[0]['.id']]);
+
+    $active = $api->comm('/ppp/active/getall', [
+        '.proplist' => '.id',
+        '?name' => $idpel,
+    ]);
+    if (!empty($active[0]['.id'])) {
+        $api->comm('/ppp/active/remove', ['.id' => $active[0]['.id']]);
+    }
+
+    return 'REACTIVATED';
+}
+
 // ---------------------------------------------------------------------------
 // 4) Loop pelanggan API -> proses hanya yang sudah ada di DB lokal
 // ---------------------------------------------------------------------------
@@ -392,6 +460,8 @@ foreach ($customers as $c) {
 
         if (insertTransaksi($conn, $c, $t, $periode, $buktiUrl, $cekMarker)) {
             $totalTransaksiBaru++;
+            $activationResult = activateFinancePaymentIfExpired($conn, (string)$idpel);
+            log_line("Aktivasi pembayaran Keuangan IDPEL {$idpel}: {$activationResult}");
         } else {
             $totalError++;
             log_line("Gagal insert transaksi (API ID {$txApiId}) untuk IDPEL {$idpel}: " . mysqli_error($conn));

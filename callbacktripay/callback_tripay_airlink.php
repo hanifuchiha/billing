@@ -1228,56 +1228,67 @@ if ($LAYANAN == "PPPOE") {
 
 
 
-                                if($AUTHMODE=='API MODE' | $AUTHMODE=='MULTI MODE'  )
+                                if ($AUTHMODE == 'API MODE' || $AUTHMODE == 'MULTI MODE')
                                 {
+                                    // Pembayaran tetap sudah tercatat BERHASIL. MikroTik hanya
+                                    // diubah bila profil aktual benar-benar EXPIRED agar pelanggan
+                                    // yang sudah aktif tidak mengalami putus koneksi tanpa perlu.
+                                    $API = new RouterosAPI();
 
+                                    if (!$API->connect($ip100, $user100, $password100)) {
+                                        callbackLogStep($history, $history_file, 'MIKROTIK_CONNECT_FAILED',
+                                            "Pembayaran tetap tercatat, tetapi MikroTik $ip100 tidak dapat dihubungi untuk $USERNAMETRANASAKSI");
+                                    } else {
+                                        $cariurutan = $API->comm(
+                                            "/ppp/secret/getall",
+                                            array(
+                                                ".proplist" => ".id,profile",
+                                                "?name" => $USERNAMETRANASAKSI,
+                                            )
+                                        );
 
-                                                    ////////koneksi ke mikrotik ///////
-                                                    $API = new RouterosAPI();
-                                                    $API->connect($ip100, $user100, $password100);
+                                        if (empty($cariurutan[0][".id"])) {
+                                            callbackLogStep($history, $history_file, 'MIKROTIK_SECRET_NOT_FOUND',
+                                                "Pembayaran tetap tercatat, secret PPPoE $USERNAMETRANASAKSI tidak ditemukan");
+                                        } else {
+                                            $profilAktual = trim((string)($cariurutan[0]["profile"] ?? ''));
 
-                                                    $cariurutan = $API->comm(
-                                                        "/ppp/secret/getall",
-                                                        array(
-                                                            ".proplist" => ".id",
-                                                            "?name" => $USERNAMETRANASAKSI,
-                                                        )
-                                                    );
+                                            if (strcasecmp($profilAktual, 'EXPIRED') === 0) {
+                                                $API->comm(
+                                                    "/ppp/secret/set",
+                                                    array(
+                                                        ".id" => $cariurutan[0][".id"],
+                                                        "comment" => "LUNAS $NAMAPELANGGAN - $WHATSAPPELANGGAN - $tanggalbayar",
+                                                        "profile" => $PAKETPELANGGAN,
+                                                    )
+                                                );
 
-                                                    $API->comm(
-                                                        "/ppp/secret/set",
-                                                        array(
-                                                            ".id" => $cariurutan[0][".id"],
-                                                            "comment"  => "LUNAS $NAMAPELANGGAN - $WHATSAPPELANGGAN - $tanggalbayar",
-                                                            "profile"  => $PAKETPELANGGAN,
-                                                        )
-                                                    );
+                                                $cariurutan2 = $API->comm(
+                                                    "/ppp/active/getall",
+                                                    array(
+                                                        ".proplist" => ".id",
+                                                        "?name" => $USERNAMETRANASAKSI,
+                                                    )
+                                                );
 
-
-                                                    $cariurutan2 = $API->comm(
-                                                        "/ppp/active/getall",
-                                                        array(
-                                                            ".proplist" => ".id",
-                                                            "?name" => $USERNAMETRANASAKSI,
-                                                        )
-                                                    );
-
+                                                if (!empty($cariurutan2[0][".id"])) {
                                                     $API->comm(
                                                         "/ppp/active/remove",
-                                                        array(
-                                                            ".id" => $cariurutan2[0][".id"],
-
-                                                        )
+                                                        array(".id" => $cariurutan2[0][".id"])
                                                     );
+                                                }
 
-                                                    $history[] = "[ callback tripay - " . date('Y-m-d H:i:s') . " ] Tripay berhasil aktifkan OTOMATIS $USERNAMETRANASAKSI $NAMAPELANGGAN $PAKETPELANGGAN";
-                                                    // Simpan ke file history
-                                                    file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
-
-
-                                                    
-                              
-
+                                                callbackLogStep($history, $history_file, 'MIKROTIK_REACTIVATED',
+                                                    "Profil EXPIRED dipulihkan ke $PAKETPELANGGAN untuk $USERNAMETRANASAKSI");
+                                            } elseif (strcasecmp($profilAktual, $PAKETPELANGGAN) === 0) {
+                                                callbackLogStep($history, $history_file, 'MIKROTIK_ALREADY_ACTIVE_SKIP',
+                                                    "Profil $USERNAMETRANASAKSI sudah $profilAktual; perubahan profil dan pemutusan sesi dilewati");
+                                            } else {
+                                                callbackLogStep($history, $history_file, 'MIKROTIK_PROFILE_MISMATCH_SKIP',
+                                                    "Profil aktual $USERNAMETRANASAKSI adalah '$profilAktual', paket Billing '$PAKETPELANGGAN'; tidak ditimpa otomatis");
+                                            }
+                                        }
+                                    }
                                 }
 
 
@@ -1921,4 +1932,3 @@ exit;
             }
         }
     }
-

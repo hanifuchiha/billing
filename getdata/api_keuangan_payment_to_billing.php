@@ -5,6 +5,7 @@ error_reporting(E_ALL & ~E_DEPRECATED & ~E_NOTICE & ~E_WARNING);
 header('Content-Type: application/json; charset=utf-8');
 
 require __DIR__ . '/../koneksibilling.php';
+require_once __DIR__ . '/../routeros_api.class.php';
 
 const KEUANGAN_PAYMENT_SYNC_API_KEY = '9fa120bc7d157225c58238c91051c7f2baf37c5338d75f8c9c260082babe2de8';
 
@@ -47,6 +48,43 @@ function paymentSyncDeletePaidInvoice(mysqli $conn, string $idpel, string $perio
     $ok = mysqli_stmt_execute($stmt);
     mysqli_stmt_close($stmt);
     return $ok;
+}
+
+function paymentSyncActivateIfExpired(mysqli $conn, array $customer): string
+{
+    $idpel = trim((string)($customer['IDPEL'] ?? ''));
+    $targetProfile = trim((string)($customer['PAKET'] ?? ''));
+    $mode = strtoupper(trim((string)($customer['MODE'] ?? 'API MODE')));
+    if (!in_array($mode, ['API MODE', 'MULTI MODE'], true)) {
+        return 'NON_API_MODE_SKIP';
+    }
+    $stmt = mysqli_prepare($conn, 'SELECT IP, PEMILIK, PASSWORD FROM server WHERE AREA=? AND PEMILIK=? LIMIT 1');
+    mysqli_stmt_bind_param($stmt, 'ss', $customer['AREA'], $customer['PEMILIK']);
+    mysqli_stmt_execute($stmt);
+    $server = mysqli_fetch_assoc(mysqli_stmt_get_result($stmt));
+    mysqli_stmt_close($stmt);
+    if (!$server) return 'SERVER_NOT_FOUND';
+
+    $api = new RouterosAPI();
+    if (!$api->connect($server['IP'], $server['PEMILIK'], $server['PASSWORD'])) return 'ROUTER_CONNECT_FAILED';
+    $secret = $api->comm('/ppp/secret/getall', ['.proplist' => '.id,profile', '?name' => $idpel]);
+    if (empty($secret[0]['.id'])) return 'SECRET_NOT_FOUND';
+
+    $currentProfile = trim((string)($secret[0]['profile'] ?? ''));
+    if (strcasecmp($currentProfile, 'EXPIRED') !== 0) {
+        return strcasecmp($currentProfile, $targetProfile) === 0 ? 'ALREADY_ACTIVE_SKIP' : 'PROFILE_MISMATCH_SKIP';
+    }
+    $api->comm('/ppp/secret/set', [
+        '.id' => $secret[0]['.id'],
+        'profile' => $targetProfile,
+        'comment' => 'LUNAS ' . ($customer['NAMA'] ?? '') . ' - pembayaran Keuangan',
+    ]);
+    $api->comm('/ppp/secret/enable', ['numbers' => $secret[0]['.id']]);
+    $active = $api->comm('/ppp/active/getall', ['.proplist' => '.id', '?name' => $idpel]);
+    if (!empty($active[0]['.id'])) {
+        $api->comm('/ppp/active/remove', ['.id' => $active[0]['.id']]);
+    }
+    return 'REACTIVATED';
 }
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
@@ -124,7 +162,7 @@ if ($existing) {
     ]);
 }
 
-$customerStmt = mysqli_prepare($conn, 'SELECT id, IDPEL, NAMA, PAKET, PEMILIK FROM pelanggan WHERE TRIM(IDPEL)=? ORDER BY id ASC');
+$customerStmt = mysqli_prepare($conn, 'SELECT id, IDPEL, NAMA, PAKET, AREA, PEMILIK, MODE FROM pelanggan WHERE TRIM(IDPEL)=? ORDER BY id ASC');
 mysqli_stmt_bind_param($customerStmt, 's', $idpel);
 mysqli_stmt_execute($customerStmt);
 $customerResult = mysqli_stmt_get_result($customerStmt);
@@ -220,9 +258,13 @@ if (!mysqli_commit($conn)) {
     paymentSyncJson(['ok' => false, 'message' => 'Pembayaran gagal difinalisasi di Billing.'], 500);
 }
 
+$activationStatus = paymentSyncActivateIfExpired($conn, $customer);
+error_log('[payment-sync-activation] IDPEL=' . $idpel . ' status=' . $activationStatus);
+
 paymentSyncJson([
     'ok' => true,
     'duplicate' => false,
     'billing_transaction_id' => $insertId,
-    'message' => 'Pembayaran Keuangan berhasil dicatat ke Billing.'
+    'message' => 'Pembayaran Keuangan berhasil dicatat ke Billing.',
+    'activation_status' => $activationStatus
 ], 201);

@@ -40,25 +40,39 @@ if (!$statusCache) {
     exit(1);
 }
 
+$months = [1=>'Januari',2=>'Februari',3=>'Maret',4=>'April',5=>'Mei',6=>'Juni',7=>'Juli',8=>'Agustus',9=>'September',10=>'Oktober',11=>'November',12=>'Desember'];
+$periodeAktif = $months[(int)date('n')] . ' ' . date('Y');
+$nextTs = strtotime('+1 month');
+$periodeDepan = $months[(int)date('n', $nextTs)] . ' ' . date('Y', $nextTs);
+
 $sql = "SELECT t.IDPEL,t.PENGUNAAN,MAX(t.id) AS transaksi_id
         FROM transaksi t
         WHERE UPPER(TRIM(t.STATUS))='BERHASIL'
-          AND t.waktu >= DATE_SUB(NOW(), INTERVAL 3 DAY)
+          AND LOWER(TRIM(t.PENGUNAAN)) IN (LOWER(?),LOWER(?))
           AND TRIM(COALESCE(t.IDPEL,''))<>''
         GROUP BY t.IDPEL,t.PENGUNAAN
         ORDER BY transaksi_id ASC";
-$query = $conn->query($sql);
-if (!$query) {
+$stmt = $conn->prepare($sql);
+if (!$stmt) {
     paymentActivationLog('FATAL cron query: ' . $conn->error);
     exit(1);
 }
+$stmt->bind_param('ss', $periodeAktif, $periodeDepan);
+$stmt->execute();
+$query = $stmt->get_result();
 
+$checked = 0;
 while ($row = $query->fetch_assoc()) {
     $idpel = (string) $row['IDPEL'];
-    $cachedProfile = strtoupper(trim((string) ($statusCache[$idpel]['cekexpired'] ?? '')));
+    $cacheRow = $statusCache[$idpel] ?? $statusCache[strtolower($idpel)] ?? null;
+    $cachedProfile = strtoupper(trim((string) ($cacheRow['cekexpired'] ?? '')));
     if ($cachedProfile !== 'EXPIRED') {
         continue;
     }
+    if ($checked >= 100) {
+        break;
+    }
+    $checked++;
     activatePaidCustomerIfExpired(
         $conn,
         $idpel,
@@ -66,6 +80,7 @@ while ($row = $query->fetch_assoc()) {
         'retry-cron#' . (string) $row['transaksi_id']
     );
 }
+$stmt->close();
 
 flock($lock, LOCK_UN);
 fclose($lock);

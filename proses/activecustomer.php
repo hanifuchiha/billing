@@ -529,33 +529,46 @@ function getLastTransaction($idpel)
 
 
 
-            $set_result = $API->comm("/ppp/secret/set", [
-                ".id"     => $idpel,
-                "profile" => $paket,
-                "comment" => "LUNAS $nama - $nowa - $tanggalbayar ( BY ADMIN MANUAL )"
-            ]);
-          
-
-
-            $enable_result = $API->comm("/ppp/secret/enable", ["numbers" => $idpel]);
-          
-
-
-            $cariurutan2 = $API->comm("/ppp/active/getall", [
-                ".proplist" => ".id",
+            $secretAktual = $API->comm("/ppp/secret/getall", [
+                ".proplist" => ".id,profile,disabled",
                 "?name" => $idpel
             ]);
-          
 
-            if (!empty($cariurutan2) && isset($cariurutan2[0][".id"])) {
+            if (empty($secretAktual[0][".id"])) {
+                $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] MANUAL_ACTIVE_SECRET_NOT_FOUND | $idpel tidak ditemukan di MikroTik; transaksi tetap dilanjutkan";
+            } else {
+                $profilAktual = trim((string)($secretAktual[0]["profile"] ?? ''));
 
-                $remove_result = $API->comm("/ppp/active/remove", [
-                    ".id" => $cariurutan2[0][".id"]
-                ]);
-              
+                if (strcasecmp($profilAktual, 'EXPIRED') === 0) {
+                    $set_result = $API->comm("/ppp/secret/set", [
+                        ".id" => $secretAktual[0][".id"],
+                        "profile" => $paket,
+                        "comment" => "LUNAS $nama - $nowa - $tanggalbayar ( BY ADMIN MANUAL )"
+                    ]);
+
+                    $enable_result = $API->comm("/ppp/secret/enable", [
+                        "numbers" => $secretAktual[0][".id"]
+                    ]);
+
+                    $cariurutan2 = $API->comm("/ppp/active/getall", [
+                        ".proplist" => ".id",
+                        "?name" => $idpel
+                    ]);
+
+                    if (!empty($cariurutan2[0][".id"])) {
+                        $remove_result = $API->comm("/ppp/active/remove", [
+                            ".id" => $cariurutan2[0][".id"]
+                        ]);
+                    }
+
+                    $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] MANUAL_ACTIVE_REACTIVATED | $idpel dipulihkan dari EXPIRED ke $paket oleh $user";
+                } elseif (strcasecmp($profilAktual, $paket) === 0) {
+                    $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] MANUAL_ACTIVE_ALREADY_ACTIVE_SKIP | profil $idpel sudah $profilAktual; perubahan dan pemutusan sesi dilewati";
+                } else {
+                    $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] MANUAL_ACTIVE_PROFILE_MISMATCH_SKIP | profil aktual $idpel '$profilAktual', paket Billing '$paket'; tidak ditimpa otomatis";
+                }
             }
 
-            $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] $idpel diaktifkan manual oleh $user";
             file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
 
             // Mode only activate tetap lanjut ke blok notifikasi, namun tanpa update transaksi.

@@ -23,6 +23,18 @@ include '../../koneksidb.php';
 require_once '../../routeros_api.class.php';
 require_once __DIR__ . '/tagihan_status_lib.php';
 
+// Cegah dua proses isolir/pemulihan berjalan bersamaan (cron dan manual).
+$cronLockPath = sys_get_temp_dir() . '/' . basename(__FILE__, '.php') . '.lock';
+$cronLockHandle = @fopen($cronLockPath, 'c');
+if (!$cronLockHandle || !flock($cronLockHandle, LOCK_EX | LOCK_NB)) {
+    echo "SKIP: proses cek tagihan sebelumnya masih berjalan.\n";
+    exit(0);
+}
+register_shutdown_function(static function () use ($cronLockHandle): void {
+    flock($cronLockHandle, LOCK_UN);
+    fclose($cronLockHandle);
+});
+
 // Rapikan output: CLI tetap plain text, browser tampil preformatted.
 $isCliOutput = (PHP_SAPI === 'cli');
 if (!$isCliOutput) {
@@ -907,6 +919,20 @@ function getFirstDueDateFixedByUsagePeriod(string $penggunaan, int $fixedDueDay)
     return buildMonthlyDateLocal($dueYear, $dueMonth, $fixedDueDay);
 }
 
+/**
+ * Pengaman isolir: transaksi BERHASIL dengan label penggunaan periode aktif
+ * atau lebih depan harus tetap dianggap lunas, termasuk kompensasi_free Rp0.
+ */
+function isPaidUsageAtOrAfterPeriodLocal(string $penggunaan, string $periodeAktif): bool
+{
+    $paid = parseIndoMonthYearLocal($penggunaan);
+    $active = parseIndoMonthYearLocal($periodeAktif);
+    if (!$paid || !$active) {
+        return false;
+    }
+    return (($paid['year'] * 12) + $paid['month']) >= (($active['year'] * 12) + $active['month']);
+}
+
 function buildMonthlyDateLocal(int $year, int $month, int $day): ?string
 {
     if ($year < 1970 || $month < 1 || $month > 12) return null;
@@ -1206,16 +1232,26 @@ while ($server = mysqli_fetch_array($query_server)) {
         $tanggalBayarPeriodeAktif = $layakDipulihkan ? (string)$waktu_terakhir_bayar : '';
         $penggunaanPeriodeAktif = $penggunaan_terakhir_berhasil !== '' ? $penggunaan_terakhir_berhasil : $periodeAktifUntukPelangganIni;
 
-        // Lewati jika paket FREE atau FASUM non-promo (harga <= 0)
-        if (stripos($PAKET, 'FREE') !== false) {
-            continue;
-        }
-
         $paketKeyCron = strtolower(trim((string)$PAKET));
         $brandKeyCron = strtolower(trim((string)$BRAND));
         $areaKeyCron = strtolower(trim((string)$AREA));
 
-        if (isFasumNonPromoCron($paketKeyCron, $fasumPaketList, $promoPaketIds)) {
+        // FREE/FASUM tidak pernah ditagih. Jika pernah telanjur EXPIRED oleh
+        // proses lama/manual, pulihkan secara idempotent ke profil paketnya.
+        $isFreeOrFasumCron = stripos($PAKET, 'FREE') !== false
+            || isFasumNonPromoCron($paketKeyCron, $fasumPaketList, $promoPaketIds);
+        if ($isFreeOrFasumCron) {
+            $freeStatus = getMikrotikStatus($mikrotikCache, $mikConnected, $IDPEL);
+            if (strtoupper(trim((string)$freeStatus['profile'])) === 'EXPIRED') {
+                $freeRestore = restorePaidCustomerProfile(
+                    $mikApi, $mikConnected, $IDPEL, $NAMA, $NOWA,
+                    $targetProfilePaket, $periode_saat_ini, $ODP, $mikrotikCache
+                );
+                echo "  [FREE/FASUM] $IDPEL | $NAMA | {$freeRestore['message']}\n";
+                if ($freeRestore['success']) {
+                    $statistik['dipulihkan_profile_total']++;
+                }
+            }
             continue;
         }
 
@@ -1283,7 +1319,12 @@ while ($server = mysqli_fetch_array($query_server)) {
                 $firstDueDate    = $rollingOverride ?? date('Y-m-d', strtotime('+30 days', strtotime($referenceDate)));
                 $jatuh_tempo_str = $firstDueDate;
 
-                if (strtotime($firstDueDate) > strtotime($hari_ini)) {
+                $batasIsolir = $firstDueDate;
+                if ($TIPE_BAYAR === 'prabayar' && $prabayar_grace_period > 0) {
+                    $batasIsolir = date('Y-m-d', strtotime("+{$prabayar_grace_period} days", strtotime($firstDueDate)));
+                }
+
+                if (strtotime($batasIsolir) > strtotime($hari_ini)) {
                     // Jatuh tempo belum lewat
                     $statistik['sudah_bayar']++;
                     if ($layakDipulihkan) {
@@ -1426,7 +1467,12 @@ while ($server = mysqli_fetch_array($query_server)) {
                 }
                 $jatuh_tempo_str = $firstDueDate ?? '';
 
-                if (empty($firstDueDate) || strtotime($firstDueDate) > strtotime($hari_ini)) {
+                $batasIsolir = $firstDueDate;
+                if ($TIPE_BAYAR === 'prabayar' && !empty($firstDueDate) && $prabayar_grace_period > 0) {
+                    $batasIsolir = date('Y-m-d', strtotime("+{$prabayar_grace_period} days", strtotime($firstDueDate)));
+                }
+
+                if (empty($firstDueDate) || strtotime($batasIsolir) > strtotime($hari_ini)) {
                     // Jatuh tempo belum lewat
                     $statistik['sudah_bayar']++;
                     if ($layakDipulihkan) {
@@ -1446,6 +1492,14 @@ while ($server = mysqli_fetch_array($query_server)) {
                         }
                     }
                 }
+            }
+
+            if ($belum_bayar && isPaidUsageAtOrAfterPeriodLocal($penggunaan_terakhir_berhasil, $periodeAktifFixedDueDate)) {
+                $belum_bayar = false;
+                $statistik['sudah_bayar']++;
+                $layakPulihkanProfile = true;
+                $alasanPemulihan = "Transaksi BERHASIL untuk $penggunaan_terakhir_berhasil ditemukan (pengaman periode aktif)";
+                echo "  [PENGAMAN PERIODE] $IDPEL tidak diisolir: transaksi $penggunaan_terakhir_berhasil sudah BERHASIL\n";
             }
 
             // Simpan ke bucket yang sesuai
