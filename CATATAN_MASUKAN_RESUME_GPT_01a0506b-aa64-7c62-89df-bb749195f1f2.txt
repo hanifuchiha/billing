@@ -825,3 +825,49 @@ NOTIFIKASI ISOLIR DAN AUDIT PELANGGAN EXPIRED - 12 SEPTEMBER 2026
     Backfill ini hanya untuk pelanggan yang sudah terlanjur EXPIRED sebelum
     fitur notifikasi dipasang. Untuk kejadian berikutnya, notifikasi mengikuti
     cron cek tagihan normal setiap 20 menit.
+
+REKONSILIASI TRIPAY PAID YANG TIDAK MASUK BILLING - 12 SEPTEMBER 2026
+====================================================================
+1. Ditemukan kasus pembayaran berstatus PAID di Tripay tetapi referensinya
+   tidak tercatat di Billing karena callback lama tidak menyelesaikan proses.
+   Salah satu contoh adalah Bagas Nurwahid dengan referensi
+   T4693436954801G7NN7.
+2. Audit pembayaran Tripay tanggal 1-12 September menemukan 68 pembayaran
+   yang pada saat pemeriksaan awal belum mempunyai referensi Tripay asli di
+   Billing. Sebanyak 49 pembayaran sama sekali belum mempunyai transaksi
+   BERHASIL September dan telah direkonsiliasi dari data Tripay.
+3. Rekonsiliasi menyimpan nilai pokok layanan sebagai HARGA/harga_gross,
+   sedangkan fee_customer dan kanal pembayaran disimpan terpisah. Invoice
+   PENAGIHAN pada IDPEL dan periode yang sama dihapus setelah transaksi
+   berhasil dicatat. Seluruh 49 transaksi berhasil disinkronkan ke Keuangan.
+4. Ditemukan pula transaksi pengganti manual pada periode yang sama. Sembilan
+   baris yang telah diverifikasi dikonversi di tempat menjadi Tripay asli
+   tanpa membuat transaksi ganda. Pelanggan yang termasuk di antaranya adalah
+   Achmad Sutisna, Suudi, Bagas Nurwahid, Nila Cahyawati, Mohamad Ardi, Tuti
+   Rachmawati, Chintia Dewi Paramis, Yuni Eka, dan Virgiawan Muhariyanto.
+5. Pemeriksaan akhir atas 68 kasus menghasilkan 58 transaksi sudah memakai
+   referensi Tripay asli, tidak ada transaksi kosong, dan tidak ada lagi
+   transaksi berlabel gagal payment gateway/manual active. Sepuluh kasus
+   tersisa berlabel transfer serta mempunyai bukti transfer terpisah; kasus
+   tersebut tidak ditimpa otomatis karena berpotensi merupakan pembayaran
+   ganda dan harus ditinjau atau direfund secara manual.
+6. Cron getdata/cron_reconcile_tripay_paid.php dijalankan setiap lima menit
+   dengan lock. Cron memeriksa ulang transaksi PAID Tripay tujuh hari terakhir
+   dan bersifat idempotent berdasarkan nomor referensi.
+7. Jika referensi belum ada dan tidak ada pembayaran periode yang sama, cron
+   membuat transaksi Tripay dan menghapus PENAGIHAN periode tersebut. Jika
+   sudah ada manual active/gagal payment gateway dengan IDPEL, periode, dan
+   nominal pokok yang sama, cron mengonversi baris itu menjadi Tripay asli.
+8. Transaksi cash/transfer tidak pernah ditimpa otomatis. Data tersebut masuk
+   ke review_period_paid pada log cron agar dapat diperiksa tanpa merusak bukti
+   pembayaran sah. Hasil dry-run setelah pemasangan: 0 transaksi kosong, 0
+   manual yang perlu dikonversi, 10 transfer perlu review, dan 0 error.
+9. Cadangan sebelum konversi massal tersimpan di
+   /root/backup_before_manual_to_tripay_20260912_061117.json. Pemeriksaan sintaks
+   dan dry-run pada PHP produksi berhasil.
+10. Audit silang log WhatsApp menemukan 12 pelanggan sempat menerima
+    service_isolated_unpaid sebelum pembayaran Tripay yang hilang selesai
+    direkonsiliasi. Setelah rekonsiliasi, transaksi September mereka sudah
+    BERHASIL dan profil tidak lagi EXPIRED. Backfill isolir lama dihentikan;
+    pesan koreksi kepada pelanggan hanya boleh dikirim setelah persetujuan
+    operasional agar tidak melakukan komunikasi eksternal tanpa verifikasi.
