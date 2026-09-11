@@ -22,6 +22,9 @@
 include '../../koneksidb.php';
 require_once '../../routeros_api.class.php';
 require_once __DIR__ . '/tagihan_status_lib.php';
+require_once __DIR__ . '/../notif_template_helper.php';
+require_once __DIR__ . '/../bot_selector_helper.php';
+require_once __DIR__ . '/whatsapp_notification_log_helper.php';
 
 // Cegah dua proses isolir/pemulihan berjalan bersamaan (cron dan manual).
 $cronLockPath = sys_get_temp_dir() . '/' . basename(__FILE__, '.php') . '.lock';
@@ -174,6 +177,117 @@ if (file_exists($history_file)) {
 }
 if (!is_array($history)) {
     $history = [];
+}
+
+waNotifEnsureSchema($conn);
+
+/**
+ * Kirim satu kali notifikasi setelah profile benar-benar berhasil menjadi
+ * EXPIRED. Dedupe memakai IDPEL + periode agar cron 20 menit tidak mengirim
+ * pesan yang sama berulang kali.
+ */
+function kirimNotifIsolirBelumBayar(
+    mysqli $conn,
+    string $pemilik,
+    string $idpel,
+    string $nama,
+    string $nowa,
+    string $paket,
+    string $email,
+    string $alamat,
+    string $brand,
+    string $periode,
+    string $urlPortal,
+    array &$history
+): array {
+    $nowa = trim($nowa);
+    if ($nowa === '') {
+        return ['success' => false, 'message' => 'Nomor WhatsApp pelanggan kosong'];
+    }
+
+    $template = notifTemplateExtractSection(notifTemplateGetContent($pemilik), 'EXPIRED');
+    if (trim($template) === '') {
+        $template = notifTemplateDefaults()['EXPIRED'];
+    }
+    $message = strtr($template, [
+        '$IDPEL' => $idpel,
+        '$NAMA' => $nama,
+        '$PAKET' => $paket,
+        '$NOWA' => $nowa,
+        '$EMAIL' => $email,
+        '$ALAMAT' => $alamat,
+        '$BRAND' => $brand,
+        '$URL' => rtrim($urlPortal, '/'),
+    ]);
+
+    $selectedBot = 'RANDOM';
+    $reminderFile = __DIR__ . '/../data/reminder-' . $pemilik . '.json';
+    if (is_file($reminderFile)) {
+        $reminderData = json_decode((string)file_get_contents($reminderFile), true);
+        if (is_array($reminderData)) {
+            foreach ($reminderData as $item) {
+                if (is_array($item) && !empty($item['botname'])) {
+                    $selectedBot = (string)$item['botname'];
+                    break;
+                }
+            }
+        }
+    }
+
+    $bot = selectBotForNotificationWithField($conn, $pemilik, $selectedBot, 'penerima');
+    if (empty($bot['success'])) {
+        return ['success' => false, 'message' => 'Bot WhatsApp tidak tersedia: ' . ($bot['message'] ?? '-')];
+    }
+
+    try {
+        $notif = waNotifQueueAndClaim($conn, [
+            'pemilik' => $pemilik,
+            'idpel' => $idpel,
+            'nomor_wa' => $nowa,
+            'periode' => $periode,
+            'jenis_notifikasi' => 'service_isolated_unpaid',
+            'message' => $message,
+            'bot_name' => (string)$bot['namebot'],
+        ]);
+    } catch (Throwable $e) {
+        return ['success' => false, 'message' => 'Gagal mencatat antrean WA: ' . $e->getMessage()];
+    }
+    if (empty($notif['claimed'])) {
+        return ['success' => true, 'message' => 'Notifikasi sudah pernah dikirim/masih diproses'];
+    }
+
+    $phone = preg_replace('/[^0-9]/', '', $nowa) . '@s.whatsapp.net';
+    $deviceId = trim((string)($bot['sender'] ?? ''));
+    $endpoint = rtrim((string)$bot['addressbot'], '/') . '/send/message?session=' . urlencode((string)$bot['namebot']);
+    if ($deviceId !== '') {
+        $endpoint .= '&device_id=' . urlencode($deviceId);
+    }
+    $headers = ['Content-Type: application/json'];
+    if ($deviceId !== '') {
+        $headers[] = 'X-Device-Id: ' . $deviceId;
+    }
+
+    $ch = curl_init($endpoint);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(['phone' => $phone, 'message' => $message]));
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_USERPWD, (string)$bot['namebot'] . ':' . (string)$bot['password']);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+    $response = curl_exec($ch);
+    $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    $curlError = curl_error($ch);
+    curl_close($ch);
+
+    $success = $curlError === '' && $httpCode >= 200 && $httpCode < 300;
+    waNotifFinish($conn, (int)$notif['id'], $success, $httpCode, $curlError !== '' ? $curlError : (string)$response);
+    $history[] = '[ system billing - ' . date('Y-m-d H:i:s') . ' ] '
+        . ($success ? 'BERHASIL' : 'GAGAL') . " kirim WA ISOLIR BELUM BAYAR ke $nowa"
+        . " | IDPEL: $idpel | Periode: $periode | Bot: " . (string)$bot['namebot']
+        . " | HTTP: $httpCode" . ($curlError !== '' ? " | cURL: $curlError" : '');
+
+    return ['success' => $success, 'message' => $success ? 'Notifikasi WhatsApp isolir terkirim' : "Gagal kirim WhatsApp (HTTP $httpCode, $curlError)"];
 }
 
 // -----------------------------------------------------------------------
@@ -1376,6 +1490,8 @@ while ($server = mysqli_fetch_array($query_server)) {
                         if ($mikrotik_status_online === 'ONLINE') {
                             $mikrotik_status_online = 'OFFLINE (diputus)';
                         }
+                        $notifIsolir = kirimNotifIsolirBelumBayar($conn, $pemilik, $IDPEL, $NAMA, $NOWA, $PAKET, $EMAIL, $ALAMAT, $BRAND, $periode_saat_ini, $URL, $history);
+                        echo "    -> WA isolir: {$notifIsolir['message']}\n";
                     }
                 } elseif ($mikrotik_status_online === 'ONLINE' && strtoupper(trim($mikrotik_profile_saat_ini)) === 'EXPIRED') {
                     $mikrotik_aksi = 'Tidak ada aksi: sudah ONLINE dengan profile EXPIRED';
@@ -1532,6 +1648,8 @@ while ($server = mysqli_fetch_array($query_server)) {
                         if ($mikrotik_status_online === 'ONLINE') {
                             $mikrotik_status_online = 'OFFLINE (diputus)';
                         }
+                        $notifIsolir = kirimNotifIsolirBelumBayar($conn, $pemilik, $IDPEL, $NAMA, $NOWA, $PAKET, $EMAIL, $ALAMAT, $BRAND, $periode_saat_ini, $URL, $history);
+                        echo "    -> WA isolir: {$notifIsolir['message']}\n";
                     }
                 } elseif ($mikrotik_status_online === 'ONLINE' && strtoupper(trim($mikrotik_profile_saat_ini)) === 'EXPIRED') {
                     $mikrotik_aksi = 'Tidak ada aksi: sudah ONLINE dengan profile EXPIRED';
@@ -1726,6 +1844,8 @@ while ($server = mysqli_fetch_array($query_server)) {
                         if ($mikrotik_status_online === 'ONLINE') {
                             $mikrotik_status_online = 'OFFLINE (diputus)';
                         }
+                        $notifIsolir = kirimNotifIsolirBelumBayar($conn, $pemilik, $IDPEL, $NAMA, $NOWA, $PAKET, $EMAIL, $ALAMAT, $BRAND, $periode_saat_ini, $URL, $history);
+                        echo "    -> WA isolir: {$notifIsolir['message']}\n";
                     }
                 } elseif ($mikrotik_status_online === 'ONLINE' && strtoupper(trim($mikrotik_profile_saat_ini)) === 'EXPIRED') {
                     $mikrotik_aksi = 'Tidak ada aksi: sudah ONLINE dengan profile EXPIRED';
@@ -1842,6 +1962,8 @@ while ($server = mysqli_fetch_array($query_server)) {
                         if ($mikrotik_status_online === 'ONLINE') {
                             $mikrotik_status_online = 'OFFLINE (diputus)';
                         }
+                        $notifIsolir = kirimNotifIsolirBelumBayar($conn, $pemilik, $IDPEL, $NAMA, $NOWA, $PAKET, $EMAIL, $ALAMAT, $BRAND, $periode_saat_ini, $URL, $history);
+                        echo "    -> WA isolir: {$notifIsolir['message']}\n";
                     }
                 } elseif ($mikrotik_status_online === 'ONLINE' && strtoupper(trim($mikrotik_profile_saat_ini)) === 'EXPIRED') {
                     $mikrotik_aksi = 'Tidak ada aksi: sudah ONLINE dengan profile EXPIRED';
