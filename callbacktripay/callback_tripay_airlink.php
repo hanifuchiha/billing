@@ -67,6 +67,18 @@ $parts = explode('_', $nameOnly);
 
 $ownerbilling = end($parts);
 
+// Inisialisasi log sebelum konfigurasi bot dibaca. Sebelumnya variabel ini
+// baru dibuat setelah dipakai, sehingga setiap callback menghasilkan warning
+// dan langkah awal callback tidak pernah tercatat.
+$history_file = "../notifbot/data/history-$ownerbilling.json";
+$history = [];
+if (file_exists($history_file)) {
+    $history = json_decode((string)file_get_contents($history_file), true);
+}
+if (!is_array($history)) {
+    $history = [];
+}
+
 ///////////////////////////DATA USERNAME/////////////////////////////////////////////////////////////
 
 
@@ -184,17 +196,10 @@ if (strtoupper($botname) == 'RANDOM') {
 
 
 
-// Cek apakah sudah pernah dikirim
-$history_file = "../notifbot/data/history-$ownerbilling.json";
-$history = [];
-
-if (file_exists($history_file)) {
-    $history = json_decode(file_get_contents($history_file), true);
-}
-
-// Pastikan format history adalah array
-if (!is_array($history)) {
-    $history = [];
+// [PATCH 2026-09-08] Batasi ukuran log -- file ini di-rewrite UTUH tiap langkah
+// callback. Sebelumnya bisa membengkak sampai ratusan KB -> lambat + rawan race.
+if (count($history) > 1500) {
+    $history = array_slice($history, -1500);
 }
 
 if (!function_exists('callbackLogStep')) {
@@ -206,7 +211,10 @@ if (!function_exists('callbackLogStep')) {
             $line .= ' | ' . $extra;
         }
         $history[] = $line;
-        file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
+        if (count($history) > 1500) {
+            $history = array_slice($history, -1500);
+        }
+        file_put_contents($history_file, json_encode($history, JSON_UNESCAPED_UNICODE), LOCK_EX);
     }
 }
 
@@ -340,6 +348,13 @@ $cekstatus = $arr["status"] ?? '';
 $amount = (float)($arr["total_amount"] ?? 0);
 $payment_method = $arr["payment_method"] ?? '';
 $payment_method_code = $arr["payment_method_code"] ?? '';
+// FIX: kolom fee_merchant/fee_customer/payment_method/harga_gross sudah ada
+// di tabel transaksi (lihat DOKUMENTASI_UPDATE_FEE_PAYMENT.md) tapi 3 INSERT
+// di bawah tidak pernah benar2 diisi dgn kolom2 ini -- Detail Transaksi jadi
+// selalu tampil "N/A"/"Rp 0" walau Tripay sebenarnya mengirim datanya.
+$harga_gross = (float)($arr["amount_received"] ?? 0);
+$fee_merchant = (float)($arr["fee_merchant"] ?? 0);
+$fee_customer = (float)($arr["fee_customer"] ?? 0);
 $customer_name = $arr["customer_name"] ?? '';
 $customer_phone = $arr["customer_phone"] ?? '';
 $payment_link = $arr['checkout_url'] ?? '#';
@@ -383,10 +398,78 @@ $query10 = mysqli_query($conn, $sql10);
 
 // Check if transaksi query returns results
 if (mysqli_num_rows($query10) == 0) {
-    // Transaksi tidak ditemukan
-    callbackLogStep($history, $history_file, 'ERROR_TRANSAKSI_NOT_FOUND', "No transaksi record found for reference: $invoiceref");
-    http_response_code(200);
-    exit;
+    // Callback PAID adalah bukti bertanda tangan dari Tripay. Jika baris pending
+    // terhapus (misalnya tombol batal/cleanup berjalan setelah kode dibuat),
+    // pulihkan baris tersebut dari merchant_ref agar pembayaran tidak hilang.
+    if ($cekstatus === 'PAID' && $invoiceref !== '' && $merchant_ref !== '') {
+        $recoveredIdpel = preg_replace('/-[0-9]{9,}$/', '', (string)$merchant_ref);
+        $stmtCustomerRecovery = $conn->prepare(
+            "SELECT `IDPEL`,`NAMA`,`PAKET`,`HARGA`,`PEMILIK` FROM `pelanggan` WHERE `IDPEL`=? LIMIT 1"
+        );
+        $stmtCustomerRecovery->bind_param('s', $recoveredIdpel);
+        $stmtCustomerRecovery->execute();
+        $recoveredCustomer = $stmtCustomerRecovery->get_result()->fetch_assoc();
+        $stmtCustomerRecovery->close();
+
+        if ($recoveredCustomer) {
+            $paidTimestamp = (int)($arr['paid_at'] ?? 0);
+            if ($paidTimestamp <= 0) {
+                $paidTimestamp = time();
+            }
+            $monthNames = [
+                1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+                'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
+            ];
+            $recoveredPeriod = $monthNames[(int)date('n', $paidTimestamp)] . ' ' . date('Y', $paidTimestamp);
+            $recoveredBaseAmount = (float)($arr['amount_received'] ?? 0);
+            if ($recoveredBaseAmount <= 0) {
+                $recoveredBaseAmount = max(0, $amount - $fee_customer);
+            }
+            if ($recoveredBaseAmount <= 0) {
+                $recoveredBaseAmount = (float)($recoveredCustomer['HARGA'] ?? 0);
+            }
+            $recoveryCheck = 'AUTO RECOVERY PENDING - SIGNED TRIPAY PAID';
+
+            $stmtRecoverPending = $conn->prepare(
+                "INSERT INTO `transaksi` "
+                . "(`TANGGALBAYAR`,`PENGUNAAN`,`IDPEL`,`NAMA`,`PAKET`,`HARGA`,`STATUS`,`BUKTI`,`PEMILIK`,`CEK`,`METODE_BAYAR`) "
+                . "SELECT ?,?,?,?,?,?,'PERMINTAAN KODE',?,?,?,'TRIPAY' FROM DUAL "
+                . "WHERE NOT EXISTS (SELECT 1 FROM `transaksi` WHERE `BUKTI`=? LIMIT 1)"
+            );
+            $stmtRecoverPending->bind_param(
+                'sssssdssss',
+                $tanggalbayar,
+                $recoveredPeriod,
+                $recoveredCustomer['IDPEL'],
+                $recoveredCustomer['NAMA'],
+                $recoveredCustomer['PAKET'],
+                $recoveredBaseAmount,
+                $invoiceref,
+                $recoveredCustomer['PEMILIK'],
+                $recoveryCheck,
+                $invoiceref
+            );
+            $stmtRecoverPending->execute();
+            $stmtRecoverPending->close();
+
+            $stmtReloadPending = $conn->prepare("SELECT * FROM `transaksi` WHERE `BUKTI`=? LIMIT 1");
+            $stmtReloadPending->bind_param('s', $invoiceref);
+            $stmtReloadPending->execute();
+            $query10 = $stmtReloadPending->get_result();
+            callbackLogStep(
+                $history,
+                $history_file,
+                'PENDING_RECOVERED',
+                "Signed PAID callback reconstructed missing reference $invoiceref for IDPEL $recoveredIdpel"
+            );
+        }
+    }
+
+    if (!$query10 || mysqli_num_rows($query10) === 0) {
+        callbackLogStep($history, $history_file, 'ERROR_TRANSAKSI_NOT_FOUND', "No transaksi record found for reference: $invoiceref");
+        http_response_code(200);
+        exit;
+    }
 }
 
 while ($data10 = mysqli_fetch_array($query10)) {
@@ -797,6 +880,8 @@ if ($cekstatus == "EXPIRED") {
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
         curl_setopt($ch, CURLOPT_USERPWD, "$botname:$botpass");
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 15);
         curl_exec($ch);
         curl_close($ch);
     }
@@ -841,6 +926,8 @@ else {
                 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
                 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
                 curl_setopt($ch, CURLOPT_USERPWD, "$botname:$botpass");
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 15);
                 curl_exec($ch);
                 curl_close($ch);
             }
@@ -857,6 +944,80 @@ else {
 }
 
 
+// ==========================================================================
+// [PATCH 2026-09-08] CATAT PEMBAYARAN LEBIH DULU (record-first)
+// --------------------------------------------------------------------------
+// Sebelumnya status BERHASIL baru ditulis SETELAH cek server + kirim WA +
+// PHPMailer + RouterOS/RADIUS. Kalau worker mati di tengah proses berat itu
+// (gateway WA lambat, router down, worker di-kill FPM/OOM) -> pembayaran
+// pelanggan HILANG dari billing walau Tripay sudah PAID, dan Tripay tidak
+// retry. Blok ini menulis status BERHASIL lebih dulu, idempotent, tanpa
+// menyentuh jaringan sama sekali. Blok aktivasi + notifikasi di bawah tetap
+// jalan seperti biasa (pola hapus-lalu-insert -> aman dijalankan lagi).
+// ==========================================================================
+if ($cekstatus === 'PAID'
+    && $invoiceref !== ''
+    && $USERNAMETRANASAKSI !== ''
+    && !empty($periode)
+    && !in_array($PAKET, ['TOPUP', 'TOPUP_MITRA'], true)
+    && in_array($LAYANAN, ['PPPOE', 'HOTSPOT', 'VPN'], true)) {
+
+    $ref_esc     = $conn->real_escape_string($invoiceref);
+    $idpel_esc   = $conn->real_escape_string($USERNAMETRANASAKSI);
+    $periode_esc = $conn->real_escape_string($periode);
+    $pemilik_awal = $conn->real_escape_string($PEMILIK !== '' ? $PEMILIK : $BRANDPELANGGAN);
+
+    $qCekBerhasil = mysqli_query($conn, "SELECT `id` FROM `transaksi` WHERE `BUKTI`='$ref_esc' AND `STATUS`='BERHASIL' LIMIT 1");
+    $sudahBerhasil = ($qCekBerhasil && mysqli_num_rows($qCekBerhasil) > 0);
+
+    if (!$sudahBerhasil) {
+        // Ubah baris pending invoice ini jadi BERHASIL di tempat (pertahankan id-nya)
+        $conn->query(
+            "UPDATE `transaksi` SET "
+            . "`STATUS`='BERHASIL', "
+            . "`TANGGALBAYAR`='" . $conn->real_escape_string($tanggalbayar) . "', "
+            . "`PENGUNAAN`='$periode_esc', "
+            . "`CEK`='', "
+            . "`fee_merchant`='" . $conn->real_escape_string($fee_merchant) . "', "
+            . "`fee_customer`='" . $conn->real_escape_string($fee_customer) . "', "
+            . "`payment_method`='" . $conn->real_escape_string($payment_method) . "', "
+            . "`harga_gross`='" . $conn->real_escape_string($harga_gross) . "' "
+            . "WHERE `BUKTI`='$ref_esc' AND UPPER(`STATUS`) IN ('PERMINTAAN KODE','PENAGIHAN','UNPAID','PENDING','GAGAL')"
+        );
+
+        $qAda = mysqli_query($conn, "SELECT `id` FROM `transaksi` WHERE `BUKTI`='$ref_esc' AND `STATUS`='BERHASIL' LIMIT 1");
+        if (!$qAda || mysqli_num_rows($qAda) === 0) {
+            $conn->query(
+                "INSERT INTO `transaksi` "
+                . "(`TANGGALBAYAR`,`PENGUNAAN`,`IDPEL`,`NAMA`,`PAKET`,`HARGA`,`STATUS`,`BUKTI`,`PEMILIK`,`CEK`,`fee_merchant`,`fee_customer`,`payment_method`,`harga_gross`) VALUES ("
+                . "'" . $conn->real_escape_string($tanggalbayar) . "',"
+                . "'$periode_esc',"
+                . "'$idpel_esc',"
+                . "'" . $conn->real_escape_string($NAMAPELANGGAN) . "',"
+                . "'" . $conn->real_escape_string($PAKETPELANGGAN) . "',"
+                . "'" . $conn->real_escape_string($HARGAPELANGGAN) . "',"
+                . "'BERHASIL',"
+                . "'$ref_esc',"
+                . "'$pemilik_awal',"
+                . "'',"
+                . "'" . $conn->real_escape_string($fee_merchant) . "',"
+                . "'" . $conn->real_escape_string($fee_customer) . "',"
+                . "'" . $conn->real_escape_string($payment_method) . "',"
+                . "'" . $conn->real_escape_string($harga_gross) . "')"
+            );
+        }
+
+        // Bersihkan sisa baris pending utk invoice / periode yang sama
+        $conn->query("DELETE FROM `transaksi` WHERE `BUKTI`='$ref_esc' AND UPPER(`STATUS`)='PERMINTAAN KODE'");
+        $conn->query("DELETE FROM `transaksi` WHERE `IDPEL`='$idpel_esc' AND `PENGUNAAN`='$periode_esc' AND UPPER(`STATUS`)='PENAGIHAN'");
+
+        callbackLogStep($history, $history_file, 'RECORD_FIRST_OK', "Pembayaran dicatat lebih dulu (pra-aktivasi) | Ref: $invoiceref | IDPEL: $USERNAMETRANASAKSI | Periode: $periode | Pemilik: " . ($PEMILIK !== '' ? $PEMILIK : $BRANDPELANGGAN));
+    } else {
+        callbackLogStep($history, $history_file, 'RECORD_FIRST_SKIP', "Sudah ada baris BERHASIL utk Ref: $invoiceref -- skip pencatatan awal");
+    }
+}
+
+
 // Skip server/area check if PAKET is TOPUP or TOPUP_MITRA
 if (!in_array($PAKET, ["TOPUP", "TOPUP_MITRA"])) {
     /// => CEK SERVER TERSEDIA UNTUK AREA PELANGGAN
@@ -868,9 +1029,12 @@ if (!in_array($PAKET, ["TOPUP", "TOPUP_MITRA"])) {
         $history[] = "[ callback tripay - " . date('Y-m-d H:i:s') . " ] ERROR: Server tidak ditemukan untuk area '$AREAPELANGGAN' - transaksi $invoiceref";
         file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
 
-        // Update status transaksi menjadi GAGAL
-        $sql_error = "UPDATE `transaksi` SET `STATUS`='GAGAL', `CEK`='SERVER TIDAK DITEMUKAN' WHERE `BUKTI`='$invoiceref'";
+        // [PATCH 2026-09-08] JANGAN set GAGAL -- pembayaran sudah dicatat BERHASIL
+        // di blok record-first di atas. Cukup tandai perlu aktivasi manual supaya
+        // pembayaran pelanggan tidak hilang hanya gara-gara server/area belum diset.
+        $sql_error = "UPDATE `transaksi` SET `CEK`='PERLU AKTIVASI MANUAL - SERVER/AREA TIDAK DITEMUKAN' WHERE `BUKTI`='" . $conn->real_escape_string($invoiceref) . "' AND `STATUS`='BERHASIL'";
         $conn->query($sql_error);
+        callbackLogStep($history, $history_file, 'SERVER_AREA_NOT_FOUND', "Area '$AREAPELANGGAN' brand '$BRANDPELANGGAN' tidak ada di tabel server. Pembayaran $invoiceref tetap TERCATAT, aktivasi otomatis dilewati.");
 
         exit;
     }
@@ -933,6 +1097,8 @@ if ($LAYANAN == "PPPOE") {
 
                 // Tambahkan Basic Auth
                 curl_setopt($ch, CURLOPT_USERPWD, "$botname:$botpass");
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
                 // Eksekusi dan tangani respons
                 $response = curl_exec($ch);
@@ -1007,23 +1173,44 @@ if ($LAYANAN == "PPPOE") {
             $sql1 = "UPDATE `pelanggan` SET `IDPEL`='$USERNAMETRANASAKSI',`NAMA`='$NAMAPELANGGAN',`PAKET`='$PAKETPELANGGAN',`NOWA`='$WHATSAPPELANGGAN',`EMAIL`='$EMAILPELANGGAN',`MODE`='$MODEPELANGGAN',`ODP`='$ODPPELANGGAN' WHERE `id`='$ID'";
             if ($conn->query($sql1) === TRUE) {
 
-                // Guard callback: jangan pernah hapus transaksi BERHASIL yang sudah ada.
-                // INSERT ... SELECT membuat callback Tripay idempotent untuk ref/periode yang sama.
-                $sql11 = "INSERT INTO `transaksi` (`TANGGALBAYAR`,`PENGUNAAN`,`IDPEL`,`NAMA`,`PAKET`,`HARGA`,`STATUS`,`BUKTI`,`PEMILIK`,`CEK`)
-                          SELECT '$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$user100',''
-                          WHERE NOT EXISTS (
-                              SELECT 1 FROM `transaksi`
-                              WHERE `IDPEL`='$USERNAMETRANASAKSI'
-                                AND `PENGUNAAN`='$periode'
-                                AND `STATUS`='BERHASIL'
-                                AND `BUKTI`='$invoiceref'
-                          )";
-                if ($conn->query($sql11) === TRUE) {
+                // [PATCH 2026-09-09] JANGAN hapus-lalu-insert baris BERHASIL tanpa syarat.
+                // Blok record-first di atas SUDAH menulis baris BERHASIL utk BUKTI ini.
+                // Pola lama: SELECT BERHASIL utk IDPEL+periode -> DELETE -> INSERT baru.
+                // Kalau INSERT gagal / worker mati (beban tinggi, RouterOS :port custom,
+                // MySQL gone away), baris BERHASIL yg baru dihapus TIDAK ter-insert lagi
+                // -> pembayaran pelanggan HILANG walau Tripay sudah PAID & callback
+                // balas {"success":true}. Sekarang: kalau baris BERHASIL utk invoice ini
+                // sudah ada, cukup normalkan field-nya (idempotent, tanpa DELETE);
+                // INSERT hanya kalau memang belum ada sama sekali.
+                $ref_esc2 = $conn->real_escape_string($invoiceref);
+                $qBerhasilRef = mysqli_query($conn, "SELECT `id` FROM `transaksi` WHERE `BUKTI`='$ref_esc2' AND `STATUS`='BERHASIL' LIMIT 1");
+                $adaBerhasilRef = ($qBerhasilRef && mysqli_num_rows($qBerhasilRef) > 0);
 
-                    $sql12 = "DELETE FROM `transaksi`
-                              WHERE `IDPEL`='$USERNAMETRANASAKSI'
-                                AND `PENGUNAAN`='$periode'
-                                AND `STATUS`='PERMINTAAN KODE'";
+                if ($adaBerhasilRef) {
+                    $conn->query(
+                        "UPDATE `transaksi` SET "
+                        . "`TANGGALBAYAR`='" . $conn->real_escape_string($tanggalbayar) . "', "
+                        . "`PENGUNAAN`='" . $conn->real_escape_string($periode) . "', "
+                        . "`NAMA`='" . $conn->real_escape_string($NAMAPELANGGAN) . "', "
+                        . "`PAKET`='" . $conn->real_escape_string($PAKETPELANGGAN) . "', "
+                        . "`HARGA`='" . $conn->real_escape_string($HARGAPELANGGAN) . "', "
+                        . "`PEMILIK`='" . $conn->real_escape_string($user100) . "', "
+                        . "`CEK`='', "
+                        . "`fee_merchant`='" . $conn->real_escape_string($fee_merchant) . "', "
+                        . "`fee_customer`='" . $conn->real_escape_string($fee_customer) . "', "
+                        . "`payment_method`='" . $conn->real_escape_string($payment_method) . "', "
+                        . "`harga_gross`='" . $conn->real_escape_string($harga_gross) . "' "
+                        . "WHERE `BUKTI`='$ref_esc2' AND `STATUS`='BERHASIL'"
+                    );
+                    $insertOk = true;
+                } else {
+                    $sql11 = "INSERT INTO `transaksi`( `TANGGALBAYAR`,`PENGUNAAN`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `STATUS`, `BUKTI`,`PEMILIK`,`CEK`,`fee_merchant`,`fee_customer`,`payment_method`,`harga_gross`) VALUES ('$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$user100','','" . $conn->real_escape_string($fee_merchant) . "','" . $conn->real_escape_string($fee_customer) . "','" . $conn->real_escape_string($payment_method) . "','" . $conn->real_escape_string($harga_gross) . "')";
+                    $insertOk = ($conn->query($sql11) === TRUE);
+                }
+
+                if ($insertOk) {
+
+                    $sql12 = "DELETE FROM `transaksi` WHERE BUKTI='$invoiceref' AND `STATUS`='PERMINTAAN KODE'";
                     if ($conn->query($sql12) === TRUE) {
                     }
 
@@ -1041,56 +1228,67 @@ if ($LAYANAN == "PPPOE") {
 
 
 
-                                if($AUTHMODE=='API MODE' | $AUTHMODE=='MULTI MODE'  )
+                                if ($AUTHMODE == 'API MODE' || $AUTHMODE == 'MULTI MODE')
                                 {
+                                    // Pembayaran tetap sudah tercatat BERHASIL. MikroTik hanya
+                                    // diubah bila profil aktual benar-benar EXPIRED agar pelanggan
+                                    // yang sudah aktif tidak mengalami putus koneksi tanpa perlu.
+                                    $API = new RouterosAPI();
 
+                                    if (!$API->connect($ip100, $user100, $password100)) {
+                                        callbackLogStep($history, $history_file, 'MIKROTIK_CONNECT_FAILED',
+                                            "Pembayaran tetap tercatat, tetapi MikroTik $ip100 tidak dapat dihubungi untuk $USERNAMETRANASAKSI");
+                                    } else {
+                                        $cariurutan = $API->comm(
+                                            "/ppp/secret/getall",
+                                            array(
+                                                ".proplist" => ".id,profile",
+                                                "?name" => $USERNAMETRANASAKSI,
+                                            )
+                                        );
 
-                                                    ////////koneksi ke mikrotik ///////
-                                                    $API = new RouterosAPI();
-                                                    $API->connect($ip100, $user100, $password100);
+                                        if (empty($cariurutan[0][".id"])) {
+                                            callbackLogStep($history, $history_file, 'MIKROTIK_SECRET_NOT_FOUND',
+                                                "Pembayaran tetap tercatat, secret PPPoE $USERNAMETRANASAKSI tidak ditemukan");
+                                        } else {
+                                            $profilAktual = trim((string)($cariurutan[0]["profile"] ?? ''));
 
-                                                    $cariurutan = $API->comm(
-                                                        "/ppp/secret/getall",
-                                                        array(
-                                                            ".proplist" => ".id",
-                                                            "?name" => $USERNAMETRANASAKSI,
-                                                        )
-                                                    );
+                                            if (strcasecmp($profilAktual, 'EXPIRED') === 0) {
+                                                $API->comm(
+                                                    "/ppp/secret/set",
+                                                    array(
+                                                        ".id" => $cariurutan[0][".id"],
+                                                        "comment" => "LUNAS $NAMAPELANGGAN - $WHATSAPPELANGGAN - $tanggalbayar",
+                                                        "profile" => $PAKETPELANGGAN,
+                                                    )
+                                                );
 
-                                                    $API->comm(
-                                                        "/ppp/secret/set",
-                                                        array(
-                                                            ".id" => $cariurutan[0][".id"],
-                                                            "comment"  => "LUNAS $NAMAPELANGGAN - $WHATSAPPELANGGAN - $tanggalbayar",
-                                                            "profile"  => $PAKETPELANGGAN,
-                                                        )
-                                                    );
+                                                $cariurutan2 = $API->comm(
+                                                    "/ppp/active/getall",
+                                                    array(
+                                                        ".proplist" => ".id",
+                                                        "?name" => $USERNAMETRANASAKSI,
+                                                    )
+                                                );
 
-
-                                                    $cariurutan2 = $API->comm(
-                                                        "/ppp/active/getall",
-                                                        array(
-                                                            ".proplist" => ".id",
-                                                            "?name" => $USERNAMETRANASAKSI,
-                                                        )
-                                                    );
-
+                                                if (!empty($cariurutan2[0][".id"])) {
                                                     $API->comm(
                                                         "/ppp/active/remove",
-                                                        array(
-                                                            ".id" => $cariurutan2[0][".id"],
-
-                                                        )
+                                                        array(".id" => $cariurutan2[0][".id"])
                                                     );
+                                                }
 
-                                                    $history[] = "[ callback tripay - " . date('Y-m-d H:i:s') . " ] Tripay berhasil aktifkan OTOMATIS $USERNAMETRANASAKSI $NAMAPELANGGAN $PAKETPELANGGAN";
-                                                    // Simpan ke file history
-                                                    file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
-
-
-                                                    
-                              
-
+                                                callbackLogStep($history, $history_file, 'MIKROTIK_REACTIVATED',
+                                                    "Profil EXPIRED dipulihkan ke $PAKETPELANGGAN untuk $USERNAMETRANASAKSI");
+                                            } elseif (strcasecmp($profilAktual, $PAKETPELANGGAN) === 0) {
+                                                callbackLogStep($history, $history_file, 'MIKROTIK_ALREADY_ACTIVE_SKIP',
+                                                    "Profil $USERNAMETRANASAKSI sudah $profilAktual; perubahan profil dan pemutusan sesi dilewati");
+                                            } else {
+                                                callbackLogStep($history, $history_file, 'MIKROTIK_PROFILE_MISMATCH_SKIP',
+                                                    "Profil aktual $USERNAMETRANASAKSI adalah '$profilAktual', paket Billing '$PAKETPELANGGAN'; tidak ditimpa otomatis");
+                                            }
+                                        }
+                                    }
                                 }
 
 
@@ -1261,6 +1459,8 @@ if ($LAYANAN == "HOTPSOT") {
 
                                             // Tambahkan Basic Auth
                                             curl_setopt($ch, CURLOPT_USERPWD, "$botname:$botpass");
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
                                             // Eksekusi dan tangani respons
                                             $response = curl_exec($ch);
@@ -1322,24 +1522,13 @@ if ($LAYANAN == "HOTPSOT") {
                                         restartFreeradius();
                                        
                                         // Masukkan data ke database transaksi
-                                        $sql = "INSERT INTO `transaksi` (`TANGGALBAYAR`,`STATUS`,`IDPEL`,`NAMA`,`PAKET`,`HARGA`,`BUKTI`,`CEK`,`PEMILIK`)
-                                                SELECT '$tanggalbayar','BERHASIL','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKET','$voucher_amount','$invoiceref','','$BRANDPELANGGAN'
-                                                WHERE NOT EXISTS (
-                                                    SELECT 1 FROM `transaksi`
-                                                    WHERE `IDPEL`='$USERNAMETRANASAKSI'
-                                                      AND `BUKTI`='$invoiceref'
-                                                      AND `STATUS`='BERHASIL'
-                                                )";
+                                        $sql = "INSERT INTO `transaksi`(`TANGGALBAYAR`,`STATUS`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `BUKTI`, `CEK`, `PEMILIK`,`fee_merchant`,`fee_customer`,`payment_method`,`harga_gross`)
+                                                VALUES ('$tanggalbayar','BERHASIL','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKET','$voucher_amount','$invoiceref','', '$BRANDPELANGGAN','" . $conn->real_escape_string($fee_merchant) . "','" . $conn->real_escape_string($fee_customer) . "','" . $conn->real_escape_string($payment_method) . "','" . $conn->real_escape_string($harga_gross) . "')";
+                                        $conn->query($sql);
 
-                                        // Permintaan kode hanya boleh dihapus setelah transaksi
-                                        // berhasil tersimpan atau memang sudah pernah tercatat.
-                                        if ($conn->query($sql) === TRUE) {
-                                            $sql12 = "DELETE FROM `transaksi`
-                                                      WHERE `IDPEL`='$USERNAMETRANASAKSI'
-                                                        AND `BUKTI`='$invoiceref'
-                                                        AND `STATUS`='PERMINTAAN KODE'";
-                                            $conn->query($sql12);
-                                        }
+                                        // Hapus transaksi permintaan kode lama
+                                        $sql12 = "DELETE FROM `transaksi` WHERE BUKTI='$invoiceref' AND `STATUS`='PERMINTAAN KODE'";
+                                        $conn->query($sql12);
                                     } else {
 
                                     }
@@ -1409,6 +1598,8 @@ if ($LAYANAN == "VPNQ") {
 
                     // Tambahkan Basic Auth
                     curl_setopt($ch, CURLOPT_USERPWD, "$botname:$botpass");
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
                     // Eksekusi dan tangani respons
                     $response = curl_exec($ch);
@@ -1470,23 +1661,37 @@ if ($LAYANAN == "VPNQ") {
             $sql1 = "UPDATE `pelanggan` SET `IDPEL`='$USERNAMETRANASAKSI',`NAMA`='$NAMAPELANGGAN',`PAKET`='$PAKETPELANGGAN',`NOWA`='$WHATSAPPELANGGAN',`EMAIL`='$EMAILPELANGGAN',`MODE`='$MODEPELANGGAN',`ODP`='$ODPPELANGGAN' WHERE `id`='$ID'";
             if ($conn->query($sql1) === TRUE) {
 
-                // Guard callback: transaksi BERHASIL lama dipertahankan dan ref yang sama
-                // tidak dimasukkan ulang ketika Tripay mengirim callback lebih dari sekali.
-                $sql11 = "INSERT INTO `transaksi` (`TANGGALBAYAR`,`PENGUNAAN`,`IDPEL`,`NAMA`,`PAKET`,`HARGA`,`STATUS`,`BUKTI`,`PEMILIK`,`CEK`)
-                          SELECT '$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$BRANDPELANGGAN',''
-                          WHERE NOT EXISTS (
-                              SELECT 1 FROM `transaksi`
-                              WHERE `IDPEL`='$USERNAMETRANASAKSI'
-                                AND `PENGUNAAN`='$periode'
-                                AND `STATUS`='BERHASIL'
-                                AND `BUKTI`='$invoiceref'
-                          )";
-                if ($conn->query($sql11) === TRUE) {
+                // [PATCH 2026-09-09] Non-destruktif: jangan hapus baris BERHASIL lalu
+                // insert ulang (kalau INSERT gagal -> pembayaran hilang walau PAID).
+                $ref_esc2 = $conn->real_escape_string($invoiceref);
+                $qBerhasilRef = mysqli_query($conn, "SELECT `id` FROM `transaksi` WHERE `BUKTI`='$ref_esc2' AND `STATUS`='BERHASIL' LIMIT 1");
+                $adaBerhasilRef = ($qBerhasilRef && mysqli_num_rows($qBerhasilRef) > 0);
 
-                    $sql12 = "DELETE FROM `transaksi`
-                              WHERE `IDPEL`='$USERNAMETRANASAKSI'
-                                AND `PENGUNAAN`='$periode'
-                                AND `STATUS`='PERMINTAAN KODE'";
+                if ($adaBerhasilRef) {
+                    $conn->query(
+                        "UPDATE `transaksi` SET "
+                        . "`TANGGALBAYAR`='" . $conn->real_escape_string($tanggalbayar) . "', "
+                        . "`PENGUNAAN`='" . $conn->real_escape_string($periode) . "', "
+                        . "`NAMA`='" . $conn->real_escape_string($NAMAPELANGGAN) . "', "
+                        . "`PAKET`='" . $conn->real_escape_string($PAKETPELANGGAN) . "', "
+                        . "`HARGA`='" . $conn->real_escape_string($HARGAPELANGGAN) . "', "
+                        . "`PEMILIK`='" . $conn->real_escape_string($BRANDPELANGGAN) . "', "
+                        . "`CEK`='', "
+                        . "`fee_merchant`='" . $conn->real_escape_string($fee_merchant) . "', "
+                        . "`fee_customer`='" . $conn->real_escape_string($fee_customer) . "', "
+                        . "`payment_method`='" . $conn->real_escape_string($payment_method) . "', "
+                        . "`harga_gross`='" . $conn->real_escape_string($harga_gross) . "' "
+                        . "WHERE `BUKTI`='$ref_esc2' AND `STATUS`='BERHASIL'"
+                    );
+                    $insertOk = true;
+                } else {
+                    $sql11 = "INSERT INTO `transaksi`( `TANGGALBAYAR`,`PENGUNAAN`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `STATUS`, `BUKTI`,`PEMILIK`,`CEK`,`fee_merchant`,`fee_customer`,`payment_method`,`harga_gross`) VALUES ('$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$BRANDPELANGGAN','','" . $conn->real_escape_string($fee_merchant) . "','" . $conn->real_escape_string($fee_customer) . "','" . $conn->real_escape_string($payment_method) . "','" . $conn->real_escape_string($harga_gross) . "')";
+                    $insertOk = ($conn->query($sql11) === TRUE);
+                }
+
+                if ($insertOk) {
+
+                    $sql12 = "DELETE FROM `transaksi` WHERE `STATUS`='PERMINTAAN KODE'";
                     if ($conn->query($sql12) === TRUE) {
                     }
 
@@ -1608,6 +1813,8 @@ exit;
 
                     // Tambahkan Basic Auth
                     curl_setopt($ch, CURLOPT_USERPWD, "$botname:$botpass");
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
                     // Eksekusi dan tangani respons
                     $response = curl_exec($ch);
@@ -1701,6 +1908,8 @@ exit;
 
                     // Tambahkan Basic Auth
                     curl_setopt($ch, CURLOPT_USERPWD, "$botname:$botpass");
+                curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+                curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
                     // Eksekusi dan tangani respons
                     $response = curl_exec($ch);
@@ -1723,6 +1932,3 @@ exit;
             }
         }
     }
-
-
-

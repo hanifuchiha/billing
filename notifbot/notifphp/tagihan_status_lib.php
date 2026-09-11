@@ -134,17 +134,22 @@ if (!function_exists('tagihanGetLastPaidUsageMapBulk')) {
         }
         $inList = tagihanBuildEscapedInList($conn, $idpels);
         $trxDateExprT = tagihanBuildTrxDateExpr('t');
-        $trxDateExprX = tagihanBuildTrxDateExpr('x');
-        $sql = "SELECT t.`IDPEL`, t.`PENGUNAAN`, $trxDateExprT AS `trx_date`, t.`waktu`
-                FROM `transaksi` t
-                WHERE t.`STATUS` = 'BERHASIL'
-                    AND t.`IDPEL` IN ($inList)
-                    AND $trxDateExprT = (
-                        SELECT MAX($trxDateExprX)
-                        FROM `transaksi` x
-                        WHERE x.`STATUS` = 'BERHASIL' AND x.`IDPEL` = t.`IDPEL`
-                    )
-                ORDER BY t.`IDPEL` ASC, t.`waktu` DESC";
+        // Ambil satu transaksi terakhir per pelanggan dalam satu kali scan.
+        // Versi lama memakai correlated subquery MAX() yang membaca tabel
+        // transaksi berulang kali untuk setiap baris kandidat.
+        $sql = "SELECT ranked.`IDPEL`, ranked.`PENGUNAAN`, ranked.`trx_date`, ranked.`waktu`
+                FROM (
+                    SELECT t.`IDPEL`, t.`PENGUNAAN`, $trxDateExprT AS `trx_date`, t.`waktu`,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY t.`IDPEL`
+                               ORDER BY $trxDateExprT DESC, t.`waktu` DESC, t.`id` ASC
+                           ) AS `row_num`
+                    FROM `transaksi` t
+                    WHERE t.`STATUS` = 'BERHASIL'
+                      AND t.`IDPEL` IN ($inList)
+                ) ranked
+                WHERE ranked.`row_num` = 1
+                ORDER BY ranked.`IDPEL` ASC";
         $result = $conn->query($sql);
         $map = [];
         if ($result) {
@@ -741,7 +746,12 @@ if (!function_exists('tagihanHitungStatus')) {
                 $firstDueDate = $rollingOverride ?? date('Y-m-d', strtotime('+30 days', strtotime($referenceDate)));
                 $jatuh_tempo_str = $firstDueDate;
 
-                if (strtotime($firstDueDate) > strtotime($hari_ini)) {
+                $batasIsolir = $firstDueDate;
+                if ($TIPE_BAYAR === 'prabayar' && $prabayar_grace_period > 0) {
+                    $batasIsolir = date('Y-m-d', strtotime("+{$prabayar_grace_period} days", strtotime($firstDueDate)));
+                }
+
+                if (strtotime($batasIsolir) > strtotime($hari_ini)) {
                     // jatuh tempo belum lewat
                 } else {
                     $bulanTunggak = tagihanCountConsecutiveMissedMonths($conn, $IDPEL, $firstDueDate, $hari_ini, false, 0);
@@ -779,7 +789,12 @@ if (!function_exists('tagihanHitungStatus')) {
                 }
                 $jatuh_tempo_str = $firstDueDate ?? '';
 
-                if (empty($firstDueDate) || strtotime($firstDueDate) > strtotime($hari_ini)) {
+                $batasIsolir = $firstDueDate;
+                if ($TIPE_BAYAR === 'prabayar' && !empty($firstDueDate) && $prabayar_grace_period > 0) {
+                    $batasIsolir = date('Y-m-d', strtotime("+{$prabayar_grace_period} days", strtotime($firstDueDate)));
+                }
+
+                if (empty($firstDueDate) || strtotime($batasIsolir) > strtotime($hari_ini)) {
                     // jatuh tempo belum lewat
                 } else {
                     $bulanTunggak = tagihanCountConsecutiveMissedMonths($conn, $IDPEL, $firstDueDate, $hari_ini, true, $jatuh_tempo_hari);

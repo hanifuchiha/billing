@@ -505,3 +505,234 @@ PERBAIKAN CRON RETRY BILLING KE KEUANGAN - 5 SEPTEMBER 2026
 7. Sinkronisasi transaksi hanya memproses transaksi BERHASIL setelah baseline
    production. kompensasi_free dikecualikan karena bukan penerimaan kas/bank,
    sedangkan transaksi yang sudah tersinkron atau sudah ada di Keuangan dilewati.
+
+AUDIT PEMBAYARAN TRIPAY PAID BELUM MASUK BILLING - 10 SEPTEMBER 2026
+===================================================================
+1. Audit membandingkan referensi berstatus PAID pada log callback Tripay yang
+   tersedia dengan kolom BUKTI pada tabel transaksi Billing. Ditemukan 24
+   referensi PAID yang belum tersimpan sebagai referensi transaksi Billing:
+   19 referensi Airlink dan 5 referensi FiberQ.
+2. Daftar Airlink yang perlu diverifikasi dan dipulihkan:
+   - T4693436976799LJW1L | SOEWAJI.S | 141300419607.0101.06@airlink.co.id
+   - T4693436979085NVQXF | Frisca Evalin | UJMG0102.10.1001.060923
+   - T4693436981298BBSRX | Surya Eka Putera Nento | UJMG0201.25.1009.180325
+   - T4693436981945QROKQ | Asro Ade Pratama | UJMG0201.25.1011.031124
+   - T4693436982294BXHSE | Mohamad Ardi | 13790040516.0303.04.01@airlink.co.id
+   - T46934369830826POAO | Nadila | 14120050506.0103.02.03@airlink.co.id
+   - T46934369843125HAJ0 | Tri Sukosetyaningtyas | UJMG0102.16.1603.070923
+   - T4693436984866DTFHA | NADYA FARREL | 14120050727A.0103.02.02@airlink.co.id
+   - T4693436984875JEQI3 | Rama Septiyadi | UJMG0202.21.0609.120923
+   - T4693436990347E05N7 | SRI WAHYUNI | 1413004190912.0102.12@airlink.co.id
+   - T4693436991599FJWRX | NENENG KUSMAYATI | 1413004191004.0101.10@airlink.co.id
+   - T4693436992786TNF7F | Rina Martiana | UJMG0101.03.0313.070923
+   - T4693436996280YTJWN | Susanti | 139600215B1009.0102.10@airlink.co.id
+   - T4693437000435VLFKK | Aldie Febry Ananda | UJMG0201.29.1408.071023
+   - T4693437004116WC2IK | DIDI ROSYADI | 141300419715.0101.07@airlink.co.id
+   - T46934370042712JIZV | ACHMAD SUTISNA | 1413004191111.0102@airlink.co.id
+   - T46934370046706KFYQ | LILIS HERLINA | 1413004191507.0102.15@airlink.co.id
+   - T4693437007064BCP1V | Ika Noviana | UJMG0202.03.1003.070525
+   - T4693437007785EFJJR | Pandu Hidayat | UJMG0202.21.0606.120923
+3. Daftar FiberQ yang perlu diverifikasi dan dipulihkan:
+   - T234363683306960CEA | Bunga Salma Nabila | FQ-221@070226
+   - T2343636855520HMC3F | Simoon | FQ-175@291125
+   - T2343636858013UBNPV | Sutikno | FQ-057@211025
+   - T2343636867399KR4S2 | AKMAL PADILAH | FQ-003@070426
+   - T2343636821975IYYHW | pelanggan belum dapat dikenali dari log; callback
+     mencatat ERROR_TRANSAKSI_NOT_FOUND sebanyak dua kali pada 5 September 2026.
+4. Benno M dan Teresa Sitompul tidak termasuk 24 referensi tersebut karena
+   transaksi September keduanya telah dipulihkan ke Billing secara idempotent.
+   Transaksi pemulihan Benno memiliki ID 6613 dan referensi
+   T4693436998129ZGCNH.
+5. Rama Septiyadi sudah memiliki transaksi BERHASIL manual untuk September
+   2026, tetapi referensi pembayaran Tripay-nya belum tercatat. Kasus ini wajib
+   diperiksa sebagai potensi pembayaran ganda sebelum membuat transaksi baru.
+6. SOEWAJI.S baru memiliki transaksi PENAGIHAN September, bukan transaksi
+   pembayaran BERHASIL. Invoice penagihan tidak boleh dianggap sebagai bukti
+   bahwa pembayaran Tripay sudah masuk ke Billing.
+7. Pemulihan massal belum dilakukan. Sebelum pemulihan, setiap referensi harus
+   diverifikasi kembali ke API Tripay untuk memastikan status PAID, IDPEL,
+   periode, nominal pokok, biaya kanal, dan waktu bayar. Proses harus memakai
+   guard referensi dan guard IDPEL-periode agar tidak membuat transaksi ganda.
+
+PENYERAGAMAN AKTIVASI DAN SINKRONISASI PEMBAYARAN - 10 SEPTEMBER 2026
+====================================================================
+1. Callback Tripay Airlink dan transaksi manual (cash, transfer, serta
+   kompensasi_free) diubah agar memeriksa profil aktual MikroTik terlebih
+   dahulu. Profil EXPIRED dipulihkan ke paket pelanggan; profil yang sudah
+   sesuai paket dilewati tanpa menulis ulang profil atau memutus sesi; profil
+   lain dicatat sebagai mismatch dan tidak ditimpa otomatis.
+2. Transaksi baru hasil sinkronisasi Keuangan pada API MODE/MULTI MODE juga
+   memeriksa profil. Hanya profil EXPIRED yang dipulihkan. Pelanggan yang sudah
+   aktif tidak diputus.
+3. Endpoint Keuangan ke Billing
+   getdata/api_keuangan_payment_to_billing.php sempat hilang dari production,
+   menyebabkan retry memperoleh HTTP 404. Endpoint dipulihkan dari Git dan
+   pengujian GET menghasilkan HTTP 405 "Gunakan method POST", yang membuktikan
+   routing/file sudah tersedia serta method guard bekerja.
+4. Setelah endpoint pulih, retry berhasil memasukkan pembayaran Keuangan:
+   - payment_id 2926: Doris Setiawan, transaksi Billing 6616, September 2026,
+     cash Rp165.000.
+   - payment_id 2929: Desie Sadiyanti, transaksi Billing 6617, September 2026,
+     cash Rp165.000.
+   Dua payment_id lain (2549 dan 2602) belum bisa disinkronkan karena IDPEL
+   GSTR01.02.07.040625 dan 13960120300 tidak ditemukan di Billing.
+5. Sinkronisasi Billing ke Keuangan dipulihkan selektif dari Git:
+   - bukti pembayaran bersifat opsional;
+   - kompensasi_free tidak dikirim sebagai pendapatan;
+   - mapping bank resmi dari Keuangan dipakai dan rekening tidak ditebak;
+   - baseline transaksi ditetapkan pada ID 6617 agar histori lama tidak ikut
+     terkirim massal;
+   - guard duplikasi tetap digunakan.
+6. Mapping arah Keuangan ke Billing sudah mengklasifikasikan beberapa bank
+   sebagai transfer. Namun arah Billing ke Keuangan belum memiliki satu bank
+   tujuan default untuk metode transfer. Karena ambigu, transaksi transfer
+   baru dilewati dengan aman sampai rekening tujuan ditetapkan; transfer tidak
+   boleh diarahkan otomatis ke Tripay.
+7. Audit tabel Billing menemukan 149 transaksi berstatus metode transfer.
+   Khusus periode September 2026 terdapat 42 transaksi transfer BERHASIL dengan
+   total Rp7.071.000. Transaksi tersebut adalah Manual admin (transfer), bukan
+   Tripay. Karena seluruhnya berada sebelum/hingga baseline 6617, transaksi
+   lama tersebut tidak dikirim otomatis ke Keuangan.
+8. Endpoint Keuangan ke Billing kemudian dihubungkan ke aktivasi MikroTik
+   setelah transaksi berhasil di-commit. Untuk API MODE/MULTI MODE, profil
+   EXPIRED dipulihkan; profil yang sudah sesuai paket dilewati tanpa memutus
+   sesi; profil lain dicatat sebagai mismatch dan tidak ditimpa. Kegagalan
+   server/secret tidak membatalkan transaksi yang sudah BERHASIL. Respons API
+   mengembalikan activation_status untuk kebutuhan audit.
+9. Tripay, transaksi manual, dan endpoint Keuangan ke Billing membersihkan
+   invoice PENAGIHAN berdasarkan pasangan IDPEL + PENGUNAAN yang sama setelah
+   pembayaran berhasil. Invoice periode lain dan pelanggan lain tidak ikut
+   dihapus. Endpoint Keuangan memakai transaksi database: bila pembersihan
+   invoice gagal sebelum commit, perubahan transaksi di-rollback agar tidak
+   tersimpan setengah jalan.
+10. Kondisi akhir yang masih harus ditindaklanjuti:
+   - mapping rekening tujuan transfer untuk arah Billing ke Keuangan belum
+     ditentukan; transaksi transfer baru dilewati agar tidak salah masuk ke
+     rekening Tripay;
+   - payment_id Keuangan 2549 dan 2602 belum dapat masuk karena IDPEL
+     GSTR01.02.07.040625 dan 13960120300 tidak ditemukan di Billing;
+   - enam pelanggan murni RADIUS MODE belum tercakup penuh oleh pemeriksaan
+     profil MikroTik API;
+   - perubahan source belum di-commit/push.
+
+AUDIT DAN PERBAIKAN ANOMALI ISOLIR - 10 SEPTEMBER 2026
+======================================================
+1. Audit cache PPPoE/MikroTik dan transaksi menemukan delapan pelanggan masih
+   memakai profil EXPIRED walaupun memiliki transaksi BERHASIL untuk periode
+   September 2026:
+   - Dicky Alpiaturahman — kompensasi_free Rp0.
+   - Riski Nur Isnaini — payment gateway Rp128.000.
+   - M Iqbal Nugraha — kompensasi_free Rp0.
+   - Zaenal Abidin — cash Rp128.000.
+   - Febri Muharami — cash Rp128.000.
+   - Erna Sri Wulandari — kompensasi_free Rp0.
+   - Jubaedah — kompensasi_free Rp0; penggunaan sudah sampai Oktober 2026.
+   - Rinto Azis — payment gateway Rp176.000.
+2. Akar masalahnya bukan transaksi hilang. Pada Fixed Due Date, transaksi
+   periode September dapat dibayar pada Agustus. Perhitungan yang hanya
+   mengikuti tanggal bayar/jatuh tempo dapat menilai siklus sudah menunggak
+   walaupun label PENGUNAAN September 2026 sudah BERHASIL.
+3. Cron cek_tagihan_harian_airlink.php diberi pengaman terakhir untuk membaca
+   label PENGUNAAN transaksi BERHASIL. Jika periode yang sudah dibayar sama
+   atau lebih depan daripada periode aktif, pelanggan tidak boleh diisolir.
+   Pengaman berlaku untuk seluruh metode pembayaran, termasuk
+   kompensasi_free dengan nominal Rp0.
+4. Cron Airlink dijalankan setelah perbaikan. Pemindaian PPPoE pada
+   10 September 2026 pukul 01:21:09 WIB memastikan delapan pelanggan sudah
+   kembali ke paket normal dan berstatus Online:
+   - Dicky Alpiaturahman: AirHome - 181k.
+   - Riski Nur Isnaini: AirHome - 128k.
+   - M Iqbal Nugraha: AirHome - 181k.
+   - Zaenal Abidin: AirHome - 128k.
+   - Febri Muharami: AirHome - 128k.
+   - Erna Sri Wulandari: AirHome - 165k.
+   - Jubaedah: AirHome - 165k.
+   - Rinto Azis: AirHome - 165k.
+5. Perbaikan pengaman juga dimasukkan ke salinan Git recovery agar tidak
+   hilang pada deployment berikutnya. Sintaks PHP telah lulus pemeriksaan.
+   Perubahan ini belum di-commit/push.
+
+PEDOMAN FINAL ISOLIR PRABAYAR DAN GRACE PERIOD - 10 SEPTEMBER 2026
+=================================================================
+1. Seluruh pelanggan prabayar memperoleh waktu tunggu/grace period 2 hari
+   pada setiap siklus, bukan hanya ketika baru memasang layanan atau belum
+   pernah membayar.
+2. Rumus batas isolir:
+      batas isolir = tanggal jatuh tempo + 2 hari
+   Pelanggan tetap aktif selama hari ini masih sebelum batas isolir. Pelanggan
+   baru memenuhi syarat isolir tepat ketika tanggal batas isolir tercapai.
+3. Contoh resmi untuk jatuh tempo tanggal 10:
+   - tanggal 10: masih aktif;
+   - tanggal 11: masih aktif;
+   - mulai tanggal 12: boleh diisolir apabila belum ada pembayaran berhasil.
+4. Cron cek_tagihan_harian_airlink.php yang berjalan setiap 20 menit tetap
+   boleh mengubah pelanggan menjadi EXPIRED, tetapi hanya jika seluruh syarat
+   berikut terpenuhi:
+   - jatuh tempo ditambah grace period sudah tercapai;
+   - belum ada transaksi STATUS=BERHASIL untuk periode aktif;
+   - belum ada kompensasi_free periode aktif;
+   - paket bukan FREE/FASUM.
+5. Transaksi BERHASIL untuk periode aktif atau periode berikutnya menjadi
+   pengaman terakhir sebelum isolir. Semua metode diakui, termasuk Tripay,
+   payment gateway, cash, transfer, metode tanpa label, dan kompensasi_free
+   bernilai Rp0.
+6. Jika pembayaran berhasil masuk ketika profil masih EXPIRED, sistem harus
+   langsung memulihkan profil ke paket pelanggan. Cron retry aktivasi berjalan
+   setiap menit sebagai jaring pengaman; cron isolir 20 menit menjadi validasi
+   berkala. Profil yang sudah normal dilewati tanpa diputus.
+7. Cron isolir lama berikut dinonaktifkan karena belum menerapkan grace period
+   dan dapat menimpa hasil pemulihan cron baru:
+   - non_aktif_by_tanggal_airlink.php pukul 07:00;
+   - non_aktif_tempo_airlink.php pukul 07:15;
+   - matikan_client_baru_airlink.php pukul 07:15.
+   Cron reminder WA dan generator invoice tetap aktif.
+8. Cron utama diberi file lock agar eksekusi otomatis dan manual tidak berjalan
+   bersamaan. Ini mencegah satu proses memulihkan profil sementara proses lain
+   dengan snapshot lama mengubahnya kembali menjadi EXPIRED.
+9. Kasus verifikasi Muhadi Zahirwan
+   (14120060339C.0104.03@airlink.co.id): transaksi Agustus BERHASIL, jatuh tempo
+   10 September, sehingga tanggal 10-11 masih dalam grace period. Profil telah
+   dipulihkan ke AirHome - 128k dan terverifikasi Online pada 10 September.
+10. Setelah perubahan dijalankan, cron baru memulihkan 284 profil pada proses
+    awal dan 50 profil pada proses koreksi berikutnya. Jumlah dashboard dapat
+    berubah per menit karena perpindahan Online/LOS dan proses scan cache;
+    penilaian anomali harus memakai pasangan profil EXPIRED + transaksi
+    BERHASIL periode aktif, bukan hanya angka Expired Online.
+11. Perubahan pedoman, cron, grace period, retry, dan lock ini belum
+    di-commit/push.
+
+OPTIMASI FILTER PELANGGAN TABLES.PHP - 10 SEPTEMBER 2026
+========================================================
+1. Filter status pembayaran/jatuh tempo sebelumnya menghitung seluruh kandidat
+   sebelum pagination dan memakai correlated subquery transaksi terakhir.
+   Pengukuran pada 852 pelanggan dan 2.825 transaksi memerlukan sekitar 3,36
+   detik untuk query penggunaan terakhir saja.
+2. Query di tagihan_status_lib.php diubah memakai ROW_NUMBER() agar transaksi
+   terakhir setiap IDPEL diperoleh dalam satu kali scan. Hasil tetap 733 IDPEL
+   dan waktu turun menjadi sekitar 0,024-0,034 detik setelah indeks aktif.
+3. Tabel baru tidak ditambahkan. Tabel transaksi yang sudah ada memperoleh
+   indeks idx_transaksi_idpel_status_waktu pada IDPEL, STATUS, dan waktu.
+4. Redirect POST ke GET untuk form filter dipindahkan ke awal tables.php agar
+   halaman besar tidak diproses dua kali pada satu pencarian.
+5. Fallback filter online/offline tidak lagi membuka koneksi langsung ke banyak
+   MikroTik. Jika cache per-owner tidak tersedia, filter memakai
+   serverlog/pppoe_status_cache.json.
+6. tables.php dan tagihan_status_lib.php produksi serta salinan Git lulus
+   pemeriksaan sintaks PHP. Perubahan Git belum di-commit/push.
+7. Audit lanjutan menemukan hasil pencarian otomatis memulai antrean status
+   pelanggan yang membaca cache PPPoE, seluruh file ONU yang cocok, ACS, RADIUS,
+   dan live traffic. Antrean berulang setiap beberapa detik sehingga tulisan
+   Loading dapat bertahan walaupun query utama sudah selesai.
+8. Pemuatan otomatis detail PPPoE/ONU/ACS dinonaktifkan pada hasil pencarian;
+   detail tersebut dimuat on-demand ketika modal Overview pelanggan dibuka.
+9. Setelah evaluasi operasional, kolom Status tidak lagi disembunyikan oleh
+   Mode Cepat. PHP membaca pppoe_status_cache.json sekali dan langsung merender
+   status Online/Offline, profil paket/EXPIRED, IP, uptime, serta umur cache.
+10. Tombol Refresh Status tersedia per pelanggan. Tombol itu dan pembukaan
+    modal Overview menjalankan pemeriksaan detail live hanya untuk pelanggan
+    yang dipilih. Antrean otomatis ONU/ACS/live traffic tidak lagi berjalan
+    untuk seluruh hasil pencarian.
+11. Polling ringkasan tiket juga ditemukan membuat dua request per pelanggan
+    (baris tabel dan modal) setiap 10 detik. Polling massal dihapus; ringkasan
+    tiket sekarang dimuat sekali ketika Overview pelanggan dibuka dan di-cache
+    60 detik di browser.
