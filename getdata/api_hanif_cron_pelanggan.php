@@ -854,9 +854,15 @@ function syncTransaksiForCustomer(
             $tanggalBayar = date('Y-m-d');
         }
 
-        $jumlahBayar = (float)($t['HARGA'] ?? 0);
-
         $metodeBayarRaw = strtolower(trim((string)($t['METODE_BAYAR'] ?? '')));
+        $jumlahBayar = (float)($t['HARGA'] ?? 0);
+        // Untuk payment gateway, HARGA dapat berisi total yang dibayar pelanggan
+        // (harga paket + fee customer). Keuangan hanya menerima nilai tagihan
+        // pokok; fee customer bukan pendapatan layanan Airlink.
+        if (in_array($metodeBayarRaw, ['tripay', 'payment gateway'], true)
+            && (float)($t['harga_gross'] ?? 0) > 0) {
+            $jumlahBayar = (float)$t['harga_gross'];
+        }
         $keterangan = (string)($t['CEK'] ?? '') !== ''
             ? (string)$t['CEK']
             : ('Sync otomatis dari CRM - ' . (string)($t['BUKTI'] ?? ''));

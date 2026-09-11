@@ -2364,8 +2364,8 @@ if (!function_exists('portalBayarPayDetailJson')) {
                         // PENTING: PENGUNAAN (periode) WAJIB disimpan di sini juga,
                         // dengan alasan yang sama seperti pada blok Duitku di atas.
                         $tripay_pay_detail = portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl);
-                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
-                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'PERMINTAAN', ?)";
+                        $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL, METODE_BAYAR)
+                                  VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'PERMINTAAN', ?, 'tripay')";
                         $stmt = $conn->prepare($query);
                         $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $tripayAmount, $reference, $pemilik, $tripay_pay_detail);
                         $stmt->execute();
