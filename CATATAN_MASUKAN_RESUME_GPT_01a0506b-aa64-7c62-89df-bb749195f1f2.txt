@@ -785,3 +785,43 @@ PERBAIKAN PERIODE DAN SINKRONISASI TRIPAY - 11 SEPTEMBER 2026
     - getdata/api_hanif_cron_pelanggan.php.
     Seluruhnya lulus pemeriksaan sintaks PHP. Perubahan ini belum
     di-commit/push.
+
+NOTIFIKASI ISOLIR DAN AUDIT PELANGGAN EXPIRED - 12 SEPTEMBER 2026
+=================================================================
+1. Cron cek tagihan Airlink sekarang mengirim template WA bagian EXPIRED hanya
+   setelah MikroTik benar-benar berhasil mengganti profil pelanggan menjadi
+   EXPIRED. Jika perubahan profil gagal, notifikasi isolir tidak dikirim agar
+   pelanggan tidak menerima informasi yang keliru.
+2. Notifikasi dicatat di whatsapp_notification_log dengan jenis
+   service_isolated_unpaid. Dedupe memakai pemilik, IDPEL, periode, dan jenis
+   notifikasi sehingga cron 20 menit tidak mengirim pesan yang sama berulang.
+3. Sebelum isolir, aturan pembayaran tetap berlaku untuk semua metode:
+   transaksi BERHASIL periode berjalan, termasuk kompensasi_free Rp0, membuat
+   pelanggan dilewati/dipulihkan dan tidak boleh diisolir.
+4. Profil/paket yang namanya mengandung FREE serta FASUM non-promo tidak pernah
+   ditagih. Jika profil tersebut terlanjur EXPIRED akibat proses lama/manual,
+   cron memulihkannya secara idempotent ke profil paket semula. Paket tanpa
+   harga valid atau harga <= 0 juga tidak dihitung menunggak.
+5. Audit cache MikroTik pukul 04:30 WIB menemukan 320 secret berprofil EXPIRED:
+   308 cocok dengan pelanggan Billing dan 12 bukan data pelanggan Billing.
+   Tidak ada dari 308 pelanggan tersebut yang memiliki transaksi BERHASIL atau
+   kompensasi_free untuk September 2026.
+6. Dari pelanggan EXPIRED tersebut terdapat 189 pelanggan yang sudah lunas
+   Agustus tetapi masih mempunyai PENAGIHAN September dan belum mempunyai
+   transaksi BERHASIL September: 181 mengikuti tanggal tempo dan 8
+   monthversary. Total tagihan September mereka Rp30.694.000.
+7. Untuk tipe tanggal tempo Airlink, jatuh tempo tanggal 10 dengan grace period
+   prabayar 2 hari berarti pelanggan mulai layak diisolir tanggal 12. Pembayaran
+   atau kompensasi Agustus hanya melindungi periode Agustus, bukan September.
+8. Audit reminder terhadap 189 pelanggan menghasilkan 178 pelanggan sudah
+   menerima reminder, 10 gagal karena nomor tidak valid/tidak terdaftar di WA,
+   dan 1 pelanggan (Apit Aji Hermawan) tidak memiliki log reminder.
+9. Backfill notifikasi isolir lama dijalankan bertahap, maksimal 10 pelanggan
+   setiap 5 menit. Sebelum setiap kirim dilakukan validasi ulang: profil masih
+   EXPIRED, invoice September masih PENAGIHAN, belum ada pembayaran/kompensasi
+   September, dan belum pernah sukses menerima notifikasi isolir. Kegagalan
+   dibatasi maksimal 4 percobaan dan proses berhenti otomatis setelah selesai.
+10. Batch uji pertama sebanyak 10 pelanggan berhasil seluruhnya (HTTP 200).
+    Backfill ini hanya untuk pelanggan yang sudah terlanjur EXPIRED sebelum
+    fitur notifikasi dipasang. Untuk kejadian berikutnya, notifikasi mengikuti
+    cron cek tagihan normal setiap 20 menit.
