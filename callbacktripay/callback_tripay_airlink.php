@@ -472,11 +472,15 @@ if (mysqli_num_rows($query10) == 0) {
     }
 }
 
+$pendingPengunaan = '';
 while ($data10 = mysqli_fetch_array($query10)) {
     $USERNAMETRANASAKSI = $data10['IDPEL'];
     $PEMILIK = $data10['PEMILIK'];
     $PAKET = $data10['PAKET'];
     $NAMATRANASAKSI = $data10['NAMA'];
+    // Salin periode saat row masih tersedia. Setelah loop selesai,
+    // mysqli_fetch_array() mengembalikan false dan tidak boleh dibaca lagi.
+    $pendingPengunaan = trim((string)($data10['PENGUNAAN'] ?? ''));
     
     callbackLogStep($history, $history_file, 'TRANSAKSI_FOUND', "IDPEL: $USERNAMETRANASAKSI | PAKET: $PAKET");
     
@@ -525,7 +529,6 @@ if (!in_array($AUTHMODE, $valid_modes)) {
 // diisi portal_bayar.php saat baris ini dibuat. Dipakai di bawah supaya periode yang
 // tercatat saat status jadi BERHASIL SAMA dengan periode invoice yang sedang dibayar,
 // bukan dihitung ulang lewat heuristik tanggal/tutup-buku yang bisa berbeda hasilnya.
-$pendingPengunaan = trim((string)($data10['PENGUNAAN'] ?? ''));
 
 
 
@@ -977,6 +980,7 @@ if ($cekstatus === 'PAID'
             . "`STATUS`='BERHASIL', "
             . "`TANGGALBAYAR`='" . $conn->real_escape_string($tanggalbayar) . "', "
             . "`PENGUNAAN`='$periode_esc', "
+            . "`METODE_BAYAR`='tripay', "
             . "`CEK`='', "
             . "`fee_merchant`='" . $conn->real_escape_string($fee_merchant) . "', "
             . "`fee_customer`='" . $conn->real_escape_string($fee_customer) . "', "
@@ -989,7 +993,7 @@ if ($cekstatus === 'PAID'
         if (!$qAda || mysqli_num_rows($qAda) === 0) {
             $conn->query(
                 "INSERT INTO `transaksi` "
-                . "(`TANGGALBAYAR`,`PENGUNAAN`,`IDPEL`,`NAMA`,`PAKET`,`HARGA`,`STATUS`,`BUKTI`,`PEMILIK`,`CEK`,`fee_merchant`,`fee_customer`,`payment_method`,`harga_gross`) VALUES ("
+                . "(`TANGGALBAYAR`,`PENGUNAAN`,`IDPEL`,`NAMA`,`PAKET`,`HARGA`,`STATUS`,`BUKTI`,`PEMILIK`,`CEK`,`fee_merchant`,`fee_customer`,`payment_method`,`harga_gross`,`METODE_BAYAR`) VALUES ("
                 . "'" . $conn->real_escape_string($tanggalbayar) . "',"
                 . "'$periode_esc',"
                 . "'$idpel_esc',"
@@ -1003,7 +1007,7 @@ if ($cekstatus === 'PAID'
                 . "'" . $conn->real_escape_string($fee_merchant) . "',"
                 . "'" . $conn->real_escape_string($fee_customer) . "',"
                 . "'" . $conn->real_escape_string($payment_method) . "',"
-                . "'" . $conn->real_escape_string($harga_gross) . "')"
+                . "'" . $conn->real_escape_string($harga_gross) . "','tripay')"
             );
         }
 
@@ -1191,6 +1195,7 @@ if ($LAYANAN == "PPPOE") {
                         "UPDATE `transaksi` SET "
                         . "`TANGGALBAYAR`='" . $conn->real_escape_string($tanggalbayar) . "', "
                         . "`PENGUNAAN`='" . $conn->real_escape_string($periode) . "', "
+                        . "`METODE_BAYAR`='tripay', "
                         . "`NAMA`='" . $conn->real_escape_string($NAMAPELANGGAN) . "', "
                         . "`PAKET`='" . $conn->real_escape_string($PAKETPELANGGAN) . "', "
                         . "`HARGA`='" . $conn->real_escape_string($HARGAPELANGGAN) . "', "
@@ -1204,7 +1209,7 @@ if ($LAYANAN == "PPPOE") {
                     );
                     $insertOk = true;
                 } else {
-                    $sql11 = "INSERT INTO `transaksi`( `TANGGALBAYAR`,`PENGUNAAN`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `STATUS`, `BUKTI`,`PEMILIK`,`CEK`,`fee_merchant`,`fee_customer`,`payment_method`,`harga_gross`) VALUES ('$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$user100','','" . $conn->real_escape_string($fee_merchant) . "','" . $conn->real_escape_string($fee_customer) . "','" . $conn->real_escape_string($payment_method) . "','" . $conn->real_escape_string($harga_gross) . "')";
+                    $sql11 = "INSERT INTO `transaksi`( `TANGGALBAYAR`,`PENGUNAAN`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `STATUS`, `BUKTI`,`PEMILIK`,`CEK`,`fee_merchant`,`fee_customer`,`payment_method`,`harga_gross`,`METODE_BAYAR`) VALUES ('$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$user100','','" . $conn->real_escape_string($fee_merchant) . "','" . $conn->real_escape_string($fee_customer) . "','" . $conn->real_escape_string($payment_method) . "','" . $conn->real_escape_string($harga_gross) . "','tripay')";
                     $insertOk = ($conn->query($sql11) === TRUE);
                 }
 
@@ -1672,6 +1677,7 @@ if ($LAYANAN == "VPNQ") {
                         "UPDATE `transaksi` SET "
                         . "`TANGGALBAYAR`='" . $conn->real_escape_string($tanggalbayar) . "', "
                         . "`PENGUNAAN`='" . $conn->real_escape_string($periode) . "', "
+                        . "`METODE_BAYAR`='tripay', "
                         . "`NAMA`='" . $conn->real_escape_string($NAMAPELANGGAN) . "', "
                         . "`PAKET`='" . $conn->real_escape_string($PAKETPELANGGAN) . "', "
                         . "`HARGA`='" . $conn->real_escape_string($HARGAPELANGGAN) . "', "
@@ -1685,13 +1691,13 @@ if ($LAYANAN == "VPNQ") {
                     );
                     $insertOk = true;
                 } else {
-                    $sql11 = "INSERT INTO `transaksi`( `TANGGALBAYAR`,`PENGUNAAN`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `STATUS`, `BUKTI`,`PEMILIK`,`CEK`,`fee_merchant`,`fee_customer`,`payment_method`,`harga_gross`) VALUES ('$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$BRANDPELANGGAN','','" . $conn->real_escape_string($fee_merchant) . "','" . $conn->real_escape_string($fee_customer) . "','" . $conn->real_escape_string($payment_method) . "','" . $conn->real_escape_string($harga_gross) . "')";
+                    $sql11 = "INSERT INTO `transaksi`( `TANGGALBAYAR`,`PENGUNAAN`, `IDPEL`, `NAMA`, `PAKET`, `HARGA`, `STATUS`, `BUKTI`,`PEMILIK`,`CEK`,`fee_merchant`,`fee_customer`,`payment_method`,`harga_gross`,`METODE_BAYAR`) VALUES ('$tanggalbayar','$periode','$USERNAMETRANASAKSI','$NAMAPELANGGAN','$PAKETPELANGGAN','$HARGAPELANGGAN','BERHASIL','$invoiceref','$BRANDPELANGGAN','','" . $conn->real_escape_string($fee_merchant) . "','" . $conn->real_escape_string($fee_customer) . "','" . $conn->real_escape_string($payment_method) . "','" . $conn->real_escape_string($harga_gross) . "','tripay')";
                     $insertOk = ($conn->query($sql11) === TRUE);
                 }
 
                 if ($insertOk) {
 
-                    $sql12 = "DELETE FROM `transaksi` WHERE `STATUS`='PERMINTAAN KODE'";
+                    $sql12 = "DELETE FROM `transaksi` WHERE `BUKTI`='" . $conn->real_escape_string($invoiceref) . "' AND `STATUS`='PERMINTAAN KODE'";
                     if ($conn->query($sql12) === TRUE) {
                     }
 

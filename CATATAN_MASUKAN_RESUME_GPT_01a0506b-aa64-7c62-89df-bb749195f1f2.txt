@@ -736,3 +736,52 @@ OPTIMASI FILTER PELANGGAN TABLES.PHP - 10 SEPTEMBER 2026
     (baris tabel dan modal) setiap 10 detik. Polling massal dihapus; ringkasan
     tiket sekarang dimuat sekali ketika Overview pelanggan dibuka dan di-cache
     60 detik di browser.
+
+PERBAIKAN PERIODE DAN SINKRONISASI TRIPAY - 11 SEPTEMBER 2026
+==============================================================
+1. Kasus awal ditemukan pada pelanggan Bu Eko
+   (UJMG0201.27.1212.070525): pembayaran QRIS Rp166.905 dengan referensi
+   T4693437073949NX1WI sudah BERHASIL, tetapi tercatat sebagai Oktober 2026
+   sementara invoice September 2026 masih PENAGIHAN.
+2. Akar masalah berada di callback Tripay. PENGUNAAN dari baris PERMINTAAN
+   KODE dibaca dari variabel hasil mysqli_fetch_array() setelah loop selesai.
+   Pada kondisi tersebut variabel sudah bernilai false, sehingga periode
+   pending hilang dan callback menghitung ulang periode melalui fallback.
+3. Callback Tripay Airlink diperbaiki agar periode disalin ketika baris
+   referensi masih sedang dibaca. PENGUNAAN transaksi BERHASIL sekarang tetap
+   sama dengan periode PERMINTAAN KODE/invoice yang benar-benar dibayar.
+4. Pembuatan kode Tripay sekarang langsung menyimpan METODE_BAYAR='tripay'.
+   Callback juga menormalkan nilai tersebut pada jalur UPDATE maupun INSERT,
+   sehingga cron Billing ke Keuangan tidak lagi melewati pembayaran Tripay
+   karena metode kosong.
+5. Saat callback PAID berhasil, invoice PENAGIHAN dihapus hanya untuk IDPEL
+   dan periode yang dibayar. Pembersihan PERMINTAAN KODE juga dibatasi pada
+   referensi Tripay terkait; query lama yang berpotensi menghapus seluruh
+   PERMINTAAN KODE pelanggan lain telah diperbaiki.
+6. Sinkronisasi Billing ke Keuangan untuk Tripay memakai harga_gross/nilai
+   pokok yang diterima sebagai pembayaran layanan. Fee customer tetap tercatat
+   terpisah dan tidak ditambahkan sebagai pendapatan layanan. Contoh Bu Eko:
+   nilai pokok Rp165.000, fee customer QRIS Rp1.905, total pelanggan Rp166.905.
+7. Transaksi Bu Eko ID Billing 7386 dikoreksi ke September 2026, invoice
+   September yang masih PENAGIHAN dihapus, dan transaksi berhasil masuk ke
+   Keuangan sebagai payment ID 3018/transaksi ID 4856 dengan status synced.
+   Percobaan kedua ID 7387 tetap PERMINTAAN KODE dan tidak dianggap lunas atau
+   dikirim ke Keuangan.
+8. Audit menyeluruh menemukan 41 transaksi Tripay BERHASIL lama dengan metode
+   kosong. Seluruhnya dinormalkan menjadi tripay. Delapan transaksi tambahan
+   dengan pola Oktober tetapi invoice September masih terbuka dikoreksi ke
+   September; Bu Eko telah dikoreksi lebih dahulu.
+9. Sinkronisasi pemulihan mengirim 38 transaksi baru dan 5 transaksi lama
+   secara terarah. Batas awal cron sempat diturunkan hanya selama pemulihan,
+   kemudian dikembalikan ke ID 6617 agar seluruh riwayat lama tidak terkirim
+   ulang tanpa sengaja.
+10. Pemeriksaan akhir menghasilkan:
+    - Tripay BERHASIL dengan METODE_BAYAR kosong: 0;
+    - transaksi Tripay Oktober yang masih punya invoice September: 0;
+    - transaksi Tripay terbaru yang belum sinkron ke Keuangan: 0.
+11. File produksi dan salinan Git recovery yang diperbarui:
+    - broadband/portal_bayar.php;
+    - callbacktripay/callback_tripay_airlink.php;
+    - getdata/api_hanif_cron_pelanggan.php.
+    Seluruhnya lulus pemeriksaan sintaks PHP. Perubahan ini belum
+    di-commit/push.

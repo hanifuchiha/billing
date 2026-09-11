@@ -929,7 +929,13 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
                   ?>
                   <?php if ($bisa_lihat_bukti_trx && ($metode_bayar_raw === 'cash' || $metode_bayar_raw === 'transfer' || $metode_bayar_raw === 'manual') && !empty($bukti_image_url)) { ?>
                     <div class="col-md-3 mb-3 mb-md-0">
-                      <img src="<?php echo htmlspecialchars($bukti_image_url); ?>" alt="Bukti Pembayaran" style="max-width: 100%; max-height: 150px; border: 1px solid #ddd; border-radius: 6px;" onerror="this.style.display='none'">
+                      <button type="button" class="btn p-0 border-0 bg-transparent trx-bukti-preview"
+                        data-bukti-src="<?php echo htmlspecialchars($bukti_image_url, ENT_QUOTES); ?>"
+                        data-bukti-label="Bukti pembayaran <?php echo htmlspecialchars($data['NAMA'] ?? $idpel, ENT_QUOTES); ?>"
+                        aria-label="Lihat bukti pembayaran">
+                        <img src="<?php echo htmlspecialchars($bukti_image_url); ?>" alt="Bukti Pembayaran" style="max-width: 100%; max-height: 150px; border: 1px solid #ddd; border-radius: 6px; cursor: zoom-in;" onerror="this.closest('button').style.display='none'">
+                      </button>
+                      <small class="text-muted d-block mt-1">Klik foto untuk memperbesar</small>
                     </div>
                   <?php } ?>
                   <div class="col-md-9">
@@ -967,7 +973,32 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
       </div>
   </div>
 
+<div class="modal fade" id="trxBuktiModal" tabindex="-1" aria-labelledby="trxBuktiModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-xl">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="trxBuktiModalLabel">Bukti Pembayaran</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Tutup"></button>
+      </div>
+      <div class="modal-body text-center bg-light">
+        <img id="trxBuktiModalImage" src="" alt="Bukti Pembayaran" class="img-fluid" style="max-height: 78vh; object-fit: contain;">
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+document.addEventListener('click', function (event) {
+    const trigger = event.target.closest('.trx-bukti-preview');
+    if (!trigger) return;
+
+    const image = document.getElementById('trxBuktiModalImage');
+    const title = document.getElementById('trxBuktiModalLabel');
+    image.src = trigger.dataset.buktiSrc || '';
+    title.textContent = trigger.dataset.buktiLabel || 'Bukti Pembayaran';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('trxBuktiModal')).show();
+});
+
 function trxGetPenagihanCheckboxes() {
     return Array.from(document.querySelectorAll('.trx-penagihan-checkbox'));
 }
