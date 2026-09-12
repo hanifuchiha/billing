@@ -5833,12 +5833,33 @@ function resetPemakaian(btn, idPel, nama) {
                                         <div class="mb-2" id="manualMetodeWrap">
                                             <label class="form-label">Metode Pembayaran</label>
                                             <select id="manualMetodeBayar" class="form-control" required>
-                                                <option value="cash">Cash</option>
-                                                <option value="transfer">Transfer</option>
+                                                <option value="">Pilih kas/bank pembayaran...</option>
+                                                <?php
+                                                $manualPaymentBanks = [];
+                                                $manualBankQuery = @mysqli_query($conn, "
+                                                    SELECT b.bank_id, b.bank_nama, k.billing_method
+                                                    FROM project_keuangan.bank b
+                                                    INNER JOIN project_keuangan.keuangan_bank_billing_method k
+                                                        ON k.bank_id=b.bank_id AND k.is_active=1
+                                                    WHERE UPPER(TRIM(b.bank_nama)) <> 'TRIPAY'
+                                                    ORDER BY CASE WHEN k.billing_method='cash' THEN 0 ELSE 1 END, b.bank_nama
+                                                ");
+                                                if ($manualBankQuery) {
+                                                    while ($manualBank = mysqli_fetch_assoc($manualBankQuery)) {
+                                                        $manualPaymentBanks[] = $manualBank;
+                                                        $bankName = trim((string)$manualBank['bank_nama']);
+                                                        $category = strtolower(trim((string)$manualBank['billing_method'])) === 'cash' ? 'Tunai' : 'Transfer';
+                                                        echo '<option value="' . htmlspecialchars($bankName, ENT_QUOTES, 'UTF-8') . '">' . htmlspecialchars($bankName . ' — ' . $category, ENT_QUOTES, 'UTF-8') . '</option>';
+                                                    }
+                                                }
+                                                if (!$manualPaymentBanks) {
+                                                    echo '<option value="cash">Cash</option><option value="transfer">Transfer</option>';
+                                                }
+                                                ?>
                                                 <option value="Gagal Payment Gateway">Gagal Payment Gateway</option>
                                                 <option value="kompensasi_free">Kompensasi Free (Harga 0)</option>
                                             </select>
-                                            <small class="text-muted d-block mt-1">Pilih Kompensasi Free untuk aktifkan pelanggan dengan transaksi harga 0 tanpa upload bukti.</small>
+                                            <small class="text-muted d-block mt-1">Daftar kas/bank berasal dari mapping aktif Keuangan. Tripay dicatat otomatis oleh gateway. Pilih Kompensasi Free untuk transaksi harga 0 tanpa upload bukti.</small>
                                         </div>
                                         <div class="row" id="manualPeriodeWrap">
                                             <div class="col-6 mb-2">
@@ -6627,7 +6648,7 @@ function resetPemakaian(btn, idPel, nama) {
 
                                     document.getElementById('manualActiveFormId').value = formId;
                                     document.getElementById('manualTipeTempo').value = tipeTempo || '';
-                                    document.getElementById('manualMetodeBayar').value = 'cash';
+                                    document.getElementById('manualMetodeBayar').selectedIndex = 0;
                                     document.getElementById('manualPeriodeMonth').value = monthNames[now.getMonth()];
                                     document.getElementById('manualPeriodeYear').value = now.getFullYear();
                                     document.getElementById('manualTanggalBayarManual').value = todayYmd;

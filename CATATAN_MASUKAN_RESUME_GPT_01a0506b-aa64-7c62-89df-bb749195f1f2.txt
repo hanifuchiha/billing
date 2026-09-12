@@ -878,3 +878,36 @@ REKONSILIASI TRIPAY PAID YANG TIDAK MASUK BILLING - 12 SEPTEMBER 2026
     deduplikasi isolation_correction_paid. Atas keputusan operasional, retry
     ditunda sampai WhatsApp kembali online. Gangguan WA ini tidak memengaruhi
     transaksi, pemulihan profil pelanggan, atau cron rekonsiliasi Tripay.
+
+MAPPING KAS/BANK MANUAL ACTIVE DAN REVIEW TRANSAKSI - 12 SEPTEMBER 2026
+======================================================================
+1. Audit Keuangan menemukan delapan kas/bank aktif dan seluruhnya mempunyai
+   mapping Keuangan ke Billing: BCA Syariah, BSI Tabungan Bisnis CSR, BSI
+   Tabungan Bisnis Office, Kas Kalibaru, Kas Signal, QRIS Gopay, Tripay, dan
+   Tunai Kantor.
+2. Dropdown Manual Active Billing sekarang membaca mapping aktif tersebut
+   langsung dari Keuangan. Tripay tidak ditampilkan karena harus dicatat oleh
+   callback/cron gateway. Admin wajib memilih kas/bank; tidak ada rekening
+   default yang dapat terpilih tanpa sengaja.
+3. Backend memvalidasi ulang bahwa kas/bank masih aktif dan sudah dimapping.
+   Nama kas/bank disimpan sebagai METODE_BAYAR agar cron Billing ke Keuangan
+   dapat menemukan bank_id secara persis. Input yang tidak valid ditolak dan
+   tidak lagi diam-diam diubah menjadi cash.
+4. Halaman payment_bank_review.php ditambahkan dan dapat dibuka dari tombol
+   Review Kas/Bank Belum Sinkron pada Transaction.php. Bukti manual active
+   diarahkan ke URL /dokumen/buktibon yang benar, bukan /crm/dokumen/buktibon.
+5. Untuk transaksi BERHASIL yang belum sinkron dan masih memakai cash/transfer
+   generik, admin dapat memilih kas/bank yang sesuai kategori. Setelah disimpan,
+   cron menyinkronkan transaksi tersebut ke rekening Keuangan yang dipilih.
+6. Transaksi yang sudah sinkron dapat dikoreksi hanya pada kas/bank. Billing,
+   pembayaran pelanggan Keuangan, jurnal pemasukan, dan saldo rekening lama/
+   baru diperbarui dalam satu transaksi database. Jika satu tahap gagal,
+   seluruh perubahan dibatalkan. Alasan koreksi wajib diisi dan audit disimpan
+   dalam payment_bank_correction_log.
+7. Halaman tidak memuat semua transaksi sekaligus. Admin harus mencari nama
+   atau ID pelanggan; hasil dibatasi maksimal 50 agar halaman ringan dan risiko
+   salah edit lebih kecil.
+8. Contoh Suhartini Yunengsih tidak tampil pada daftar review karena transaksi
+   September 2026 miliknya merupakan kompensasi_free Rp0. Kompensasi gratis
+   sengaja tidak disinkronkan sebagai penerimaan kas/bank. Ada data lain dengan
+   nama sama milik voucher, tetapi tidak mempunyai transaksi.

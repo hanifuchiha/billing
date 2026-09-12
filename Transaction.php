@@ -59,6 +59,9 @@ $struk_settings = get_struk_settings($struk_settings_username);
 
     <?php if (isset($AKSES) && in_array($AKSES, ['ADMIN', 'ASSISTANT'], true)): ?>
     <div class="d-flex justify-content-end mb-3">
+      <a href="payment_bank_review.php" class="btn btn-warning btn-sm me-2">
+        <i class="fas fa-university"></i> Review Kas/Bank Belum Sinkron
+      </a>
       <a href="adjust_tanggal_tempo_excel.php" class="btn btn-outline-primary btn-sm" data-perm="btn_trx_adjust_tanggal">
         <i class="fas fa-file-excel"></i> Penyesuaian Tanggal Bayar &amp; Jatuh Tempo (Excel)
       </a>

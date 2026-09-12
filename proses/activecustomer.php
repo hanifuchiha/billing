@@ -95,8 +95,24 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     $PEMILIK = $_POST["PEMILIK"] ?? "";
     $AREA = $_POST["AREA"] ?? "";
     $metode_bayar = strtolower(trim($_POST["metode_bayar"] ?? 'cash'));
-    if (!in_array($metode_bayar, ['cash', 'transfer', 'gagal payment gateway', 'kompensasi_free'], true)) {
-        $metode_bayar = 'cash';
+    $special_payment_methods = ['cash', 'transfer', 'gagal payment gateway', 'kompensasi_free'];
+    if (!in_array($metode_bayar, $special_payment_methods, true)) {
+        $bankNameEsc = mysqli_real_escape_string($conn, $metode_bayar);
+        $bankQuery = mysqli_query($conn, "
+            SELECT b.bank_nama
+            FROM project_keuangan.bank b
+            INNER JOIN project_keuangan.keuangan_bank_billing_method k
+                ON k.bank_id=b.bank_id AND k.is_active=1
+            WHERE LOWER(TRIM(b.bank_nama))=LOWER('$bankNameEsc')
+              AND UPPER(TRIM(b.bank_nama)) <> 'TRIPAY'
+            LIMIT 1
+        ");
+        $bankRow = $bankQuery ? mysqli_fetch_assoc($bankQuery) : null;
+        if (!$bankRow) {
+            echo json_encode(["error" => true, "message" => "Kas/bank pembayaran tidak valid atau belum dimapping di Keuangan."]);
+            exit;
+        }
+        $metode_bayar = strtolower(trim((string)$bankRow['bank_nama']));
     }
     $is_kompensasi_free = ($metode_bayar === 'kompensasi_free');
     $only_activate_without_transaksi = (trim($_POST["only_activate_without_transaksi"] ?? '0') === '1');
