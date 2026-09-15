@@ -38,6 +38,33 @@ if (!is_array($update)) {
     exit;
 }
 
+// ---- callback_query: tekan tombol inline / sub-menu bot admin billing ----
+// callback_data berisi string perintah (mis. "/transaksi 30") yang diproses
+// lewat jalur telegramAdminHandle yang sama dgn pesan teks biasa.
+if (isset($update['callback_query']) && is_array($update['callback_query'])) {
+    $cb = $update['callback_query'];
+    $cbChat = (string)($cb['message']['chat']['id'] ?? $cb['from']['id'] ?? '');
+    $cbData = trim((string)($cb['data'] ?? ''));
+    $cbId   = (string)($cb['id'] ?? '');
+
+    $stmtCb = $conn->prepare("SELECT * FROM bottelegram WHERE id = ? LIMIT 1");
+    $stmtCb->bind_param('i', $botId);
+    $stmtCb->execute();
+    $cbBotRow = $stmtCb->get_result()->fetch_assoc();
+    $stmtCb->close();
+
+    if ($cbBotRow) {
+        require_once __DIR__ . '/telegram_admin_helper.php';
+        telegramAdminEnsureColumns($conn);
+        if ($cbChat !== '' && $cbData !== '') {
+            telegramAdminHandle($conn, $cbBotRow, $cbChat, $cbData, true);
+        }
+        answerTelegramCallback((string)$cbBotRow['bottoken'], $cbId);
+    }
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
 $message = $update['message'] ?? $update['edited_message'] ?? null;
 if (!is_array($message)) {
     echo json_encode(['ok' => true]);
@@ -46,12 +73,26 @@ if (!is_array($message)) {
 
 $chatId = (string)($message['chat']['id'] ?? '');
 $text = trim((string)($message['text'] ?? ''));
-if ($chatId === '' || $text === '') {
+
+// Foto (bukti pembayaran utk Manual Aktif bot admin). Ambil resolusi terbesar.
+// Juga terima document ber-mime image/*.
+$photoFileId = '';
+if (isset($message['photo']) && is_array($message['photo']) && $message['photo']) {
+    $ph = end($message['photo']);
+    $photoFileId = (string)($ph['file_id'] ?? '');
+} elseif (isset($message['document']['file_id']) && strpos((string)($message['document']['mime_type'] ?? ''), 'image/') === 0) {
+    $photoFileId = (string)$message['document']['file_id'];
+}
+if ($photoFileId !== '' && $text === '') {
+    $text = trim((string)($message['caption'] ?? ''));
+}
+
+if ($chatId === '' || ($text === '' && $photoFileId === '')) {
     echo json_encode(['ok' => true]);
     exit;
 }
 
-$stmtBot = $conn->prepare("SELECT id, namebot, bottoken, pemilik FROM bottelegram WHERE id = ? LIMIT 1");
+$stmtBot = $conn->prepare("SELECT * FROM bottelegram WHERE id = ? LIMIT 1");
 $stmtBot->bind_param('i', $botId);
 $stmtBot->execute();
 $botRow = $stmtBot->get_result()->fetch_assoc();
@@ -63,12 +104,23 @@ if (!$botRow) {
 }
 $botToken = (string)$botRow['bottoken'];
 
+// Bot Admin Billing: kalau bot ini diaktifkan mode admin-nya & pengirim
+// terdaftar sbg admin, perintah spt /pelanggan /server /tagihan dll dijawab
+// dengan data billing (dibatasi per-izin). Lihat notifbot/telegram_admin_helper.php.
+require_once __DIR__ . '/telegram_admin_helper.php';
+telegramAdminEnsureColumns($conn);
+
 // Format Telegram utk deep-link: "/start <payload>" (payload dari
 // t.me/<username>?start=<payload>) ATAU "/start" polos tanpa payload.
 if (preg_match('/^\/start(?:@\S+)?(?:\s+(\S+))?$/i', $text, $m)) {
     $idpelPayload = trim((string)($m[1] ?? ''));
 
     if ($idpelPayload === '') {
+        // /start polos dari admin terdaftar -> tampilkan menu bot admin.
+        if (telegramAdminHandle($conn, $botRow, $chatId, $text)) {
+            echo json_encode(['ok' => true]);
+            exit;
+        }
         sendTelegramMessage($botToken, $chatId, "Halo! Untuk menghubungkan akun Telegram Anda, buka link \"Hubungkan Telegram\" dari portal pelanggan Anda (bukan chat langsung ke bot ini).");
         echo json_encode(['ok' => true]);
         exit;
@@ -93,10 +145,17 @@ if (preg_match('/^\/start(?:@\S+)?(?:\s+(\S+))?$/i', $text, $m)) {
     $stmtSave->close();
 
     $namaCustomer = (string)($custRow['NAMA'] ?? '');
-    sendTelegramMessage($botToken, $chatId, "✅ Berhasil! Akun Telegram Anda sekarang terhubung dengan pelanggan *$namaCustomer* ($idpelPayload). Anda akan menerima notifikasi tagihan/informasi layanan di sini.");
+    sendTelegramMessage($botToken, $chatId, "Berhasil! Akun Telegram Anda sekarang terhubung dengan pelanggan " . $namaCustomer . " ($idpelPayload). Anda akan menerima notifikasi tagihan/informasi layanan di sini.", '');
     echo json_encode(['ok' => true]);
     exit;
 }
 
-// Pesan lain di luar "/start <IDPEL>" -- belum ada auto-respon di fase ini.
+// Perintah bot admin (/id, /pelanggan, /server, /tagihan, /menunggak, ...) +
+// foto bukti pembayaran utk /aktif.
+if (telegramAdminHandle($conn, $botRow, $chatId, $text, false, $photoFileId)) {
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
+// Pesan lain -- belum ada auto-respon utk pelanggan umum di fase ini.
 echo json_encode(['ok' => true]);

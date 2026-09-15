@@ -87,7 +87,7 @@ if (!function_exists('notifTemplateDefaults')) {
                 . "🔹 *ID Pelanggan*   : \$IDPEL\n"
                 . "🔹 *Nama Pelanggan* : \$NAMA\n"
                 . "🔹 *Paket Layanan*  : \$PAKET\n"
-                . "🔹 *Jatuh Tempo*    : \$jatuh_tempo\n\n"
+                . "🔹 *Jatuh Tempo*    : \$jatuh_tempo_pelanggan\n\n"
                 . "📞 *WhatsApp*       : \$NOWA\n"
                 . "📧 *Email*          : \$EMAIL\n"
                 . "🏠 *Alamat*         : \$ALAMAT\n"
@@ -210,10 +210,97 @@ if (!function_exists('notifTemplateGetPembayaranBerhasil')) {
      * di-set -- supaya akun yang belum sentuh setting baru ini TIDAK berubah
      * perilaku pesannya (sama persis dgn teks lama yang di-hardcode).
      */
-    function notifTemplateGetPembayaranBerhasil(string $pemilik): string
+    function notifTemplateGetPembayaranBerhasil(string $pemilik, string $area = '', string $serverPemilik = ''): string
     {
-        $custom = notifTemplateGetKhususColumn($pemilik, 'pesan_pembayaran_berhasil');
+        $custom = notifTemplateGetKhususColumn($pemilik, 'pesan_pembayaran_berhasil', $area, $serverPemilik);
         return $custom !== '' ? $custom : notifTemplateDefaultPembayaranBerhasil();
+    }
+}
+
+if (!function_exists('notifTemplateResolvePemilik')) {
+    /**
+     * "Template notifikasi MANDIRI untuk mitra" -- kalau owner sudah mengizinkan
+     * (kolom user.notif_template_mandiri = 1 pada baris akun mitra) DAN mitra itu
+     * sudah punya baris template sendiri di notif_khusus, maka notifikasi untuk
+     * pelanggan yg AREA/server-nya milik mitra tsb memakai template MITRA, bukan
+     * template owner. Kalau belum diizinkan / belum punya baris sendiri ->
+     * fallback ke $defaultPemilik (template owner) -- pelanggan tidak pernah
+     * tiba-tiba dapat template kosong.
+     *
+     * $defaultPemilik  = key owner spt biasa (USERNAME owner / nama akhir file cron).
+     * $area            = AREA pelanggan/server (WAJIB diisi pemanggil supaya bisa resolve).
+     * $serverPemilik   = kolom server.PEMILIK utk pelanggan itu (kalau ada; kalau
+     *                    kosong dipakai $defaultPemilik).
+     */
+    function notifTemplateResolvePemilik(string $defaultPemilik, string $area = '', string $serverPemilik = ''): string
+    {
+        global $conn;
+        $area = trim($area);
+        if (!($conn instanceof mysqli) || $area === '') {
+            return $defaultPemilik;
+        }
+
+        // Peta (PEMILIK<TAB>AREA) -> USERNAME mitra, dibangun sekali per request.
+        static $map = null;
+        if ($map === null) {
+            $map = [];
+            // kolom self-heal (kalau user.php belum pernah dibuka)
+            $chk = @mysqli_query($conn, "SHOW COLUMNS FROM `user` LIKE 'notif_template_mandiri'");
+            if ($chk && mysqli_num_rows($chk) === 0) {
+                @mysqli_query($conn, "ALTER TABLE `user` ADD COLUMN `notif_template_mandiri` TINYINT(1) NOT NULL DEFAULT 0");
+            }
+            $q = @mysqli_query($conn, "SELECT USERNAME, server FROM `user`
+                    WHERE STATUS='ASSISTANT' AND COALESCE(notif_template_mandiri,0)=1
+                      AND server IS NOT NULL AND server <> '' AND server <> '[]'");
+            if ($q) {
+                while ($r = mysqli_fetch_assoc($q)) {
+                    $mitra = (string)$r['USERNAME'];
+                    $ids = json_decode((string)$r['server'], true);
+                    if (!is_array($ids) || !$ids) continue;
+                    // mitra harus SUDAH punya baris template sendiri
+                    $me = mysqli_real_escape_string($conn, $mitra);
+                    $hasRow = @mysqli_query($conn, "SELECT 1 FROM `notif_khusus` WHERE pemilik='$me' LIMIT 1");
+                    if (!$hasRow || mysqli_num_rows($hasRow) === 0) continue;
+                    $idIn = implode(',', array_map('intval', $ids));
+                    if ($idIn === '') continue;
+                    $qs = @mysqli_query($conn, "SELECT PEMILIK, AREA FROM `server` WHERE id IN ($idIn)");
+                    if ($qs) {
+                        while ($s = mysqli_fetch_assoc($qs)) {
+                            $map[(string)$s['PEMILIK'] . "\t" . (string)$s['AREA']] = $mitra;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!$map) return $defaultPemilik;
+        $sp = $serverPemilik !== '' ? $serverPemilik : $defaultPemilik;
+        return $map[$sp . "\t" . $area] ?? ($map[$defaultPemilik . "\t" . $area] ?? $defaultPemilik);
+    }
+}
+
+if (!function_exists('notifTemplateSeedMitraFromOwner')) {
+    /**
+     * Saat mitra PERTAMA KALI diberi izin "template mandiri" & belum punya baris
+     * notif_khusus sendiri: SALIN baris template owner sebagai titik awal, supaya
+     * pesan yg dikirim TETAP sama dgn owner sampai mitra benar2 mengeditnya
+     * ("Ikut template owner" sbg fallback). Kalau owner sendiri belum punya baris,
+     * dibiarkan -- notifTemplateEnsureRow() nanti yg buat pakai default sistem.
+     */
+    function notifTemplateSeedMitraFromOwner(string $mitra, string $owner): void
+    {
+        global $conn;
+        if (!($conn instanceof mysqli) || $mitra === '' || $owner === '' || $mitra === $owner) return;
+        $m = mysqli_real_escape_string($conn, $mitra);
+        $o = mysqli_real_escape_string($conn, $owner);
+        $has = @mysqli_query($conn, "SELECT 1 FROM `notif_khusus` WHERE pemilik='$m' LIMIT 1");
+        if ($has && mysqli_num_rows($has) > 0) return;
+        $src = @mysqli_query($conn, "SELECT 1 FROM `notif_khusus` WHERE pemilik='$o' LIMIT 1");
+        if (!$src || mysqli_num_rows($src) === 0) return;
+        $cols = NOTIF_KHUSUS_TEMPLATE_COLUMNS();
+        $colSql = implode(', ', array_map(function ($c) { return "`$c`"; }, $cols));
+        @mysqli_query($conn, "INSERT INTO `notif_khusus` (pemilik, $colSql)
+            SELECT '$m', $colSql FROM `notif_khusus` WHERE pemilik='$o' LIMIT 1");
     }
 }
 
@@ -292,8 +379,9 @@ if (!function_exists('notifTemplateGetContent')) {
      * jalan tanpa perlu diubah, walau sumber datanya skrg database, bukan
      * file notifdata/*.txt lagi.
      */
-    function notifTemplateGetContent(string $pemilik): string
+    function notifTemplateGetContent(string $pemilik, string $area = '', string $serverPemilik = ''): string
     {
+        $pemilik = notifTemplateResolvePemilik($pemilik, $area, $serverPemilik);
         $row = notifTemplateEnsureRow($pemilik);
         return notifTemplateBuildFileContent($row['pesan_registrasi'], $row['pesan_expired'], $row['pesan_reminder']);
     }
@@ -337,9 +425,9 @@ if (!function_exists('notifTemplateGetSection')) {
      * yang paling sering dipakai consumer (cron WA): cukup 1 panggilan utk
      * dapat isi section yang siap dipakai replaceVariables().
      */
-    function notifTemplateGetSection(string $pemilik, string $section): string
+    function notifTemplateGetSection(string $pemilik, string $section, string $area = '', string $serverPemilik = ''): string
     {
-        return notifTemplateExtractSection(notifTemplateGetContent($pemilik), $section);
+        return notifTemplateExtractSection(notifTemplateGetContent($pemilik, $area, $serverPemilik), $section);
     }
 }
 
@@ -351,12 +439,13 @@ if (!function_exists('notifTemplateGetKhususColumn')) {
      * krn bukan bagian dari 3 section utama itu. $column HARUS salah satu dari
      * NOTIF_KHUSUS_TEMPLATE_COLUMNS() di atas.
      */
-    function notifTemplateGetKhususColumn(string $pemilik, string $column): string
+    function notifTemplateGetKhususColumn(string $pemilik, string $column, string $area = '', string $serverPemilik = ''): string
     {
         global $conn;
         if (!$conn || !in_array($column, NOTIF_KHUSUS_TEMPLATE_COLUMNS(), true)) {
             return '';
         }
+        $pemilik = notifTemplateResolvePemilik($pemilik, $area, $serverPemilik);
 
         // Auto-migrasi kolom kalau belum ada -- notification.php juga sudah
         // punya migrasi serupa, tapi itu cuma jalan kalau admin BUKA halaman
