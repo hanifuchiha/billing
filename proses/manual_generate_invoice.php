@@ -68,6 +68,20 @@ if (!in_array($generate_month, $bulan_penggunaan, true) || $generate_year < 2000
     exit;
 }
 
+// Pengaman salah periode: generate manual hanya boleh untuk bulan berjalan
+// atau satu bulan berikutnya. Pada 12 September 2026 pernah terpilih Januari
+// 2026 dan menghasilkan ratusan tagihan lampau yang lalu diwarisi Tripay.
+$periodeDiminta = sprintf('%04d-%02d', $generate_year, array_search($generate_month, $bulan_penggunaan, true) + 1);
+$periodeSekarang = date('Y-m');
+$periodeBerikutnya = date('Y-m', strtotime('first day of next month'));
+if (!in_array($periodeDiminta, [$periodeSekarang, $periodeBerikutnya], true)) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Generate manual hanya diizinkan untuk bulan berjalan atau satu bulan berikutnya.'
+    ]);
+    exit;
+}
+
 // Satu periode saja: periode yang diinput admin. (Sebelumnya ada "periode kedua"
 // otomatis +1 bulan di sini yang bikin due date meleset 2 bulan tiap klik manual
 // generate -- dihapus supaya konsisten dengan UI yang sudah menjanjikan "1 periode

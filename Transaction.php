@@ -236,17 +236,21 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
     </form>
 
     <?php
-    $selected_generate_month = $_POST['generate_month'] ?? $bulan_penggunaan[(int)date('n') - 1];
-    $selected_generate_year = (int)($_POST['generate_year'] ?? date('Y'));
+    $selected_generate_month = $bulan_penggunaan[(int)date('n') - 1];
+    $selected_generate_year = (int)date('Y');
+    $periode_generate_options = [
+      ['bulan' => $selected_generate_month, 'tahun' => $selected_generate_year],
+      ['bulan' => $bulan_penggunaan[(int)date('n', strtotime('first day of next month')) - 1], 'tahun' => (int)date('Y', strtotime('first day of next month'))],
+    ];
     ?>
 
     <form method="POST" class="row g-3 align-items-end mt-1" id="manualGenerateForm">
       <div class="col-md-3">
         <label for="generate_month" class="form-label">Periode Penggunaan (Bulan)<br><small class="text-muted">Khusus pelanggan Fixed Due Date, 1 periode per generate</small></label>
         <select class="form-control" id="generate_month" name="generate_month" required>
-          <?php foreach ($bulan_penggunaan as $bulan_item): ?>
-            <option value="<?= htmlspecialchars($bulan_item) ?>" <?= ($selected_generate_month === $bulan_item) ? 'selected' : '' ?>>
-              <?= htmlspecialchars($bulan_item) ?>
+          <?php foreach ($periode_generate_options as $periode_item): ?>
+            <option value="<?= htmlspecialchars($periode_item['bulan']) ?>" data-year="<?= $periode_item['tahun'] ?>">
+              <?= htmlspecialchars($periode_item['bulan']) ?>
             </option>
           <?php endforeach; ?>
         </select>
@@ -254,13 +258,13 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
       <div class="col-md-2">
         <label for="generate_year" class="form-label">Tahun</label>
         <select class="form-control" id="generate_year" name="generate_year" required>
-          <?php for ($yr = date('Y') - 1; $yr <= date('Y') + 3; $yr++): ?>
-            <option value="<?= $yr ?>" <?= ((int)$selected_generate_year === (int)$yr) ? 'selected' : '' ?>><?= $yr ?></option>
-          <?php endfor; ?>
+          <?php foreach (array_values(array_unique(array_column($periode_generate_options, 'tahun'))) as $periode_year): ?>
+            <option value="<?= $periode_year ?>"><?= $periode_year ?></option>
+          <?php endforeach; ?>
         </select>
       </div>
       <div class="col-md-3 d-grid">
-        <button type="submit" class="btn btn-primary" id="manualGenerateBtn" name="manual_generate_invoice" onclick="return confirm('Generate invoice PENAGIHAN untuk periode yang dipilih?');">
+        <button type="submit" class="btn btn-primary" id="manualGenerateBtn" name="manual_generate_invoice">
           Manual Generate Invoice
         </button>
       </div>
@@ -275,8 +279,25 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
 
       if (!manualForm || !manualBtn || !manualResult) return;
 
+      var generateMonth = document.getElementById('generate_month');
+      var generateYear = document.getElementById('generate_year');
+      function syncGenerateYear() {
+        var selected = generateMonth.options[generateMonth.selectedIndex];
+        generateYear.value = selected.getAttribute('data-year');
+      }
+      generateMonth.addEventListener('change', syncGenerateYear);
+      syncGenerateYear();
+
       manualForm.addEventListener('submit', function(e) {
         e.preventDefault();
+
+        var month = document.getElementById('generate_month').value;
+        var year = document.getElementById('generate_year').value;
+        var confirmation = window.prompt('Ketik ' + month.toUpperCase() + ' ' + year + ' untuk membuat invoice periode tersebut.');
+        if (confirmation !== (month + ' ' + year).toUpperCase()) {
+          manualResult.innerHTML = '<div class="alert alert-warning">Generate dibatalkan: konfirmasi periode tidak cocok.</div>';
+          return;
+        }
 
         var formData = new FormData(manualForm);
         formData.append('manual_generate_invoice', '1');
