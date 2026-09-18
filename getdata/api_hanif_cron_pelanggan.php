@@ -1195,8 +1195,26 @@ if (!$resPelanggan) {
         $existingRemote = $remoteByIdpel[$idpelKey] ?? null;
         $keuanganId = !empty($row['KEUANGAN_ID']) ? (int)$row['KEUANGAN_ID'] : null;
 
-        if ($keuanganId === null && $existingRemote) {
-            $keuanganId = (int)$existingRemote['id'];
+        // Selalu jadikan ID hasil pencarian IDPEL pada database target sebagai
+        // sumber kebenaran. ID dari database lama bisa bertabrakan dengan
+        // pelanggan lain setelah cutover.
+        if ($existingRemote) {
+            $remoteId = (int)$existingRemote['id'];
+            if ($keuanganId !== $remoteId) {
+                syncLog("IDPEL=$idpel: KEUANGAN_ID lokal " . ($keuanganId ?? 'NULL') . " dikoreksi menjadi ID Airlink=$remoteId.");
+                if (!$dryRun) {
+                    $localId = (int)$row['id'];
+                    mysqli_query($conn, "UPDATE pelanggan SET KEUANGAN_ID=$remoteId WHERE id=$localId");
+                }
+            }
+            $keuanganId = $remoteId;
+        } elseif ($keuanganId !== null) {
+            syncLog("IDPEL=$idpel mempunyai KEUANGAN_ID lama/stale=$keuanganId; referensi direset dan pelanggan akan dibuat ulang berdasarkan IDPEL.");
+            if (!$dryRun) {
+                $localId = (int)$row['id'];
+                mysqli_query($conn, "UPDATE pelanggan SET KEUANGAN_ID=NULL, KEUANGAN_LAST_HASH=NULL, KEUANGAN_LAST_SYNC=NULL, KEUANGAN_SYNC_STATUS='pending', KEUANGAN_SYNC_ERROR=NULL WHERE id=$localId");
+            }
+            $keuanganId = null;
         }
 
         // ---- RECONCILE: pelanggan sudah ada di keuangan -> pastikan transaksi

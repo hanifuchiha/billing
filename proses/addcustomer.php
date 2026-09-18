@@ -436,7 +436,9 @@ $filePath = notifTemplateFilePath($ceknama);
             mysqli_query($conn, $delete_sql);
         }
 
-        // Auto buat transaksi PENAGIHAN sesuai periode tanggal pasang
+        // Auto buat transaksi PENAGIHAN untuk periode saat registrasi. Tanggal
+        // pasang bisa berasal dari migrasi/import data lama; memakainya sebagai
+        // label periode akan membuat tagihan Maret/Juli terbit lagi di September.
         $bulan_indonesia = [
             1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
             'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
@@ -447,7 +449,8 @@ $filePath = notifTemplateFilePath($ceknama);
             $timestamp_pasang = time();
         }
 
-        $periode_penggunaan = $bulan_indonesia[(int)date('n', $timestamp_pasang)] . ' ' . date('Y', $timestamp_pasang);
+        $timestamp_periode_registrasi = time();
+        $periode_penggunaan = $bulan_indonesia[(int)date('n', $timestamp_periode_registrasi)] . ' ' . date('Y', $timestamp_periode_registrasi);
         $tanggal_penagihan = date('Y-m-d');
 
         $harga_penagihan = (int)reseller_effective_harga($conn, $packages, $server);

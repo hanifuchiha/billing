@@ -99,6 +99,7 @@ $bulanIndo = [
     'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
     'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
 ];
+$periodeBulanBerjalan = $bulanIndo[(int)date('n') - 1] . ' ' . date('Y');
 
 $userStmt = $conn->prepare("SELECT id FROM user WHERE USERNAME = ? LIMIT 1");
 $userStmt->bind_param('s', $pemilik);
@@ -199,6 +200,23 @@ while ($server = $serverRes->fetch_assoc()) {
             continue;
         }
 
+        // Satu pembayaran BERHASIL pada bulan berjalan menutup siklus aktif.
+        // Bersihkan invoice lama lalu jangan hitung ulang dari anchor historis.
+        $paidCurrentStmt = $conn->prepare("SELECT 1 FROM transaksi WHERE IDPEL = ? AND PEMILIK = ? AND TRIM(UPPER(COALESCE(STATUS, ''))) = 'BERHASIL' AND TRIM(UPPER(COALESCE(PENGUNAAN, ''))) = TRIM(UPPER(?)) LIMIT 1");
+        $paidCurrentStmt->bind_param('sss', $idpel, $serverPemilik, $periodeBulanBerjalan);
+        $paidCurrentStmt->execute();
+        $paidCurrentStmt->store_result();
+        $hasPaidCurrent = $paidCurrentStmt->num_rows > 0;
+        $paidCurrentStmt->close();
+        if ($hasPaidCurrent) {
+            $paidCleanupStmt = $conn->prepare("DELETE FROM transaksi WHERE IDPEL = ? AND PEMILIK = ? AND TRIM(UPPER(COALESCE(STATUS, ''))) = 'PENAGIHAN'");
+            $paidCleanupStmt->bind_param('ss', $idpel, $serverPemilik);
+            $paidCleanupStmt->execute();
+            $paidCleanupStmt->close();
+            $totalSkipped++;
+            continue;
+        }
+
         // Jatuh tempo berikutnya pelanggan ini, SAMA PERSIS dengan yang dipakai
         // tables.php utk menampilkan "Jatuh tempo berikutnya" -- supaya generate
         // invoice tidak pernah berbeda dari apa yang admin lihat di Overview Customer.
@@ -214,6 +232,24 @@ while ($server = $serverRes->fetch_assoc()) {
             $totalSkipped++;
             continue;
         }
+
+        // Anchor migrasi lama dapat menghasilkan due date berbulan-bulan ke
+        // belakang. Jangan pernah menerbitkan ulang label periode lampau:
+        // majukan ke bulan berjalan dan buang invoice historis yang tersisa.
+        if (strtotime($dueDate) < strtotime(date('Y-m-01'))) {
+            $oldDueDay = (int)date('j', strtotime($dueDate));
+            $dueDate = tagihanBuildMonthlyDate((int)date('Y'), (int)date('n'), $oldDueDay) ?: $today;
+            $oldCleanupStmt = $conn->prepare("DELETE FROM transaksi WHERE IDPEL = ? AND PEMILIK = ? AND TRIM(UPPER(COALESCE(STATUS, ''))) = 'PENAGIHAN'");
+            $oldCleanupStmt->bind_param('ss', $idpel, $serverPemilik);
+            $oldCleanupStmt->execute();
+            $oldCleanupStmt->close();
+        }
+
+        $duePeriodeCleanup = $bulanIndo[(int)date('n', strtotime($dueDate)) - 1] . ' ' . date('Y', strtotime($dueDate));
+        $oldCleanupStmt = $conn->prepare("DELETE FROM transaksi WHERE IDPEL = ? AND PEMILIK = ? AND TRIM(UPPER(COALESCE(STATUS, ''))) = 'PENAGIHAN' AND TRIM(UPPER(COALESCE(PENGUNAAN, ''))) <> TRIM(UPPER(?))");
+        $oldCleanupStmt->bind_param('sss', $idpel, $serverPemilik, $duePeriodeCleanup);
+        $oldCleanupStmt->execute();
+        $oldCleanupStmt->close();
 
         // Terbit H- sebelum jatuh tempo: cuma generate kalau sisa hari ke jatuh
         // tempo <= setting days_before_due (termasuk kalau sudah lewat/negatif --
@@ -231,8 +267,43 @@ while ($server = $serverRes->fetch_assoc()) {
         $periodeNormalized = mb_strtoupper(trim($periode), 'UTF-8');
         $isRegenerated = false;
 
-        $checkStmt = $conn->prepare("SELECT id, TRIM(UPPER(COALESCE(STATUS, ''))) AS STATUS_NORM FROM transaksi WHERE IDPEL = ? AND PEMILIK = ? AND TRIM(UPPER(COALESCE(PENGUNAAN, ''))) = ? AND TRIM(UPPER(COALESCE(STATUS, ''))) IN ('PENAGIHAN','PERMINTAAN KODE','KONFIRMASI','BERHASIL') LIMIT 1");
-        $checkStmt->bind_param('sss', $idpel, $serverPemilik, $periodeNormalized);
+        // FIX: "sudah lunas siklus ini atau belum" TIDAK boleh dicek lewat match
+        // label PENGUNAAN -- riwayat lama bisa saja tersimpan dgn PENGUNAAN yang
+        // tidak presisi ke jatuh tempo aslinya (mis. transaksi BERHASIL berlabel
+        // "Agustus 2026" padahal jatuh tempo yg benar2 dipenuhinya 22 Juli). Kalau
+        // dicocokkan ke teks PENGUNAAN, baris lama begitu bikin sistem mengira
+        // siklus SEKARANG (yg PENGUNAAN barunya kebetulan sama) sudah lunas --
+        // invoice baru TIDAK PERNAH digenerate & pelanggan tidak bisa bayar sama
+        // sekali walau statusnya EXPIRED. Pakai tagihanHitungStatus() (fungsi
+        // kanonik yg sama dipakai cek_tagihan_harian.php utk keputusan isolir) --
+        // acuannya jatuh tempo & tanggal bayar ASLI, bukan teks PENGUNAAN.
+        $statusCtx = [
+            'hari_ini' => $today,
+            'jatuh_tempo_hari' => 25,
+            'lastPaymentMap' => $lastPaymentMap,
+            'lastPaidUsageMap' => $lastPaidUsageMap,
+            'prabayar_grace_period' => 0,
+            'monthversary_follow_last_payment' => $monthversaryFollowLastPayment,
+        ];
+        $statusResult = tagihanHitungStatus($conn, $pel, $statusCtx);
+        if (!empty($statusResult['sudah_bayar'])) {
+            // Siklus kanonik sudah lunas: bersihkan sisa PENAGIHAN lama yang
+            // sebelumnya tertinggal karena alur langsung skip di titik ini.
+            $paidCleanupStmt = $conn->prepare("DELETE FROM transaksi WHERE IDPEL = ? AND PEMILIK = ? AND TRIM(UPPER(COALESCE(STATUS, ''))) = 'PENAGIHAN'");
+            $paidCleanupStmt->bind_param('ss', $idpel, $serverPemilik);
+            $paidCleanupStmt->execute();
+            $paidCleanupStmt->close();
+            $totalSkipped++;
+            continue;
+        }
+
+        // Sudah dipastikan BELUM lunas di atas -- di sini cuma bersihkan sisa
+        // baris PENAGIHAN LAMA milik pelanggan ini, APAPUN label PENGUNAAN-nya,
+        // supaya tidak ada 2 baris PENAGIHAN nyangkut sekaligus. TIDAK dicocokkan
+        // ke PENGUNAAN sama sekali -- PERMINTAAN KODE/KONFIRMASI yang sedang
+        // berjalan tetap dibiarkan (bukti pembayaran belum diverifikasi).
+        $checkStmt = $conn->prepare("SELECT id, TRIM(UPPER(COALESCE(STATUS, ''))) AS STATUS_NORM FROM transaksi WHERE IDPEL = ? AND PEMILIK = ? AND TRIM(UPPER(COALESCE(STATUS, ''))) IN ('PENAGIHAN','PERMINTAAN KODE','KONFIRMASI') ORDER BY id DESC LIMIT 1");
+        $checkStmt->bind_param('ss', $idpel, $serverPemilik);
         $checkStmt->execute();
         $checkStmt->bind_result($existingId, $existingStatusNorm);
         $found = $checkStmt->fetch();
@@ -240,14 +311,14 @@ while ($server = $serverRes->fetch_assoc()) {
 
         if ($found) {
             if ($existingStatusNorm === 'PENAGIHAN') {
-                // Sudah ada penagihan (belum bayar) untuk periode ini: hapus dulu, buat ulang di bawah.
+                // Sudah ada penagihan (belum bayar): hapus dulu, buat ulang di bawah.
                 $delStmt = $conn->prepare("DELETE FROM transaksi WHERE id = ?");
                 $delStmt->bind_param('i', $existingId);
                 $delStmt->execute();
                 $delStmt->close();
                 $isRegenerated = true;
             } else {
-                // Status lain (BERHASIL/KONFIRMASI/PERMINTAAN KODE): jangan disentuh, skip.
+                // PERMINTAAN KODE / KONFIRMASI sedang berjalan: jangan disentuh, skip.
                 $totalSkipped++;
                 $ringkasanPerPeriode[$periode]['skipped'] = ($ringkasanPerPeriode[$periode]['skipped'] ?? 0) + 1;
                 continue;
