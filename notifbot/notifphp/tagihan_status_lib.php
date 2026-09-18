@@ -831,6 +831,35 @@ if (!function_exists('tagihanHitungStatus')) {
             }
         }
 
+        // Pengaman khusus Fixed Due Date: label PENGUNAAN pada transaksi
+        // BERHASIL adalah bukti periode yang sudah dilunasi, termasuk
+        // kompensasi_free Rp0. Tanggal input transaksi bisa berada di bulan
+        // sebelumnya (contoh: kompensasi September dibuat 31 Agustus), jadi
+        // status tidak boleh hanya dihitung dari tanggal input tersebut.
+        // Turunkan jatuh tempo siklus berikutnya dari label periodenya; selama
+        // batas itu belum tiba pelanggan tetap dianggap sudah bayar.
+        if ($belum_bayar && $TIPE_TEMPO === 'mengikuti_tanggal_tempo' && $penggunaan_terakhir_berhasil !== '') {
+            $dueFromPaidUsage = tagihanGetFirstDueDateFixedByUsagePeriod(
+                $penggunaan_terakhir_berhasil,
+                $jatuh_tempo_hari,
+                $periode_tercatat_mode
+            );
+            if ($dueFromPaidUsage !== null) {
+                $paidUsageIsolationLimit = $dueFromPaidUsage;
+                if ($TIPE_BAYAR === 'prabayar' && $prabayar_grace_period > 0) {
+                    $paidUsageIsolationLimit = date(
+                        'Y-m-d',
+                        strtotime("+{$prabayar_grace_period} days", strtotime($dueFromPaidUsage))
+                    );
+                }
+                if (strtotime($paidUsageIsolationLimit) > strtotime($hari_ini)) {
+                    $belum_bayar = false;
+                    $jatuh_tempo_str = $dueFromPaidUsage;
+                    $keterangan = "Transaksi BERHASIL untuk $penggunaan_terakhir_berhasil; jatuh tempo berikutnya $dueFromPaidUsage";
+                }
+            }
+        }
+
         return [
             'sudah_bayar' => !$belum_bayar,
             'keterangan' => $keterangan,

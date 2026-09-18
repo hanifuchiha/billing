@@ -911,3 +911,64 @@ MAPPING KAS/BANK MANUAL ACTIVE DAN REVIEW TRANSAKSI - 12 SEPTEMBER 2026
    September 2026 miliknya merupakan kompensasi_free Rp0. Kompensasi gratis
    sengaja tidak disinkronkan sebagai penerimaan kas/bank. Ada data lain dengan
    nama sama milik voucher, tetapi tidak mempunyai transaksi.
+
+RENCANA MIGRASI SERVER RUSUN UJUNG MENTENG - 15 SEPTEMBER 2026
+==============================================================
+1. Server gabungan telah tersedia dengan area
+   Air-13960_UJUNG_MENTENG_RUSUN dan endpoint 103.46.186.15:8787.
+2. Port API terbuka dan login RouterOS API memakai kredensial otomatis yang
+   tersimpan di Billing telah berhasil. Identity router yang terverifikasi
+   adalah AIR.ROT-JAKTIM.CAKUNG.UJM.
+3. Status Online pada daftar server hanya menunjukkan endpoint/port dapat
+   dijangkau. Kesiapan operasional wajib dibuktikan juga dengan keberhasilan
+   login RouterOS API; angka 0 pada kolom pelanggan masih wajar selama belum
+   ada pelanggan yang direlasikan ke server gabungan.
+4. Sebelum migrasi, buat backup tabel server, pelanggan, paket, ODP, dan
+   transaksi yang berkaitan dengan Gedung A dan Gedung B.
+5. Nonaktifkan sementara proses isolir khusus kedua area lama selama migrasi,
+   tanpa mematikan isolir area lain.
+6. Salin atau relasikan paket dan ODP yang diperlukan ke server gabungan,
+   kemudian pindahkan lima pelanggan sampel terlebih dahulu.
+7. Untuk pelanggan sampel, cocokkan ID pelanggan, akun PPPoE, profil aktif,
+   paket, ODP, status pembayaran, serta status online langsung di Mikrotik.
+8. Uji alur aktivasi setelah pembayaran dan alur isolir pelanggan menunggak.
+   Migrasi massal hanya boleh dilanjutkan apabila seluruh pengujian sampel
+   berhasil dan tidak menimbulkan pemutusan pelanggan yang sudah membayar/free.
+9. Setelah lolos pengujian, pindahkan seluruh pelanggan Gedung A dan Gedung B,
+   lalu audit ulang jumlah pelanggan, paket, ODP, transaksi, profil Mikrotik,
+   dan status online agar tidak ada data yang hilang atau tertukar.
+10. Aktifkan kembali cron isolir untuk server gabungan setelah audit selesai.
+    Server/area lama dipertahankan sementara sebagai cadangan dan tidak dihapus
+    sampai hasil migrasi dinyatakan stabil.
+
+PERBAIKAN ISOLIR KOMPENSASI FREE DAN FREERADIUS - 18 SEPTEMBER 2026
+==================================================================
+1. Audit pelanggan Erna Sri Wulandari (IDPEL
+   14120060520A.0103.07@airlink.co.id) membuktikan dari log RouterOS bahwa cron
+   Billing sempat mengubah PPP secret melalui API dari AirHome - 165k menjadi
+   EXPIRED, walaupun transaksi kompensasi_free September 2026 sudah BERHASIL.
+2. Akar masalahnya adalah transaksi September dibuat pada 31 Agustus. Logika
+   status Fixed Due Date lama lebih mengutamakan tanggal input transaksi dan
+   membandingkan label September dengan proyeksi Oktober setelah tanggal tempo,
+   sehingga pembayaran sah salah dinilai belum bayar.
+3. tagihan_status_lib.php sekarang memakai label PENGUNAAN transaksi BERHASIL
+   sebagai bukti periode lunas, termasuk kompensasi_free Rp0. Dari label periode
+   tersebut dihitung jatuh tempo siklus berikutnya beserta grace period.
+4. cek_tagihan_harian_airlink.php memakai pengaman yang sama sebelum melakukan
+   perubahan profil MikroTik. Untuk Erna, transaksi September melindungi layanan
+   sampai jatuh tempo berikutnya pada 10 Oktober 2026.
+5. Perbaikan berlaku untuk seluruh pelanggan Airlink tipe
+   mengikuti_tanggal_tempo. Metode pembayaran tidak dibatasi: transaksi biasa,
+   tunai, transfer, Tripay, sinkron Keuangan, dan kompensasi_free sama-sama
+   dihitung selama STATUS transaksi BERHASIL dan label periodenya valid.
+6. Ditemukan pula radius_sync_lib.php menjalankan `freeradius -X` di background
+   dari request PHP. Proses tersebut berakhir saat request/cgroup selesai dan
+   menyebabkan layanan RADIUS mati setelah sinkronisasi. Mekanisme restart kini
+   menggunakan systemctl secara langsung dan mencatat PID serta status hasilnya.
+7. Validasi akhir: sintaks PHP bersih, konfigurasi FreeRADIUS valid, restart dari
+   user www-data berhasil, service aktif pada port 1812/1813, profil MikroTik
+   Erna AirHome - 165k dan Online, serta Mikrotik-Group FreeRADIUS juga
+   AirHome - 165k.
+8. Cadangan file FreeRADIUS sebelum koreksi Erna tersedia sebagai
+   /etc/freeradius/3.0/users.backup-erna-20260918 dan
+   /etc/freeradius/3.0/mods-config/files/authorize.backup-erna-20260918.

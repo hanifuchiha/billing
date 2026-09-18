@@ -1610,12 +1610,30 @@ while ($server = mysqli_fetch_array($query_server)) {
                 }
             }
 
-            if ($belum_bayar && isPaidUsageAtOrAfterPeriodLocal($penggunaan_terakhir_berhasil, $periodeAktifFixedDueDate)) {
+            // Label PENGUNAAN yang sudah BERHASIL menentukan siklus yang
+            // benar-benar lunas. Jangan membandingkannya dengan proyeksi label
+            // bulan depan: sesudah tanggal tempo proyeksi itu sudah meloncat,
+            // sehingga kompensasi September yang dibuat 31 Agustus pernah salah
+            // dianggap belum bayar pada 18 September (kasus Erna).
+            $dueFromPaidUsage = tagihanGetFirstDueDateFixedByUsagePeriod(
+                $penggunaan_terakhir_berhasil,
+                $jatuh_tempo_hari,
+                $periode_tercatat
+            );
+            $paidUsageIsolationLimit = $dueFromPaidUsage;
+            if ($TIPE_BAYAR === 'prabayar' && !empty($paidUsageIsolationLimit) && $prabayar_grace_period > 0) {
+                $paidUsageIsolationLimit = date(
+                    'Y-m-d',
+                    strtotime("+{$prabayar_grace_period} days", strtotime($paidUsageIsolationLimit))
+                );
+            }
+            if ($belum_bayar && !empty($paidUsageIsolationLimit) && strtotime($paidUsageIsolationLimit) > strtotime($hari_ini)) {
                 $belum_bayar = false;
+                $jatuh_tempo_str = $dueFromPaidUsage;
                 $statistik['sudah_bayar']++;
                 $layakPulihkanProfile = true;
-                $alasanPemulihan = "Transaksi BERHASIL untuk $penggunaan_terakhir_berhasil ditemukan (pengaman periode aktif)";
-                echo "  [PENGAMAN PERIODE] $IDPEL tidak diisolir: transaksi $penggunaan_terakhir_berhasil sudah BERHASIL\n";
+                $alasanPemulihan = "Transaksi BERHASIL untuk $penggunaan_terakhir_berhasil; jatuh tempo berikutnya $dueFromPaidUsage";
+                echo "  [PENGAMAN PERIODE] $IDPEL tidak diisolir: transaksi $penggunaan_terakhir_berhasil BERHASIL, jatuh tempo berikutnya $dueFromPaidUsage\n";
             }
 
             // Simpan ke bucket yang sesuai

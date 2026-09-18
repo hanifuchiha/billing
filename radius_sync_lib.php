@@ -519,19 +519,18 @@ if (!function_exists('radiusReloadIfChanged')) {
             return null;
         }
 
-        $debugFile = '/var/log/freeradius/debug-radius-web.log';
         $pid = (int) trim((string) shell_exec('pidof freeradius'));
-        if ($pid > 0) {
-            shell_exec('sudo systemctl stop freeradius 2>&1');
-            shell_exec('sudo kill -9 ' . $pid . ' 2>&1');
-        }
-        shell_exec('sudo /bin/rm -f ' . escapeshellarg($debugFile) . ' 2>&1');
-        shell_exec('sudo /bin/touch ' . escapeshellarg($debugFile) . ' 2>&1');
-        shell_exec('sudo /bin/chmod 666 ' . escapeshellarg($debugFile) . ' 2>&1');
-        shell_exec('sudo freeradius -X > ' . escapeshellarg($debugFile) . ' 2>&1 &');
-
+        // Jalankan daemon melalui systemd. Proses `freeradius -X ... &` yang
+        // sebelumnya diluncurkan dari request PHP ikut berakhir ketika request
+        // selesai/cgroup dibersihkan, sehingga log menulis PID baru=0 dan
+        // layanan RADIUS mati setelah setiap sinkronisasi 30 menit.
+        $restartOutput = trim((string) shell_exec('sudo systemctl restart freeradius 2>&1'));
+        $isActive = trim((string) shell_exec('sudo systemctl is-active freeradius 2>&1'));
         $newPid = (int) trim((string) shell_exec('pidof freeradius'));
-        $out = "restart penuh (PID lama=$pid, PID baru=$newPid)";
+        $out = "restart via systemd (PID lama=$pid, PID baru=$newPid, status=$isActive)";
+        if ($restartOutput !== '') {
+            $out .= ' output=' . preg_replace('/\s+/', ' ', $restartOutput);
+        }
         radiusSyncLog("RESTART FreeRADIUS: $out");
         return $out;
     }
