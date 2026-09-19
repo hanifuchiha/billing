@@ -1044,3 +1044,12 @@ PENINGKATAN INVOICE H-9 DAN REMINDER DUA TAHAP - 19 SEPTEMBER 2026
 7. Konfigurasi invoice_generator-airlink.json merupakan runtime config produksi
    yang diabaikan Git. Nilai days_before_due=9 diverifikasi langsung di produksi;
    perubahan kode, mirror reminder, dan catatan disimpan dalam repository Git.
+8. Ketentuan catch-up: bila tanggal H-9 sudah terlewati saat konfigurasi mulai
+   berlaku, generator tidak menunggu H-2 dan membuat invoice pada cron 07.00
+   berikutnya karena pelanggan sudah berada di dalam jendela H-9. Reminder H-9
+   yang terlewat tidak dikirim mundur; reminder H-2 tetap diproses pada tanggalnya
+   apabila pelanggan masih belum lunas.
+9. Untuk kasus Siti pada perubahan ini, invoice catch-up dijadwalkan pada cron
+   20 September 2026 sekitar 07.00 WIB dan reminder H-2 pada 22 September sekitar
+   07.15 WIB jika belum membayar. Siklus berikutnya kembali berjalan normal:
+   invoice dan reminder awal H-9, kemudian reminder kedua H-2 bila belum lunas.
