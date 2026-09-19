@@ -134,22 +134,17 @@ if (!function_exists('tagihanGetLastPaidUsageMapBulk')) {
         }
         $inList = tagihanBuildEscapedInList($conn, $idpels);
         $trxDateExprT = tagihanBuildTrxDateExpr('t');
-        // Ambil satu transaksi terakhir per pelanggan dalam satu kali scan.
-        // Versi lama memakai correlated subquery MAX() yang membaca tabel
-        // transaksi berulang kali untuk setiap baris kandidat.
-        $sql = "SELECT ranked.`IDPEL`, ranked.`PENGUNAAN`, ranked.`trx_date`, ranked.`waktu`
-                FROM (
-                    SELECT t.`IDPEL`, t.`PENGUNAAN`, $trxDateExprT AS `trx_date`, t.`waktu`,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY t.`IDPEL`
-                               ORDER BY $trxDateExprT DESC, t.`waktu` DESC, t.`id` ASC
-                           ) AS `row_num`
-                    FROM `transaksi` t
-                    WHERE t.`STATUS` = 'BERHASIL'
-                      AND t.`IDPEL` IN ($inList)
-                ) ranked
-                WHERE ranked.`row_num` = 1
-                ORDER BY ranked.`IDPEL` ASC";
+        $trxDateExprX = tagihanBuildTrxDateExpr('x');
+        $sql = "SELECT t.`IDPEL`, t.`PENGUNAAN`, $trxDateExprT AS `trx_date`, t.`waktu`
+                FROM `transaksi` t
+                WHERE t.`STATUS` = 'BERHASIL'
+                    AND t.`IDPEL` IN ($inList)
+                    AND $trxDateExprT = (
+                        SELECT MAX($trxDateExprX)
+                        FROM `transaksi` x
+                        WHERE x.`STATUS` = 'BERHASIL' AND x.`IDPEL` = t.`IDPEL`
+                    )
+                ORDER BY t.`IDPEL` ASC, t.`waktu` DESC";
         $result = $conn->query($sql);
         $map = [];
         if ($result) {
@@ -159,6 +154,64 @@ if (!function_exists('tagihanGetLastPaidUsageMapBulk')) {
                     continue;
                 }
                 $map[$idpel] = trim((string) ($row['PENGUNAAN'] ?? ''));
+            }
+        }
+        return $map;
+    }
+}
+
+if (!function_exists('tagihanBuildPengunaanPeriodKeyExpr')) {
+    function tagihanBuildPengunaanPeriodKeyExpr(string $alias = ''): string
+    {
+        $p = $alias !== '' ? $alias . '.' : '';
+        return "(CAST(RIGHT({$p}PENGUNAAN, 4) AS UNSIGNED) * 100 + FIELD(LEFT({$p}PENGUNAAN, LOCATE(' ', {$p}PENGUNAAN) - 1),
+            'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'))";
+    }
+}
+
+if (!function_exists('tagihanGetLastPaymentDetailByUsagePeriodBulk')) {
+    /**
+     * Detail pembayaran BERHASIL terakhir per IDPEL (waktu, HARGA, PENGUNAAN),
+     * diurutkan berdasarkan PERIODE PEMAKAIAN (kolom PENGUNAAN, format
+     * "Bulan Tahun") -- BUKAN tanggal transaksi. Sebelumnya query ini
+     * dijalankan PER BARIS pelanggan (N+1) di tables.php -- utk pageSize
+     * besar (100) itu jadi 100 query kecil tambahan setiap kali user
+     * filter+cari. Sekarang dipanggil SEKALI utk semua IDPEL yg tampil di
+     * 1 halaman, pola sama seperti tagihanGetLastPaidUsageMapBulk() (self
+     * join cari baris dgn "kunci periode" maksimum per IDPEL).
+     */
+    function tagihanGetLastPaymentDetailByUsagePeriodBulk(mysqli $conn, array $idpels): array
+    {
+        if (empty($idpels)) {
+            return [];
+        }
+        $inList = tagihanBuildEscapedInList($conn, $idpels);
+        $periodKeyT = tagihanBuildPengunaanPeriodKeyExpr('t');
+        $periodKeyX = tagihanBuildPengunaanPeriodKeyExpr('x');
+        $sql = "SELECT t.`IDPEL`, t.`waktu`, t.`HARGA`, t.`PENGUNAAN`
+                FROM `transaksi` t
+                WHERE t.`STATUS` = 'BERHASIL'
+                    AND t.`IDPEL` IN ($inList)
+                    AND $periodKeyT = (
+                        SELECT MAX($periodKeyX)
+                        FROM `transaksi` x
+                        WHERE x.`STATUS` = 'BERHASIL' AND x.`IDPEL` = t.`IDPEL`
+                    )
+                ORDER BY t.`IDPEL` ASC, t.`waktu` DESC";
+        $result = $conn->query($sql);
+        $map = [];
+        if ($result) {
+            while ($row = $result->fetch_assoc()) {
+                $idpel = (string) ($row['IDPEL'] ?? '');
+                if ($idpel === '' || isset($map[$idpel])) {
+                    continue;
+                }
+                $map[$idpel] = [
+                    'waktu' => $row['waktu'],
+                    'HARGA' => $row['HARGA'],
+                    'PENGUNAAN' => $row['PENGUNAAN'],
+                ];
             }
         }
         return $map;
@@ -320,36 +373,6 @@ if (!function_exists('tagihanIsSamePeriodAsToday')) {
     }
 }
 
-if (!function_exists('tagihanIsTanggalPasangMasihAman')) {
-    /**
-     * BUG (fixed): cabang "baru pasang/bayar bulan ini" SEBELUMNYA mengecek
-     * TANGGALPASANG pakai tagihanIsSamePeriodAsToday() apa adanya utk SEMUA
-     * pelanggan prabayar yang SUDAH PERNAH bayar (cabang "belum pernah bayar"
-     * sudah ditangani terpisah di atas) -- artinya dapat toleransi SAMPAI AKHIR
-     * BULAN KALENDER. Kalau TANGGALPASANG kebetulan jatuh di bulan berjalan
-     * (mis. data TANGGALPASANG ter-reset/di-edit ulang walau histori bayar jauh
-     * lebih lama), pelanggan dapat toleransi jauh lebih lama dari "Waktu Tunggu
-     * Prabayar" (Payment Setting) yang sudah dikonfigurasi -- bertentangan
-     * dengan tujuan setting itu sendiri (isolir setelah TANGGALPASANG + waktu
-     * tunggu, bukan sampai akhir bulan). Sekarang utk prabayar, TANGGALPASANG
-     * cuma melindungi selama waktu tunggu -- selaras dgn cabang "belum pernah
-     * bayar". Pascabayar tetap pakai aturan lama (toleransi 1 bulan kalender).
-     */
-    function tagihanIsTanggalPasangMasihAman(string $tipeBayar, string $tanggalPasang, string $today, int $prabayarGracePeriod): bool
-    {
-        if ($tipeBayar !== 'prabayar') {
-            return tagihanIsSamePeriodAsToday($tanggalPasang, $today);
-        }
-        if (empty($tanggalPasang) || strtotime($tanggalPasang) === false) {
-            return false;
-        }
-        $batasAman = $prabayarGracePeriod > 0
-            ? date('Y-m-d', strtotime("+{$prabayarGracePeriod} days", strtotime($tanggalPasang)))
-            : $tanggalPasang;
-        return strtotime($batasAman) > strtotime($today);
-    }
-}
-
 if (!function_exists('tagihanParseIndoMonthYear')) {
     function tagihanParseIndoMonthYear(string $value): ?array
     {
@@ -386,31 +409,62 @@ if (!function_exists('tagihanBuildMonthlyDate')) {
 }
 
 if (!function_exists('tagihanGetFirstDueDateFixedByUsagePeriod')) {
-    function tagihanGetFirstDueDateFixedByUsagePeriod(string $penggunaan, int $fixedDueDay): ?string
+    function tagihanGetFirstDueDateFixedByUsagePeriod(string $penggunaan, int $fixedDueDay, string $periodeTercatatMode = 'berjalan'): ?string
     {
         $parsed = tagihanParseIndoMonthYear($penggunaan);
         if (!$parsed) {
             return null;
         }
-        // BUG (fixed, selaras dgn getFirstDueDateForPrabayarFixedByLastUsage() di
-        // pelanggan_menunggak.php): $parsed adalah PENGUNAAN transaksi BERHASIL
-        // TERAKHIR -- periode yang SUDAH DIBAYAR -- BUKAN periode yang belum
-        // dibayar. Sebelumnya fungsi ini balikin jatuh tempo dari bulan/tahun
-        // $parsed apa adanya (bulan yang sudah lunas) sbg "first due date" --
-        // akibatnya countConsecutiveMissedMonths() cek siklus PERTAMA (bulan yang
-        // barusan dibayar), LANGSUNG ketemu pembayaran, LANGSUNG return 0 (dianggap
-        // tidak menunggak) -- utk HAMPIR SEMUA pelanggan prabayar+Fixed Due Date,
-        // terlepas dari berapa lama sungguhnya mereka menunggak. Jatuh tempo
-        // PERTAMA yang belum dibayar = 1 bulan setelah periode yang sudah lunas
-        // ini, bukan bulan yang sama -- maju 1 bulan dulu sebelum dibangun jadi
-        // tanggal.
-        $dueMonth = (int) $parsed['month'] + 1;
+        // FIX: selaras dengan getFirstDueDateFixedByUsagePeriod() di
+        // cek_tagihan_harian_*.php -- $parsed adalah PENGUNAAN transaksi
+        // BERHASIL TERAKHIR (periode yang SUDAH DIBAYAR), BUKAN periode yang
+        // belum dibayar. Jarak (dlm bulan kalender) ke siklus BERIKUTNYA yang
+        // belum dibayar TERGANTUNG setting Periode Tercatat, karena itu yang
+        // menentukan hubungan antara label PENGUNAAN & bulan jatuh temponya:
+        //  - 'berjalan' (default): due day bulan M -> PENGUNAAN "bulan M"
+        //    (SAMA) -> siklus berikutnya due +1 bulan dari PENGUNAAN lunas.
+        //  - 'berikutnya': due day bulan M -> PENGUNAAN "bulan M+1" -> siklus
+        //    berikutnya due di bulan YANG SAMA dgn PENGUNAAN yang sudah lunas
+        //    (bukan +1) -- lihat notes lengkap di getFirstDueDateFixedByUsagePeriod()
+        //    versi cek_tagihan_harian_*.php.
+        $monthOffset = ($periodeTercatatMode === 'berikutnya') ? 0 : 1;
+        $dueMonth = (int) $parsed['month'] + $monthOffset;
         $dueYear = (int) $parsed['year'];
         if ($dueMonth > 12) {
             $dueMonth = 1;
             $dueYear++;
+        } elseif ($dueMonth < 1) {
+            $dueMonth = 12;
+            $dueYear--;
         }
         return tagihanBuildMonthlyDate($dueYear, $dueMonth, $fixedDueDay);
+    }
+}
+
+if (!function_exists('tagihanGetNextDueDateOnOrAfter')) {
+    /**
+     * Tanggal due-day ($fixedDueDay) TERDEKAT yang >= $referenceDate -- bisa
+     * BULAN YANG SAMA kalau due day itu belum lewat relatif ke referenceDate
+     * (mis. bayar 1 Agustus, due day 28 -> jatuh tempo = 28 Agustus itu
+     * sendiri, BUKAN loncat ke September). BEDA dgn tagihanGetFirstDueDateFixed()
+     * yang SELALU +1 bulan tanpa syarat (dirancang utk pascabayar: ditagih
+     * SETELAH sebulan penuh layanan berjalan) -- utk prabayar yang bayar DI
+     * MUKA, "jatuh tempo berikutnya" yang benar adalah due day terdekat
+     * setelah tanggal bayar, bisa di bulan yang sama.
+     */
+    function tagihanGetNextDueDateOnOrAfter(string $referenceDate, int $fixedDueDay): ?string
+    {
+        if (empty($referenceDate) || strtotime($referenceDate) === false) return null;
+        $refTs = strtotime($referenceDate);
+        $year = (int) date('Y', $refTs);
+        $month = (int) date('n', $refTs);
+        $dueIniBulan = tagihanBuildMonthlyDate($year, $month, $fixedDueDay);
+        if ($dueIniBulan !== null && strtotime($dueIniBulan) >= $refTs) {
+            return $dueIniBulan;
+        }
+        $month++;
+        if ($month > 12) { $month = 1; $year++; }
+        return tagihanBuildMonthlyDate($year, $month, $fixedDueDay);
     }
 }
 
@@ -427,6 +481,161 @@ if (!function_exists('tagihanGetFirstDueDateFixed')) {
         $month = (int) date('n', $refTs) + 1;
         if ($month > 12) { $month = 1; $year++; }
         return tagihanBuildMonthlyDate($year, $month, $fixedDueDay);
+    }
+}
+
+if (!function_exists('tagihanGetFirstDueDateFixedWindow')) {
+    /**
+     * Versi FINAL utk mengikuti_tanggal_tempo (Fixed Due Date) yang benar2
+     * konsisten dgn setting "Tanggal Awal/Akhir Tutup Buku" (paymentset.php)
+     * -- pengganti tagihanGetFirstDueDateFixed() (SELALU +1 bulan) maupun
+     * tagihanGetNextDueDateOnOrAfter() (SELALU bulan yg sama kalau due day
+     * belum lewat) yang KEDUANYA terbukti salah utk salah satu dari 2 kasus
+     * nyata yang dikonfirmasi:
+     *   - Agus bayar 1 Agustus, due day 28 -> HARUS "28 Agustus" (bulan yg
+     *     SAMA) & berstatus EXPIRED begitu tanggal itu lewat tanpa bayar lagi.
+     *   - Yuda bayar 27 Agustus, due day 28 -> HARUS "28 September" (bulan
+     *     BERIKUTNYA), dikonfirmasi user via AskUserQuestion.
+     * Satu2nya pembeda dari kedua kasus itu adalah TANGGAL BAYAR relatif ke
+     * window "Tutup Buku" (mis. FIBERQ = tgl 26-31): bayar tgl 1 (JAUH
+     * sebelum window) belum "menutup" siklus bulan itu -> jatuh tempo TETAP
+     * di bulan yg sama. Bayar tgl 27 (SUDAH masuk window 26-31) dianggap
+     * menutup/melunasi siklus bulan itu -> jatuh tempo MAJU ke bulan
+     * berikutnya. Aturan: kalau tanggal bayar >= tanggal_awal_tutup_buku
+     * (atau, utk window lintas-bulan spt 24-5, >= awal ATAU <= akhir) maka
+     * MAJU 1 bulan; kalau tidak, TETAP di bulan yg sama.
+     * $tutupBukuAwal/$tutupBukuAkhir default 1/1 (window "tgl 1 saja") supaya
+     * akun yang BELUM PERNAH eksplisit setting Tutup Buku otomatis balik ke
+     * perilaku lama (SELALU maju 1 bulan, sama seperti tagihanGetFirstDueDateFixed())
+     * -- 1 <= hari apa pun jadi kondisi "sudah lewat window" selalu benar.
+     */
+    function tagihanGetFirstDueDateFixedWindow(
+        string $referenceDate,
+        int $fixedDueDay,
+        int $tutupBukuAwal = 1,
+        int $tutupBukuAkhir = 1
+    ): ?string {
+        if (empty($referenceDate) || strtotime($referenceDate) === false) return null;
+        $refTs = strtotime($referenceDate);
+        $hariBayar = (int) date('j', $refTs);
+        $year = (int) date('Y', $refTs);
+        $month = (int) date('n', $refTs);
+
+        $tutupBukuAwal = max(1, min(31, $tutupBukuAwal));
+        $tutupBukuAkhir = max(1, min(31, $tutupBukuAkhir));
+
+        if ($tutupBukuAwal <= $tutupBukuAkhir) {
+            // Window normal dlm 1 bulan (mis. 26-31): sudah "menutup" siklus
+            // begitu tanggal bayar >= awal window (termasuk kalau bayar
+            // TELAT/setelah window berakhir -- itu pasti juga sudah menutup).
+            $sudahMenutupSiklus = ($hariBayar >= $tutupBukuAwal);
+        } else {
+            // Window lintas bulan (mis. 24-5): tgl 24-31 ATAU tgl 1-5.
+            $sudahMenutupSiklus = ($hariBayar >= $tutupBukuAwal || $hariBayar <= $tutupBukuAkhir);
+        }
+
+        $month += $sudahMenutupSiklus ? 1 : 0;
+        if ($month > 12) { $month = 1; $year++; }
+        return tagihanBuildMonthlyDate($year, $month, $fixedDueDay);
+    }
+}
+
+if (!function_exists('tagihanGetOrAdvanceMonthversaryDueDate')) {
+    /**
+     * FIX #4 (2026-09-13): "Jatuh tempo berikutnya" PERMANEN utk mode
+     * Monthversary -- menggantikan window formula & 2 percobaan sebelumnya
+     * (tagihanComputeMonthversaryNextDueDate / ...Safe, keduanya DITARIK,
+     * lihat catatan DEPRECATED di dekat definisinya) yang SELALU gagal krn
+     * mencoba menebak ulang dari data mentah (histori/label) setiap kali
+     * dipanggil.
+     *
+     * Pendekatan baru: SIMPAN checkpoint permanen di kolom
+     * `pelanggan`.MV_NEXT_DUE_CACHE + MV_LAST_PROCESSED_PAYMENT, lalu setiap
+     * dipanggil cukup MAJUKAN checkpoint itu TEPAT 1 bulan per pembayaran
+     * BERHASIL baru yang belum diproses (bukan dihitung ulang dari nol).
+     * "Maju 1 bulan per pembayaran" ini UNCONDITIONAL -- tidak ada perbandingan
+     * hari-bayar-vs-anchor-day lagi sama sekali, sehingga tidak peduli
+     * pelanggan bayar cepat/pas/telat, satu pembayaran BERHASIL = satu
+     * kemajuan siklus. Ini valid krn checkpoint SUDAH merepresentasikan
+     * "status siklus saat ini yang terkonfirmasi" -- bukan ditebak ulang dari
+     * tanggal payment yang baru datang.
+     *
+     * Nilai awal (backfill) dihitung SEKALI dari 2 pembayaran TERAKHIR saja
+     * (bukan seluruh histori -- aman utk data lama yg bolong, lihat
+     * _tmp_backfill_mv_cache.php yg sudah dijalankan 2026-09-13): baseline =
+     * window formula pd pembayaran KEDUA-TERAKHIR, lalu +1 bulan utk
+     * pembayaran TERAKHIR. Tervalidasi ke 5 kasus nyata yg pernah bikin 2
+     * percobaan sebelumnya gagal (Rizky, Nicky, Agus Setiyanto, Agus
+     * Wahyudi, kasus asli lompat-2-bulan) -- SEMUA benar.
+     *
+     * Return null kalau pelanggan belum di-backfill (MV_NEXT_DUE_CACHE masih
+     * NULL, mis. baru pindah ke mode monthversary atau belum pernah bayar) --
+     * caller WAJIB fallback ke window formula lama utk kasus ini.
+     */
+    function tagihanGetOrAdvanceMonthversaryDueDate(mysqli $conn, string $idpel, int $anchorDay): ?string
+    {
+        if ($idpel === '') return null;
+        $idpelEsc = $conn->real_escape_string($idpel);
+        $q = $conn->query("SELECT MV_NEXT_DUE_CACHE, MV_LAST_PROCESSED_PAYMENT, TIPE_TEMPO FROM pelanggan WHERE IDPEL = '$idpelEsc' LIMIT 1");
+        $row = $q ? $q->fetch_assoc() : null;
+        if (!$row) {
+            return null;
+        }
+
+        // SELF-HEAL (2026-09-19): pelanggan lama/import Keuangan dapat belum
+        // memiliki checkpoint. Fallback lama menghitung dari tanggal bayar saja
+        // sehingga pembayaran lebih awal (contoh bayar 1 Agustus, anchor 24)
+        // keliru dianggap jatuh tempo 24 Agustus. Inisialisasi sekali dari
+        // periode pembayaran BERHASIL terakhir; bila label historis tidak valid,
+        // gunakan bulan setelah tanggal bayar. Khusus monthversary agar aturan
+        // fixed-due yang memakai window tutup buku tidak berubah.
+        if (empty($row['MV_NEXT_DUE_CACHE']) && strtolower(trim((string) ($row['TIPE_TEMPO'] ?? ''))) === 'monthversary') {
+            $trxDateExpr = tagihanBuildTrxDateExpr();
+            $payQ = $conn->query("SELECT PENGUNAAN, $trxDateExpr AS tanggal_bayar FROM transaksi WHERE IDPEL = '$idpelEsc' AND UPPER(TRIM(STATUS)) = 'BERHASIL' AND $trxDateExpr IS NOT NULL ORDER BY $trxDateExpr DESC, id DESC LIMIT 1");
+            $lastPay = $payQ ? $payQ->fetch_assoc() : null;
+            if ($lastPay && !empty($lastPay['tanggal_bayar'])) {
+                $initialDue = tagihanGetFirstDueDateFixedByUsagePeriod((string) ($lastPay['PENGUNAAN'] ?? ''), $anchorDay, 'berjalan');
+                if ($initialDue === null) {
+                    $initialDue = tagihanGetFirstDueDateFixed((string) $lastPay['tanggal_bayar'], $anchorDay);
+                }
+                if ($initialDue !== null) {
+                    $initialDueEsc = $conn->real_escape_string($initialDue);
+                    $lastPayEsc = $conn->real_escape_string((string) $lastPay['tanggal_bayar']);
+                    if ($conn->query("UPDATE pelanggan SET MV_NEXT_DUE_CACHE = '$initialDueEsc', MV_LAST_PROCESSED_PAYMENT = '$lastPayEsc' WHERE IDPEL = '$idpelEsc' AND MV_NEXT_DUE_CACHE IS NULL")) {
+                        $row['MV_NEXT_DUE_CACHE'] = $initialDue;
+                        $row['MV_LAST_PROCESSED_PAYMENT'] = (string) $lastPay['tanggal_bayar'];
+                    }
+                }
+            }
+        }
+
+        if (empty($row['MV_NEXT_DUE_CACHE'])) {
+            return null;
+        }
+        $cache = $row['MV_NEXT_DUE_CACHE'];
+        $lastProcessed = !empty($row['MV_LAST_PROCESSED_PAYMENT']) ? $row['MV_LAST_PROCESSED_PAYMENT'] : '1970-01-01';
+
+        $trxDateExpr = tagihanBuildTrxDateExpr();
+        $lastProcessedEsc = $conn->real_escape_string($lastProcessed);
+        $sql = "SELECT COUNT(*) AS jml, MAX($trxDateExpr) AS terbaru FROM transaksi WHERE IDPEL = '$idpelEsc' AND STATUS = 'BERHASIL' AND $trxDateExpr > '$lastProcessedEsc'";
+        $q2 = $conn->query($sql);
+        $r2 = $q2 ? $q2->fetch_assoc() : null;
+        $jmlBaru = (int) ($r2['jml'] ?? 0);
+
+        if ($jmlBaru > 0 && !empty($r2['terbaru'])) {
+            $ts = strtotime($cache);
+            $y = (int) date('Y', $ts);
+            $m = (int) date('n', $ts) + $jmlBaru;
+            while ($m > 12) { $m -= 12; $y++; }
+            $newCache = tagihanBuildMonthlyDate($y, $m, $anchorDay);
+            if ($newCache !== null) {
+                $newCacheEsc = $conn->real_escape_string($newCache);
+                $terbaruEsc = $conn->real_escape_string($r2['terbaru']);
+                $conn->query("UPDATE pelanggan SET MV_NEXT_DUE_CACHE = '$newCacheEsc', MV_LAST_PROCESSED_PAYMENT = '$terbaruEsc' WHERE IDPEL = '$idpelEsc'");
+                $cache = $newCache;
+            }
+        }
+        return $cache;
     }
 }
 
@@ -527,6 +736,126 @@ if (!function_exists('tagihanComputeRollingReferenceDate')) {
     }
 }
 
+if (!function_exists('tagihanHasSuccessfulPaymentForPengunaanMonth')) {
+    /**
+     * Cek apakah IDPEL punya transaksi BERHASIL dgn label PENGUNAAN persis
+     * "NamaBulan Tahun" (mis. "Agustus 2026"). Dipakai
+     * tagihanComputeMonthversaryNextDueDateSafe() -- lihat penjelasan lengkap
+     * di sana kenapa pengecekan SATU bulan ini dipilih dibanding scan seluruh
+     * histori.
+     */
+    function tagihanHasSuccessfulPaymentForPengunaanMonth(mysqli $conn, string $idpel, int $month, int $year): bool
+    {
+        $namaBulan = [
+            1 => 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+            'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+        ];
+        if ($month < 1 || $month > 12 || $idpel === '') {
+            return false;
+        }
+        $label = $namaBulan[$month] . ' ' . $year;
+        $idpelEsc = $conn->real_escape_string($idpel);
+        $labelEsc = $conn->real_escape_string($label);
+        $sql = "SELECT 1 FROM transaksi WHERE IDPEL = '$idpelEsc' AND STATUS = 'BERHASIL' AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER('$labelEsc')) LIMIT 1";
+        $res = $conn->query($sql);
+        return (bool) ($res && $res->fetch_assoc());
+    }
+}
+
+if (!function_exists('tagihanComputeMonthversaryNextDueDateSafe')) {
+    /**
+     * ============================================================
+     * DEPRECATED / JANGAN DIPAKAI (2026-09-13) -- lihat "REVERT #2" di
+     * tagihanHitungStatus()/tagihanHitungJatuhTempoBerikutnya(), keduanya
+     * SUDAH TIDAK memanggil fungsi ini lagi. Dibiarkan di sini cuma sbg
+     * dokumentasi/riwayat percobaan, JANGAN diaktifkan ulang tanpa audit dulu.
+     *
+     * KENAPA DITARIK: asumsi "ADA transaksi BERHASIL dgn PENGUNAAN bulan lalu
+     * = pelanggan tidak menunggak" TERNYATA SALAH -- label PENGUNAAN tidak
+     * konsisten di seluruh sistem. Jalur normal (portal_bayar.php) mengisi
+     * PENGUNAAN = bulan KALENDER saat bayar, tapi jalur fallback/manual (mis.
+     * tagihanFallbackPeriodeLabel(), dipakai saat baris PERMINTAAN KODE tidak
+     * ada -- lihat callback_xendit* RECOVERY block) bisa mengisi PENGUNAAN =
+     * bulan SIKLUS YANG SEDANG DILUNASI, yang BISA LEBIH LAMA dari bulan
+     * kalender pembayaran aslinya kalau pelanggan bayar telat. Kasus nyata:
+     * Agus Setiyanto pasang 28 Juli 2026, transaksi PERTAMA (bayar 28 Juli,
+     * manual/cash) DAN transaksi KEDUA (bayar 13 September, lewat jalur
+     * RECOVERY callback Xendit) SAMA-SAMA punya PENGUNAAN "Agustus 2026" --
+     * fungsi ini salah baca itu sbg "sudah ada pembayaran Agustus yang
+     * SAH/tepat waktu", padahal transaksi kedua itu SENDIRI yang baru
+     * melunasi siklus Agustus (telat 16 hari dari due 28 Agustus). Hasilnya
+     * next due SALAH lompat ke 28 Oktober, padahal seharusnya 28 September.
+     *
+     * PELAJARAN: JANGAN pernah pakai label PENGUNAAN sbg sinyal "sudah lunas
+     * tepat waktu atau tidak" kecuali SEMUA jalur insert transaksi di seluruh
+     * codebase (termasuk future recovery/fallback manapun) dijamin memakai
+     * konvensi PENGUNAAN yang SAMA PERSIS. Window formula (bandingkan hari
+     * bayar vs anchor day dari SATU pembayaran terakhir) TETAP dipakai
+     * sebagai satu-satunya sumber kebenaran utk sekarang, walau ada 1
+     * skenario edge case yang diketahui masih salah (bayar lebih awal dari
+     * anchor day, lihat awal riwayat perbaikan monthversary) -- itu risikonya
+     * jauh lebih kecil & lebih predictable drpd rumus PENGUNAAN-based ini.
+     * ============================================================
+     *
+     * FIX #3 (2026-09-13): pengganti tagihanComputeMonthversaryNextDueDate()
+     * (simulasi siklus PENUH dari SELURUH histori) yang DITARIK -- terbukti
+     * under-count di data produksi nyata (banyak akun riwayat transaksinya
+     * bolong/tidak lengkap, mis. pelanggan 26 bulan berlangganan tapi cuma 3
+     * baris transaksi BERHASIL tercatat), hasilnya jatuh tempo berikutnya
+     * malah mundur jauh ke masa lalu -- lebih parah dari bug window formula
+     * yang mau diperbaiki.
+     *
+     * Versi ini CUMA butuh 1 pengecekan RINGAN (tagihanHasSuccessfulPaymentForPengunaanMonth,
+     * SATU bulan saja, bukan scan semua histori -- jauh lebih tahan thd data
+     * lama yang bolong): apakah ADA pembayaran BERHASIL utk PENGUNAAN bulan
+     * SEBELUM pembayaran terakhir ($referenceDate)?
+     *  - ADA -> pelanggan dlm kondisi baik (tidak menunggak bulan sebelumnya),
+     *    jadi pembayaran terakhir ini PASTI melunasi siklus BULAN PEMBAYARAN
+     *    itu sendiri, apapun tanggal harinya dlm bulan itu (cepat/pas/telat) --
+     *    next due = anchor day, 1 bulan SETELAH bulan pembayaran.
+     *  - TIDAK ADA (pertama kali bayar / lagi catch-up dari menunggak) -> pakai
+     *    tagihanGetFirstDueDateFixedWindow() (window formula lama, bandingkan
+     *    hari bayar vs anchor day) yang sudah benar utk kasus "bayar telat
+     *    lintas bulan kalender" (return null di sini, caller fallback).
+     *
+     * Tervalidasi thd 3 kasus nyata (2026-09-13):
+     *  - Rizky Septyawan: jatuh tempo 15 Sept, bayar 13 Sept, ADA transaksi
+     *    BERHASIL PENGUNAAN "Agustus 2026" -> next due 15 Oktober (benar,
+     *    window formula lama salah kasih 15 September).
+     *  - Nicky Surya Prastiwi: anchor 12, bayar PAS tgl 12 September, ADA
+     *    PENGUNAAN "Agustus 2026" -> next due 12 Oktober -- SAMA dgn window
+     *    formula lama (hari bayar 12 >= anchor 12 sudah otomatis benar), jadi
+     *    tidak ada perubahan/regresi utk kasus ini.
+     *  - Kasus asli "lompat 2 bulan": jatuh tempo 26 Agustus TIDAK dibayar,
+     *    baru dibayar 5 September, TIDAK ADA PENGUNAAN "Agustus 2026" (memang
+     *    belum lunas) -> fallback ke window formula -> next due 26 September
+     *    (benar, tidak lompat ke Oktober).
+     */
+    function tagihanComputeMonthversaryNextDueDateSafe(mysqli $conn, string $idpel, string $referenceDate, int $anchorDay): ?string
+    {
+        if (empty($referenceDate) || strtotime($referenceDate) === false || $idpel === '') {
+            return null;
+        }
+        $refTs = strtotime($referenceDate);
+        $prevMonth = (int) date('n', $refTs) - 1;
+        $prevYear = (int) date('Y', $refTs);
+        if ($prevMonth < 1) {
+            $prevMonth = 12;
+            $prevYear--;
+        }
+        if (!tagihanHasSuccessfulPaymentForPengunaanMonth($conn, $idpel, $prevMonth, $prevYear)) {
+            return null;
+        }
+        $curMonth = (int) date('n', $refTs) + 1;
+        $curYear = (int) date('Y', $refTs);
+        if ($curMonth > 12) {
+            $curMonth = 1;
+            $curYear++;
+        }
+        return tagihanBuildMonthlyDate($curYear, $curMonth, $anchorDay);
+    }
+}
+
 if (!function_exists('tagihanGetRollingDueDateForRow')) {
     /**
      * Tanggal jatuh tempo (Y-m-d) yang DIPENUHI oleh satu transaksi BERHASIL
@@ -584,17 +913,70 @@ if (!function_exists('tagihanGetRollingOverrideDueDate')) {
      * Override jatuh tempo berikutnya utk mode Rolling (mengikuti_tanggal_bayar),
      * diset admin lewat tombol "Ubah Jatuh Tempo" (kolom pelanggan.TANGGAL_MONTHVERSARY
      * dipakai ulang sbg override, BUKAN anchor permanen spt di mode monthversary).
-     * Override cuma berlaku selama tanggalnya belum lewat -- begitu lewat, otomatis
-     * diabaikan dan perhitungan balik ke tagihanComputeRollingReferenceDate() dari
-     * histori pembayaran, tanpa perlu di-"clear" manual.
+     * Override berlaku APA ADANYA -- baik dimajukan (grace period) maupun
+     * dimundurkan (mis. admin sengaja ingin tandai pelanggan menunggak dari
+     * tanggal tertentu) -- dipakai langsung sbg $firstDueDate oleh pemanggil
+     * (tables.php, cek_tagihan_harian.php, dst), TERMASUK memicu isolir kalau
+     * dimundurkan ke tanggal yang sudah lewat. Override otomatis "kalah" begitu
+     * pelanggan bayar lagi (siklus baru dihitung dari histori pembayaran via
+     * tagihanComputeRollingReferenceDate(), bukan dari kolom ini lagi) -- kalau
+     * belum pernah bayar sejak override diset, nilainya tetap dipakai terus.
      */
-    function tagihanGetRollingOverrideDueDate(string $tanggalOverride, string $hariIni): ?string
+    function tagihanGetRollingOverrideDueDate(?string $tanggalOverride, string $hariIni): ?string
     {
+        // FIX: pelanggan yang belum pernah di-set "Ubah Jatuh Tempo" punya
+        // TANGGAL_MONTHVERSARY = NULL di database (bukan string kosong).
+        // Parameter ini sebelumnya bertipe `string` (non-nullable) -- PHP
+        // TIDAK meng-coerce null jadi '' walau tanpa strict_types, jadi
+        // manggil fungsi ini dengan NULL langsung Fatal error: Uncaught
+        // TypeError, dan karena display_errors mati, cron/skrip berhenti
+        // total tanpa pesan apa pun (kelihatan seperti "stuck"/menggantung).
         if (empty($tanggalOverride) || strtotime($tanggalOverride) === false) {
             return null;
         }
-        $tgl = date('Y-m-d', strtotime($tanggalOverride));
-        return strtotime($tgl) >= strtotime($hariIni) ? $tgl : null;
+        return date('Y-m-d', strtotime($tanggalOverride));
+    }
+}
+
+if (!function_exists('tagihanAdaSiklusTerlewatFixed')) {
+    /**
+     * Cek MENYELURUH (bukan cuma dari pembayaran terakhir) apakah ada satu
+     * pun siklus jatuh tempo -- dari due date PERTAMA (TANGGALPASANG) sampai
+     * SEBELUM $batasDueDate (biasanya due date hasil pembayaran TERAKHIR) --
+     * yang SAMA SEKALI tidak punya transaksi BERHASIL di rentangnya.
+     *
+     * BEDA dgn tagihanCountConsecutiveMissedMonths(): fungsi itu berhenti &
+     * return 0 begitu ketemu SATU pembayaran di siklus manapun (dirancang utk
+     * menghitung "berapa bulan tunggak BERTURUT-TURUT sejak titik tertentu",
+     * bukan "apakah PERNAH ada bolong di histori"). Kalau prabayar+Fixed Due
+     * Date cuma dicek dari pembayaran TERAKHIR (tagihanGetFirstDueDateFixed),
+     * pelanggan yang sempat bolong beberapa bulan lalu tapi kemudian bayar
+     * lagi (menutup 1 siklus TERBARU) akan tetap dianggap "aman" -- padahal
+     * siklus yang bolong di TENGAH histori itu tidak pernah benar-benar
+     * dilunasi. Dipanggil HANYA utk kasus firstDueDate (dari pembayaran
+     * terakhir) masih di masa depan -- kalau sudah lewat, jalur
+     * tagihanCountConsecutiveMissedMonths() yang sudah ada tetap yang berlaku.
+     *
+     * @return string|null Tanggal mulai siklus BOLONG paling awal yang
+     *                      ditemukan (utk dipakai sbg jatuh_tempo yang
+     *                      ditampilkan/dicatat), atau null kalau tidak ada bolong.
+     */
+    function tagihanAdaSiklusTerlewatFixed(mysqli $conn, string $idpel, string $tanggalPasang, string $batasDueDate, int $fixedDueDay): ?string
+    {
+        if (empty($tanggalPasang) || strtotime($tanggalPasang) === false) return null;
+        $cycleDue = tagihanGetFirstDueDateFixed($tanggalPasang, $fixedDueDay);
+        $batasTs = strtotime($batasDueDate);
+        $pengaman = 0;
+        while ($cycleDue !== null && strtotime($cycleDue) < $batasTs && $pengaman < 120) {
+            $pengaman++;
+            $cycleEnd = tagihanGetNextDueDateFixed($cycleDue, $fixedDueDay);
+            if ($cycleEnd === null) break;
+            if (!tagihanHasSuccessfulPaymentInPeriod($conn, $idpel, $cycleDue, $cycleEnd)) {
+                return $cycleDue; // siklus bolong ditemukan
+            }
+            $cycleDue = $cycleEnd;
+        }
+        return null; // tidak ada bolong, aman
     }
 }
 
@@ -660,6 +1042,7 @@ if (!function_exists('tagihanHitungStatus')) {
         $lastPaymentMap = $ctx['lastPaymentMap'] ?? [];
         $lastPaidUsageMap = $ctx['lastPaidUsageMap'] ?? [];
         $prabayar_grace_period = (int) ($ctx['prabayar_grace_period'] ?? 0);
+        $periode_tercatat_mode = (string) ($ctx['periode_tercatat_mode'] ?? 'berjalan');
 
         $waktu_terakhir_bayar = $lastPaymentMap[$IDPEL] ?? null;
         $penggunaan_terakhir_berhasil = trim((string) ($lastPaidUsageMap[$IDPEL] ?? ''));
@@ -703,10 +1086,16 @@ if (!function_exists('tagihanHitungStatus')) {
                     $belum_bayar = true;
                     $keterangan = "Belum pernah bayar sejak pasang: $TANGGALPASANG | Waktu tunggu: $prabayar_grace_period hari";
                 }
-            } elseif (tagihanIsTanggalPasangMasihAman($TIPE_BAYAR, $TANGGALPASANG, $hari_ini, $prabayar_grace_period) || tagihanIsSamePeriodAsToday($referenceDate, $hari_ini)) {
+            } elseif (tagihanIsSamePeriodAsToday($TANGGALPASANG, $hari_ini) || tagihanIsSamePeriodAsToday($referenceDate, $hari_ini)) {
                 // baru pasang/bayar bulan ini
             } else {
-                $firstDueDate = tagihanGetFirstDueDateFixed($referenceDate, $anchorDay);
+                // FIX #4 (2026-09-13): pakai checkpoint permanen (lihat
+                // tagihanGetOrAdvanceMonthversaryDueDate() -- pengganti 2 percobaan
+                // sebelumnya yang DITARIK krn sama-sama menebak ulang dari data mentah).
+                // Fallback ke window formula lama HANYA kalau checkpoint belum ada
+                // (belum di-backfill).
+                $firstDueDate = tagihanGetOrAdvanceMonthversaryDueDate($conn, $IDPEL, $anchorDay)
+                    ?? tagihanGetFirstDueDateFixedWindow($referenceDate, $anchorDay, $anchorDay, $anchorDay);
                 $jatuh_tempo_str = $firstDueDate ?? '';
 
                 $batasIsolir = $firstDueDate;
@@ -740,18 +1129,13 @@ if (!function_exists('tagihanHitungStatus')) {
                     $belum_bayar = true;
                     $keterangan = "Belum pernah bayar sejak pasang: $TANGGALPASANG | Waktu tunggu: $prabayar_grace_period hari";
                 }
-            } elseif (tagihanIsTanggalPasangMasihAman($TIPE_BAYAR, $TANGGALPASANG, $hari_ini, $prabayar_grace_period) || tagihanIsSamePeriodAsToday($referenceDate, $hari_ini)) {
+            } elseif (tagihanIsSamePeriodAsToday($TANGGALPASANG, $hari_ini) || tagihanIsSamePeriodAsToday($referenceDate, $hari_ini)) {
                 // baru pasang/bayar bulan ini
             } else {
                 $firstDueDate = $rollingOverride ?? date('Y-m-d', strtotime('+30 days', strtotime($referenceDate)));
                 $jatuh_tempo_str = $firstDueDate;
 
-                $batasIsolir = $firstDueDate;
-                if ($TIPE_BAYAR === 'prabayar' && $prabayar_grace_period > 0) {
-                    $batasIsolir = date('Y-m-d', strtotime("+{$prabayar_grace_period} days", strtotime($firstDueDate)));
-                }
-
-                if (strtotime($batasIsolir) > strtotime($hari_ini)) {
+                if (strtotime($firstDueDate) > strtotime($hari_ini)) {
                     // jatuh tempo belum lewat
                 } else {
                     $bulanTunggak = tagihanCountConsecutiveMissedMonths($conn, $IDPEL, $firstDueDate, $hari_ini, false, 0);
@@ -777,25 +1161,66 @@ if (!function_exists('tagihanHitungStatus')) {
                     $belum_bayar = true;
                     $keterangan = "Belum pernah bayar sejak pasang: $TANGGALPASANG | Waktu tunggu: $prabayar_grace_period hari";
                 }
-            } elseif (tagihanIsTanggalPasangMasihAman($TIPE_BAYAR, $TANGGALPASANG, $hari_ini, $prabayar_grace_period) || tagihanIsSamePeriodAsToday($referenceDate, $hari_ini)) {
+            } elseif (tagihanIsSamePeriodAsToday($TANGGALPASANG, $hari_ini) || tagihanIsSamePeriodAsToday($referenceDate, $hari_ini)) {
                 // baru pasang/bayar bulan ini
             } else {
-                $firstDueDate = tagihanGetFirstDueDateFixed($referenceDate, $jatuh_tempo_hari);
-                if ($TIPE_BAYAR === 'prabayar') {
-                    $fixedDueByUsage = tagihanGetFirstDueDateFixedByUsagePeriod($penggunaan_terakhir_berhasil, $jatuh_tempo_hari);
-                    if (!empty($fixedDueByUsage)) {
-                        $firstDueDate = $fixedDueByUsage;
-                    }
-                }
+                // Patokan jatuh tempo berikutnya = TANGGAL BAYAR transaksi
+                // BERHASIL terakhir, BUKAN label PENGUNAAN-nya -- selaras dgn
+                // cek_tagihan_harian_FIBERQ.php. Pembeda "maju 1 bulan" vs
+                // "tetap bulan yg sama" adalah window Tutup Buku (paymentset.php:
+                // Tanggal Awal/Akhir Tutup Buku), BUKAN sekadar lewat/belumnya
+                // due day -- tagihanGetNextDueDateOnOrAfter() (dipakai sebelum
+                // ini) SELALU anggap "bulan yg sama kalau due day belum lewat",
+                // yang keliru utk kasus bayar jauh SEBELUM window tutup buku tapi
+                // di bulan yg due-day-nya sudah dianggap "ditutup" berikutnya --
+                // lihat penjelasan lengkap & 2 contoh nyata (Agus/Yuda) di
+                // tagihanGetFirstDueDateFixedWindow(). $ctx['tutup_buku_awal']/
+                // ['tutup_buku_akhir'] default 1/1 (= selalu maju 1 bulan) kalau
+                // caller belum mengirim nilai settingnya.
+                $tutupBukuAwal = (int) ($ctx['tutup_buku_awal'] ?? 1);
+                $tutupBukuAkhir = (int) ($ctx['tutup_buku_akhir'] ?? 1);
+                // Override per-pelanggan lewat tombol "Ubah Jatuh Tempo" (Bulan/Tahun) --
+                // HARI tetap ikut $jatuh_tempo_hari global, cuma siklus bulan/tahunnya
+                // yang digeser admin. Dipakai apa adanya (maju atau mundur), sama
+                // seperti mode Rolling (lihat tagihanGetRollingOverrideDueDate()).
+                $fixedDueDateOverride = tagihanGetRollingOverrideDueDate($TANGGAL_MONTHVERSARY, $hari_ini);
+                // FIX (2026-09-18): pakai checkpoint permanen yang SAMA dgn Monthversary
+                // (tagihanGetOrAdvanceMonthversaryDueDate() -- namanya historis, tapi
+                // fungsinya generik: baca MV_NEXT_DUE_CACHE, majukan SEBANYAK jumlah
+                // transaksi BERHASIL baru sejak MV_LAST_PROCESSED_PAYMENT, unconditional).
+                // Window formula lama (tagihanGetFirstDueDateFixedWindow) HANYA lihat
+                // TANGGAL transaksi TERAKHIR, jadi kalau ada >1 transaksi BERHASIL baru
+                // (mis. 2 kompensasi manual sekaligus utk 2 bulan berbeda), jatuh tempo
+                // cuma maju 1 siklus padahal harusnya maju sejumlah transaksi itu --
+                // kasus nyata: pelanggan Erna Sri Wulandari (airlink), 2 transaksi
+                // BERHASIL tgl sama tapi PENGUNAAN beda (Agustus & September), jatuh
+                // tempo salah tetap di siklus Agustus->September, seharusnya maju ke
+                // Oktober. TIDAK pakai label PENGUNAAN sbg sinyal (lihat peringatan
+                // DEPRECATED di tagihanComputeMonthversaryNextDueDateSafe() -- label
+                // PENGUNAAN TIDAK konsisten antar jalur insert), checkpoint ini murni
+                // MENGHITUNG JUMLAH transaksi baru by tanggal, bukan mencocokkan label.
+                // Fallback ke window formula lama HANYA kalau checkpoint belum ada
+                // (belum di-backfill utk pelanggan ini).
+                $firstDueDate = $fixedDueDateOverride
+                    ?? tagihanGetOrAdvanceMonthversaryDueDate($conn, $IDPEL, $jatuh_tempo_hari)
+                    ?? tagihanGetFirstDueDateFixedWindow($referenceDate, $jatuh_tempo_hari, $tutupBukuAwal, $tutupBukuAkhir);
                 $jatuh_tempo_str = $firstDueDate ?? '';
 
-                $batasIsolir = $firstDueDate;
-                if ($TIPE_BAYAR === 'prabayar' && !empty($firstDueDate) && $prabayar_grace_period > 0) {
-                    $batasIsolir = date('Y-m-d', strtotime("+{$prabayar_grace_period} days", strtotime($firstDueDate)));
-                }
-
-                if (empty($firstDueDate) || strtotime($batasIsolir) > strtotime($hari_ini)) {
-                    // jatuh tempo belum lewat
+                if (empty($firstDueDate) || strtotime($firstDueDate) > strtotime($hari_ini)) {
+                    // Jatuh tempo belum lewat.
+                    //
+                    // CATATAN: sempat ditambahkan cek "siklus bolong menyeluruh dari
+                    // due date PERTAMA" (tagihanAdaSiklusTerlewatFixed) di sini --
+                    // DITARIK BALIK krn walau niatnya benar (tangkap gap yg
+                    // tertutup pembayaran belakangan), implementasinya SALAH:
+                    // dia bisa nemu bolong dari BERTAHUN-TAHUN lalu (mis. siklus
+                    // pertama sejak pasang) yang sebenarnya sudah "terlewati"
+                    // wajar oleh puluhan pembayaran rutin sesudahnya -- pelanggan
+                    // yang jelas rajin bayar jadi ditampilkan jatuh tempo di masa
+                    // lampau yang absurd. Kalau mau fitur ini lagi, perlu simulasi
+                    // due-date maju SATU PER SATU mengikuti tiap pembayaran secara
+                    // kronologis (spt tagihanComputeRollingReferenceDate() utk
+                    // Rolling), BUKAN sekadar cari cycle pertama yang kosong.
                 } else {
                     $bulanTunggak = tagihanCountConsecutiveMissedMonths($conn, $IDPEL, $firstDueDate, $hari_ini, true, $jatuh_tempo_hari);
                     if ($bulanTunggak >= 1) {
@@ -828,35 +1253,6 @@ if (!function_exists('tagihanHitungStatus')) {
                 $belum_bayar = true;
                 $jatuh_tempo_str = $TANGGALPASANG;
                 $keterangan = "Fallback | Belum pernah bayar sejak pasang: $TANGGALPASANG";
-            }
-        }
-
-        // Pengaman khusus Fixed Due Date: label PENGUNAAN pada transaksi
-        // BERHASIL adalah bukti periode yang sudah dilunasi, termasuk
-        // kompensasi_free Rp0. Tanggal input transaksi bisa berada di bulan
-        // sebelumnya (contoh: kompensasi September dibuat 31 Agustus), jadi
-        // status tidak boleh hanya dihitung dari tanggal input tersebut.
-        // Turunkan jatuh tempo siklus berikutnya dari label periodenya; selama
-        // batas itu belum tiba pelanggan tetap dianggap sudah bayar.
-        if ($belum_bayar && $TIPE_TEMPO === 'mengikuti_tanggal_tempo' && $penggunaan_terakhir_berhasil !== '') {
-            $dueFromPaidUsage = tagihanGetFirstDueDateFixedByUsagePeriod(
-                $penggunaan_terakhir_berhasil,
-                $jatuh_tempo_hari,
-                $periode_tercatat_mode
-            );
-            if ($dueFromPaidUsage !== null) {
-                $paidUsageIsolationLimit = $dueFromPaidUsage;
-                if ($TIPE_BAYAR === 'prabayar' && $prabayar_grace_period > 0) {
-                    $paidUsageIsolationLimit = date(
-                        'Y-m-d',
-                        strtotime("+{$prabayar_grace_period} days", strtotime($dueFromPaidUsage))
-                    );
-                }
-                if (strtotime($paidUsageIsolationLimit) > strtotime($hari_ini)) {
-                    $belum_bayar = false;
-                    $jatuh_tempo_str = $dueFromPaidUsage;
-                    $keterangan = "Transaksi BERHASIL untuk $penggunaan_terakhir_berhasil; jatuh tempo berikutnya $dueFromPaidUsage";
-                }
             }
         }
 
@@ -898,6 +1294,7 @@ if (!function_exists('tagihanHitungJatuhTempoBerikutnya')) {
         $jatuh_tempo_hari = (int) ($ctx['jatuh_tempo_hari'] ?? 25);
         $lastPaymentMap = $ctx['lastPaymentMap'] ?? [];
         $lastPaidUsageMap = $ctx['lastPaidUsageMap'] ?? [];
+        $periode_tercatat_mode = (string) ($ctx['periode_tercatat_mode'] ?? 'berjalan');
 
         $IDPEL = (string) ($pel['IDPEL'] ?? '');
         $waktu_terakhir_bayar = $lastPaymentMap[$IDPEL] ?? null;
@@ -932,17 +1329,37 @@ if (!function_exists('tagihanHitungJatuhTempoBerikutnya')) {
                     $anchorDay = $lastPaymentDay;
                 }
             }
-            return (string) (tagihanGetFirstDueDateFixed($referenceDate, $anchorDay) ?? '');
+            // FIX #4 (2026-09-13): pakai checkpoint permanen (lihat
+            // tagihanGetOrAdvanceMonthversaryDueDate() -- pengganti 2 percobaan
+            // sebelumnya yang DITARIK krn sama-sama menebak ulang dari data mentah).
+            // Fallback ke window formula lama HANYA kalau checkpoint belum ada.
+            $checkpoint = tagihanGetOrAdvanceMonthversaryDueDate($conn, $IDPEL, $anchorDay);
+            return (string) ($checkpoint ?? (tagihanGetFirstDueDateFixedWindow($referenceDate, $anchorDay, $anchorDay, $anchorDay) ?? ''));
         }
 
         if ($TIPE_TEMPO === 'mengikuti_tanggal_tempo') {
-            $firstDueDate = tagihanGetFirstDueDateFixed($referenceDate, $jatuh_tempo_hari);
-            if ($TIPE_BAYAR === 'prabayar') {
-                $fixedDueByUsage = tagihanGetFirstDueDateFixedByUsagePeriod($penggunaan_terakhir_berhasil, $jatuh_tempo_hari);
-                if (!empty($fixedDueByUsage)) {
-                    $firstDueDate = $fixedDueByUsage;
-                }
+            // Patokan = TANGGAL BAYAR transaksi BERHASIL terakhir (BUKAN label
+            // PENGUNAAN). Pembeda "maju 1 bulan" vs "tetap bulan yg sama" adalah
+            // window Tutup Buku (paymentset.php), BUKAN sekadar lewat/belumnya
+            // due day -- lihat penjelasan lengkap & konfirmasi 2 contoh nyata
+            // (Agus/Yuda) di tagihanGetFirstDueDateFixedWindow() &
+            // tagihanHitungStatus(). $ctx['tutup_buku_awal']/['tutup_buku_akhir']
+            // default 1/1 (= selalu maju 1 bulan) kalau caller belum mengirim
+            // nilai settingnya.
+            $tutupBukuAwal = (int) ($ctx['tutup_buku_awal'] ?? 1);
+            $tutupBukuAkhir = (int) ($ctx['tutup_buku_akhir'] ?? 1);
+            // Override per-pelanggan lewat tombol "Ubah Jatuh Tempo" (Bulan/Tahun) --
+            // HARI tetap ikut $jatuh_tempo_hari global, cuma siklus bulan/tahunnya
+            // yang digeser admin. Dipakai apa adanya, sama seperti mode Rolling.
+            $fixedDueDateOverride = tagihanGetRollingOverrideDueDate($TANGGAL_MONTHVERSARY, date('Y-m-d'));
+            if ($fixedDueDateOverride !== null) {
+                return $fixedDueDateOverride;
             }
+            // FIX (2026-09-18): sama dgn tagihanHitungStatus() -- pakai checkpoint
+            // permanen dulu (hitung jumlah transaksi baru, bukan label PENGUNAAN),
+            // fallback ke window formula HANYA kalau checkpoint belum di-backfill.
+            $firstDueDate = tagihanGetOrAdvanceMonthversaryDueDate($conn, $IDPEL, $jatuh_tempo_hari)
+                ?? tagihanGetFirstDueDateFixedWindow($referenceDate, $jatuh_tempo_hari, $tutupBukuAwal, $tutupBukuAkhir);
             return (string) ($firstDueDate ?? '');
         }
 
@@ -1073,14 +1490,18 @@ if (!function_exists('tagihanFallbackPeriodeLabel')) {
             return tagihanResolvePeriodeTercatat($dueMonth, $dueYear, $mode);
         }
 
-        // Rolling/Monthversary: TIDAK ada setting Periode Tercatat, label tetap ikut
-        // due date per-pelanggan (siklus 30 hari/anchor tanggal pasang) -- backward-looking
-        // di sini justru BENAR krn siklusnya sendiri memang ditentukan dari histori bayar.
-        $dueDate = tagihanHitungJatuhTempoBerikutnya($conn, $pel, $ctx);
-        if ($dueDate === '' || strtotime($dueDate) === false) {
-            return '';
-        }
-        return tagihanBulanTahunIndo($dueDate, 0);
+        // FIX (2026-09-14): Rolling/Monthversary -- PENGUNAAN WAJIB SELALU = bulan
+        // KALENDER saat pelanggan bayar, TITIK, sama seperti aturan yang SUDAH
+        // dipakai jalur normal portal_bayar.php ("aturan PENGUNAAN = bulan/tahun
+        // SAAT pelanggan bayar, BUKAN bulan jatuh tempo invoice-nya"). Versi lama
+        // di sini backward-looking (dari tagihanHitungJatuhTempoBerikutnya(), based
+        // on JATUH TEMPO bukan tanggal bayar) -- SALAH dan sudah kejadian nyata
+        // (pelanggan Puji Kusmiati: bayar 13 September ke-label "Februari 2026"
+        // krn checkpoint jatuh tempo saat itu kebetulan salah). Fungsi ini dipanggil
+        // SAAT pemrosesan pembayaran (callback gateway/manual active), jadi
+        // date('Y-m-d') di titik ini SAMA dgn tanggal bayar transaksi yg sedang
+        // diproses -- TIDAK perlu (dan TIDAK BOLEH) dihitung dari jatuh tempo lagi.
+        return tagihanBulanTahunIndo(date('Y-m-d'), 0);
     }
 }
 
