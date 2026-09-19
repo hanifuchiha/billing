@@ -40,6 +40,52 @@ require_once 'struk_helper.php';
 require_once __DIR__ . '/notifbot/notifphp/tagihan_status_lib.php';
 $struk_settings_username = ($AKSES == 'ASSISTANT' && !empty($asistant_name)) ? $asistant_name : $ceknama;
 $struk_settings = get_struk_settings($struk_settings_username);
+
+// ── Ekspresi SQL: tanggal (DATE) yang diturunkan dari kolom transaksi.TANGGALBAYAR
+//    apa pun formatnya ("Sabtu, 1 Agustus 2026" / "1 Agustus 2026" / "26/07/2026"
+//    / "2026-08-01" / "2026-08-01T..." / dll). Dipakai BERSAMA oleh:
+//      - filter "Dari/Sampai" listing & export (lihat export_transaksi_filter.php)
+//      - tombol "Sesuaikan kolom waktu ke TANGGAL BAYAR" (di bawah)
+//    Selalu dari TANGGALBAYAR, TIDAK PERNAH dari kolom `waktu`.
+$tanggalBayarDateExpr = "COALESCE(
+    DATE(transaksi.TANGGALBAYAR),
+    DATE(REPLACE(transaksi.TANGGALBAYAR, 'T', ' ')),
+    STR_TO_DATE(transaksi.TANGGALBAYAR, '%Y-%m-%d'),
+    STR_TO_DATE(transaksi.TANGGALBAYAR, '%Y/%m/%d'),
+    STR_TO_DATE(TRIM(SUBSTRING_INDEX(transaksi.TANGGALBAYAR, ',', -1)), '%d %M %Y'),
+    STR_TO_DATE(TRIM(SUBSTRING_INDEX(transaksi.TANGGALBAYAR, ',', -1)), '%d %b %Y'),
+    STR_TO_DATE(
+        NULLIF(TRIM(
+            REPLACE(REPLACE(REPLACE(
+                REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                    REPLACE(REPLACE(REPLACE(
+                        LOWER(SUBSTRING_INDEX(transaksi.TANGGALBAYAR, ',', -1)),
+                    '/', ' '), '-', ' '), '.', ' '),
+                'januari', '01'), 'februari', '02'), 'maret', '03'), 'april', '04'), 'mei', '05'), 'juni', '06'),
+                'juli', '07'), 'agustus', '08'), 'september', '09'), 'oktober', '10'), 'nopember', '11'), 'november', '11'), 'desember', '12')
+            , '   ', ' '), '  ', ' '), '  ', ' ')
+        ), ''),
+        '%d %m %Y'
+    )
+)";
+
+// ── Aksi: samakan kolom `waktu` dengan tanggal di TANGGALBAYAR ────────────────
+// (tombol di area filter). Hanya baris milik akun ini & hanya yang tanggalnya
+// belum sama -- baris dgn `waktu` yang sudah cocok TIDAK disentuh (jam aman).
+$sync_waktu_message = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sync_waktu_tanggalbayar'])
+    && isset($AKSES) && in_array($AKSES, ['ADMIN', 'ASSISTANT'], true)) {
+    $sqlSyncWaktu = "UPDATE transaksi
+        SET transaksi.waktu = ($tanggalBayarDateExpr)
+        WHERE transaksi.pemilik IN ($userServerList)
+          AND ($tanggalBayarDateExpr) IS NOT NULL
+          AND (transaksi.waktu IS NULL OR DATE(transaksi.waktu) <> ($tanggalBayarDateExpr))";
+    if (mysqli_query($conn, $sqlSyncWaktu)) {
+        $sync_waktu_message = '<div class="alert alert-success mt-2 mb-0">Kolom <code>waktu</code> disesuaikan dengan TANGGAL BAYAR untuk <b>' . (int) mysqli_affected_rows($conn) . '</b> transaksi.</div>';
+    } else {
+        $sync_waktu_message = '<div class="alert alert-danger mt-2 mb-0">Gagal menyesuaikan kolom waktu: ' . htmlspecialchars(mysqli_error($conn)) . '</div>';
+    }
+}
 ?>
 
 
@@ -235,6 +281,16 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
 </script>
     </form>
 
+    <?php if (isset($AKSES) && in_array($AKSES, ['ADMIN', 'ASSISTANT'], true)): ?>
+    <form method="POST" class="mt-2" onsubmit="return confirm('Samakan kolom `waktu` dengan tanggal di TANGGAL BAYAR?\n\nHanya baris yang tanggalnya belum sama yang diubah (jam-nya tidak ikut dihitung). Aman diulang.');">
+      <button type="submit" name="sync_waktu_tanggalbayar" value="1" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-clock-rotate-left me-1"></i>Sesuaikan kolom <code>waktu</code> ke TANGGAL BAYAR
+      </button>
+      <small class="text-muted ms-2">Agar urutan &amp; data waktu benar-benar sesuai tanggal bayar (bukan waktu import).</small>
+    </form>
+    <?php if (!empty($sync_waktu_message)) echo $sync_waktu_message; ?>
+    <?php endif; ?>
+
     <?php
     $selected_generate_month = $bulan_penggunaan[(int)date('n') - 1];
     $selected_generate_year = (int)date('Y');
@@ -246,7 +302,7 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
 
     <form method="POST" class="row g-3 align-items-end mt-1" id="manualGenerateForm">
       <div class="col-md-3">
-        <label for="generate_month" class="form-label">Periode Penggunaan (Bulan)<br><small class="text-muted">Khusus pelanggan Fixed Due Date, 1 periode per generate</small></label>
+        <label for="generate_month" class="form-label">Periode Penggunaan (Bulan)<br><small class="text-muted">Semua tipe tempo (Fixed Due Date/Monthversary/Rolling), 1 periode per generate. Otomatis di-skip kalau invoice periode ini sudah ada/sudah dibayar.</small></label>
         <select class="form-control" id="generate_month" name="generate_month" required>
           <?php foreach ($periode_generate_options as $periode_item): ?>
             <option value="<?= htmlspecialchars($periode_item['bulan']) ?>" data-year="<?= $periode_item['tahun'] ?>">
@@ -403,17 +459,50 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
           if (!in_array($generate_month, $bulan_penggunaan, true) || $generate_year < 2000 || $generate_year > 2100) {
             $manual_generate_message = '<div class="alert alert-danger mt-3">Periode penggunaan tidak valid.</div>';
           } else {
+            // Angka tanggal & label PENGUNAAN dari TANGGALBAYAR transaksi lama, sama
+            // persis dgn create_invoice_pelanggan.php (tombol per-pelanggan) supaya
+            // hasil generate massal ini konsisten dgn generate satuan.
+            if (!function_exists('transactionGenExtractTanggal')) {
+                function transactionGenExtractTanggal(string $tanggalStr): ?int
+                {
+                    if (!preg_match('/\d{1,2}/', $tanggalStr, $m)) {
+                        return null;
+                    }
+                    $angka = (int)$m[0];
+                    if ($angka < 1 || $angka > 31) {
+                        return null;
+                    }
+                    return $angka;
+                }
+            }
+            if (!function_exists('transactionGenBangunTanggalBayar')) {
+                function transactionGenBangunTanggalBayar(int $tanggal, string $namaBulan, int $tahun, array $daftarBulan): string
+                {
+                    $hari_indonesia = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+                    $indexBulan = array_search($namaBulan, $daftarBulan, true);
+                    if ($indexBulan === false) {
+                        return '-';
+                    }
+                    $bulanKe = $indexBulan + 1;
+                    $lastDay = (int)date('t', mktime(0, 0, 0, $bulanKe, 1, $tahun));
+                    $tanggalClamped = min($tanggal, $lastDay);
+                    $ts = mktime(0, 0, 0, $bulanKe, $tanggalClamped, $tahun);
+                    $namaHari = $hari_indonesia[(int)date('w', $ts)];
+                    return $namaHari . ', ' . str_pad((string)$tanggalClamped, 2, '0', STR_PAD_LEFT) . ' ' . $namaBulan . ' ' . $tahun;
+                }
+            }
+
             $periode_penggunaan = $generate_month . ' ' . $generate_year;
             $periode_penggunaan_normalized = mb_strtoupper(trim($periode_penggunaan), 'UTF-8');
 
-            // Manual generate ini KHUSUS pelanggan Fixed Due Date (mengikuti_tanggal_tempo) --
-            // Monthversary & Rolling sudah tercakup jalur H-N otomatis (invoice_generator_penagihan.php)
-            // + tombol "Generate Invoice" per-pelanggan (create_invoice_pelanggan.php) yang jatuh
-            // temponya mengikuti anchor/histori bayar masing-masing, bukan periode kalender.
-            //
-            // TANGGALBAYAR dibangun dari periode yang dipilih + jatuh_tempo_hari (setting Fixed
-            // Due Date di Payment Setting), BUKAN tanggal hari ini, supaya konsisten dgn tanggal
-            // jatuh tempo yang sesungguhnya dipakai cek_tagihan_harian.php/tagihan_status_lib.php.
+            // Manual generate ini utk SEMUA tipe tempo (Fixed Due Date, Monthversary,
+            // Rolling). Fixed Due Date: TANGGALBAYAR dibangun dari periode yang dipilih
+            // + jatuh_tempo_hari (setting Fixed Due Date di Payment Setting), label
+            // PENGUNAAN ikut setting Periode Tercatat. Monthversary/Rolling: TANGGALBAYAR
+            // ikut angka tanggal dari transaksi BERHASIL terakhir pelanggan itu sendiri
+            // (fallback TANGGALPASANG kalau belum pernah bayar), label PENGUNAAN = bulan/
+            // tahun yg dipilih apa adanya (Periode Tercatat tidak berlaku utk mode ini) --
+            // lihat cabang per-pelanggan di dalam loop di bawah.
             $reminderFileGenerate = __DIR__ . '/notifbot/data/reminder-' . preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$ceknama) . '.json';
             $jatuhTempoHariGenerate = 25;
             if (is_file($reminderFileGenerate)) {
@@ -451,7 +540,7 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
             $inserted_count = 0;
             $skipped_count = 0;
 
-            $pelanggan_q = mysqli_query($conn, "SELECT IDPEL, NAMA, PAKET, PEMILIK, COALESCE(MODE, '') AS MODE, COALESCE(TIPE_TEMPO, '') AS TIPE_TEMPO FROM pelanggan WHERE IDPEL <> '' AND PEMILIK IN ($server_list_generate)");
+            $pelanggan_q = mysqli_query($conn, "SELECT IDPEL, NAMA, PAKET, PEMILIK, COALESCE(MODE, '') AS MODE, COALESCE(TIPE_TEMPO, '') AS TIPE_TEMPO, COALESCE(TANGGALPASANG, '') AS TANGGALPASANG FROM pelanggan WHERE IDPEL <> '' AND PEMILIK IN ($server_list_generate)");
             while ($pel = mysqli_fetch_assoc($pelanggan_q)) {
               $idpel_generate = $pel['IDPEL'];
               $nama_generate = $pel['NAMA'];
@@ -459,19 +548,60 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
               $pemilik_generate = $pel['PEMILIK'];
               $mode_generate = strtoupper(trim((string)$pel['MODE']));
               $tipeTempoGenerate = strtolower(trim((string)$pel['TIPE_TEMPO']));
+              $tanggalPasangGenerate = (string)$pel['TANGGALPASANG'];
 
               if (in_array($mode_generate, ['NONAKTIF', 'DISABLED', 'DISMANTLE', 'BERHENTI'], true)) {
                 $skipped_count++;
                 continue;
               }
 
-              if (in_array($tipeTempoGenerate, ['monthversary', 'mengikuti_tanggal_bayar'], true)) {
-                // Bukan Fixed Due Date -- dilewati, sudah tercakup jalur lain (lihat komentar di atas).
-                $skipped_count++;
-                continue;
-              }
+              if ($tipeTempoGenerate === 'mengikuti_tanggal_bayar' || $tipeTempoGenerate === 'monthversary') {
+                // Rolling/Monthversary -- tanggal ikut histori bayar pelanggan sendiri,
+                // label PENGUNAAN = bulan/tahun yg dipilih apa adanya (Periode Tercatat
+                // tidak berlaku), sama persis dgn create_invoice_pelanggan.php.
+                $tglAngkaRow = null;
+                $stmtTglRow = $conn->prepare("SELECT TANGGALBAYAR FROM transaksi WHERE IDPEL = ? AND PEMILIK = ? AND TRIM(UPPER(COALESCE(STATUS,''))) = 'BERHASIL' ORDER BY id DESC LIMIT 1");
+                if ($stmtTglRow) {
+                  $stmtTglRow->bind_param('ss', $idpel_generate, $pemilik_generate);
+                  $stmtTglRow->execute();
+                  $resTglRow = $stmtTglRow->get_result();
+                  if ($resTglRow && $rowTglRow = $resTglRow->fetch_assoc()) {
+                    $tglAngkaRow = transactionGenExtractTanggal((string)($rowTglRow['TANGGALBAYAR'] ?? ''));
+                  }
+                  $stmtTglRow->close();
+                }
+                if ($tglAngkaRow === null) {
+                  $tglAngkaRow = transactionGenExtractTanggal($tanggalPasangGenerate);
+                }
+                $tanggal_generate_row = $tglAngkaRow !== null
+                  ? transactionGenBangunTanggalBayar($tglAngkaRow, $generate_month, $generate_year, $bulan_penggunaan)
+                  : '-';
+                $periode_penggunaan_row = $generate_month . ' ' . $generate_year;
 
-              $cek_exist_q = mysqli_query($conn, "SELECT id FROM transaksi WHERE IDPEL='" . mysqli_real_escape_string($conn, $idpel_generate) . "' AND PEMILIK='" . mysqli_real_escape_string($conn, $pemilik_generate) . "' AND TRIM(UPPER(COALESCE(PENGUNAAN, '')))='" . mysqli_real_escape_string($conn, $periode_penggunaan_normalized) . "' AND TRIM(UPPER(COALESCE(STATUS, ''))) IN ('PENAGIHAN','PERMINTAAN KODE','KONFIRMASI','BERHASIL') LIMIT 1");
+                // FIX: Rolling/Monthversary siklusnya per-30-hari milik pelanggan
+                // sendiri (BUKAN kalender bulanan) -- selalu MAKSIMAL 1 invoice
+                // PENAGIHAN aktif dlm satu waktu (siklus berikutnya baru ada
+                // SETELAH siklus ini lunas). Sebelumnya generate massal ini bisa
+                // dipakai admin utk bikin invoice periode kalender manapun (mis.
+                // "Juli", "Agustus") TANPA sadar pelanggan itu masih punya invoice
+                // LEBIH LAMA yg belum lunas (mis. "Mei", dari generator otomatis
+                // yg telat jalan) -- numpuk beberapa invoice PENAGIHAN sekaligus
+                // utk periode2 kalender yg tidak match siklus rolling-nya sendiri,
+                // bikin portal_bayar.php/riwayat pelanggan terlihat rancu.
+                $cek_belum_lunas_q = mysqli_query($conn, "SELECT id FROM transaksi WHERE IDPEL='" . mysqli_real_escape_string($conn, $idpel_generate) . "' AND PEMILIK='" . mysqli_real_escape_string($conn, $pemilik_generate) . "' AND TRIM(UPPER(COALESCE(STATUS, ''))) = 'PENAGIHAN' LIMIT 1");
+                if ($cek_belum_lunas_q && mysqli_num_rows($cek_belum_lunas_q) > 0) {
+                  $skipped_count++;
+                  continue;
+                }
+              } else {
+                // Fixed Due Date (atau TIPE_TEMPO kosong/tidak dikenal -> diperlakukan
+                // spt Fixed Due Date, sama konvensi tagihanHitungStatus()).
+                $tanggal_generate_row = $tanggal_generate;
+                $periode_penggunaan_row = $periode_penggunaan;
+              }
+              $periode_penggunaan_row_normalized = mb_strtoupper(trim($periode_penggunaan_row), 'UTF-8');
+
+              $cek_exist_q = mysqli_query($conn, "SELECT id FROM transaksi WHERE IDPEL='" . mysqli_real_escape_string($conn, $idpel_generate) . "' AND PEMILIK='" . mysqli_real_escape_string($conn, $pemilik_generate) . "' AND TRIM(UPPER(COALESCE(PENGUNAAN, '')))='" . mysqli_real_escape_string($conn, $periode_penggunaan_row_normalized) . "' AND TRIM(UPPER(COALESCE(STATUS, ''))) IN ('PENAGIHAN','PERMINTAAN KODE','KONFIRMASI','BERHASIL') LIMIT 1");
               if ($cek_exist_q && mysqli_num_rows($cek_exist_q) > 0) {
                 $skipped_count++;
                 continue;
@@ -490,7 +620,7 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
 
               $insert_q = mysqli_query(
                 $conn,
-                "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, STATUS, IDPEL, NAMA, PAKET, HARGA, BUKTI, CEK, PEMILIK, METODE_BAYAR) VALUES ('" . mysqli_real_escape_string($conn, $tanggal_generate) . "', '" . mysqli_real_escape_string($conn, $periode_penggunaan) . "', '" . mysqli_real_escape_string($conn, $status_generate) . "', '" . mysqli_real_escape_string($conn, $idpel_generate) . "', '" . mysqli_real_escape_string($conn, $nama_generate) . "', '" . mysqli_real_escape_string($conn, $paket_generate) . "', " . (float)$harga_generate . ", '" . mysqli_real_escape_string($conn, $bukti_ref) . "', '" . mysqli_real_escape_string($conn, $cek_generate) . "', '" . mysqli_real_escape_string($conn, $pemilik_generate) . "', '')"
+                "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, STATUS, IDPEL, NAMA, PAKET, HARGA, BUKTI, CEK, PEMILIK, METODE_BAYAR) VALUES ('" . mysqli_real_escape_string($conn, $tanggal_generate_row) . "', '" . mysqli_real_escape_string($conn, $periode_penggunaan_row) . "', '" . mysqli_real_escape_string($conn, $status_generate) . "', '" . mysqli_real_escape_string($conn, $idpel_generate) . "', '" . mysqli_real_escape_string($conn, $nama_generate) . "', '" . mysqli_real_escape_string($conn, $paket_generate) . "', " . (float)$harga_generate . ", '" . mysqli_real_escape_string($conn, $bukti_ref) . "', '" . mysqli_real_escape_string($conn, $cek_generate) . "', '" . mysqli_real_escape_string($conn, $pemilik_generate) . "', '')"
               );
 
               if ($insert_q) {
@@ -501,13 +631,22 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
             }
 
             $manual_generate_message = '<div class="alert alert-success mt-3">Manual generate periode <strong>'
-              . htmlspecialchars($periode_penggunaan)
+              . htmlspecialchars($generate_month . ' ' . $generate_year)
               . '</strong> selesai. Inserted: <strong>' . (int)$inserted_count
               . '</strong>, Skipped: <strong>' . (int)$skipped_count
               . '</strong>.</div>';
           }
         } elseif (isset($_POST['id'])) {
           $id = mysqli_real_escape_string($conn, $_POST['id']);
+
+          // FIX (2026-09-14): baca dulu IDPEL+STATUS SEBELUM dihapus -- dibutuhkan
+          // di bawah utk reset checkpoint jatuh tempo kalau yg dihapus ternyata
+          // transaksi BERHASIL (lihat komentar setelah DELETE).
+          $rowBeforeDel = null;
+          $qBeforeDel = mysqli_query($conn, "SELECT IDPEL, STATUS FROM transaksi WHERE id = '$id' AND PEMILIK IN ($userServerList) LIMIT 1");
+          if ($qBeforeDel) {
+            $rowBeforeDel = mysqli_fetch_assoc($qBeforeDel);
+          }
 
           // WAJIB cek kepemilikan sebelum DELETE -- sebelum fix ini, endpoint
           // ini TIDAK ADA pengecekan sama sekali (IDOR): siapapun yang login
@@ -519,6 +658,40 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
           $result = mysqli_query($conn, $sql);
 
           if ($result && mysqli_affected_rows($conn) > 0) {
+            // FIX (2026-09-14, diterapkan ke file ini 2026-09-19): checkpoint
+            // MV_NEXT_DUE_CACHE/MV_LAST_PROCESSED_PAYMENT (tagihan_status_lib.php)
+            // HANYA BISA MAJU, tidak pernah mundur -- hapus transaksi BERHASIL
+            // SEBELUMNYA tidak pernah bikin jatuh tempo ikut mundur, jadi "Jatuh
+            // tempo berikutnya" nyangkut di nilai lama. Reset ke NULL di sini
+            // supaya tagihanGetOrAdvanceMonthversaryDueDate() balik ke status
+            // "belum di-backfill" -> pemanggilnya (tagihanHitungJatuhTempo
+            // Berikutnya dkk) otomatis fallback ke tagihanGetFirstDueDateFixed
+            // Window() yg dihitung ULANG dari sisa riwayat BERHASIL yg SEKARANG
+            // (setelah dihapus), langsung benar di tampilan berikutnya (modal
+            // Overview, tabel, dst) TANPA perlu tunggu cron harian. Status
+            // EXPIRED di router TETAP lewat cron harian spt biasa (TIDAK
+            // dipaksa putus koneksi seketika di sini -- disengaja, hindari
+            // resiko salah putus pelanggan kalau deteksi telat keliru).
+            // File ini SEBELUMNYA tidak punya blok ini SAMA SEKALI (ketinggalan
+            // dari server lain sejak fix 2026-09-14 dibuat).
+            if ($rowBeforeDel && strtoupper(trim((string)($rowBeforeDel['STATUS'] ?? ''))) === 'BERHASIL') {
+              $delIdpel = (string)$rowBeforeDel['IDPEL'];
+              $delIdpelEsc = mysqli_real_escape_string($conn, $delIdpel);
+              $qTipe = mysqli_query($conn, "SELECT TIPE_TEMPO FROM pelanggan WHERE IDPEL = '$delIdpelEsc' LIMIT 1");
+              $tipeTempoRow = $qTipe ? mysqli_fetch_assoc($qTipe) : null;
+              $tipeTempoDel = $tipeTempoRow ? trim((string)($tipeTempoRow['TIPE_TEMPO'] ?? '')) : '';
+              // FIX (2026-09-18): "mengikuti_tanggal_tempo" (Fixed Due Date) SEKARANG
+              // JUGA pakai checkpoint MV_NEXT_DUE_CACHE yang sama (lihat
+              // tagihanGetOrAdvanceMonthversaryDueDate() di tagihan_status_lib.php) --
+              // sebelumnya cuma monthversary & Rolling ada di daftar ini, jadi hapus
+              // transaksi BERHASIL milik pelanggan Fixed Due Date TIDAK mereset
+              // checkpoint-nya, membuat "Jatuh tempo berikutnya" nyangkut di nilai
+              // lama yg sudah tidak valid (persis bug yg sama spt sebelum checkpoint
+              // itu dibuat, cuma sekarang dari sisi hapus bukan tambah transaksi).
+              if (in_array($tipeTempoDel, ['monthversary', 'mengikuti_tanggal_bayar', 'mengikuti_tanggal_tempo'], true)) {
+                mysqli_query($conn, "UPDATE pelanggan SET MV_NEXT_DUE_CACHE = NULL, MV_LAST_PROCESSED_PAYMENT = NULL WHERE IDPEL = '$delIdpelEsc'");
+              }
+            }
             echo "Berhasil menghapus data: $id";
           } else {
             echo "Gagal menghapus data: transaksi tidak ditemukan atau bukan milik Anda.";
@@ -557,19 +730,9 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
       } else {
         $where[] = "transaksi.pemilik IN ($server_list)";
       }
-      $tanggal_bayar_filter_sql = "COALESCE(
-        DATE(transaksi.TANGGALBAYAR),
-        STR_TO_DATE(transaksi.TANGGALBAYAR, '%Y-%m-%d'),
-        STR_TO_DATE(TRIM(SUBSTRING_INDEX(transaksi.TANGGALBAYAR, ',', -1)), '%d %M %Y'),
-        STR_TO_DATE(TRIM(SUBSTRING_INDEX(transaksi.TANGGALBAYAR, ',', -1)), '%d %b %Y'),
-        STR_TO_DATE(
-          TRIM(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-            SUBSTRING_INDEX(transaksi.TANGGALBAYAR, ',', -1),
-            'Januari', '01'
-          ), 'Februari', '02'), 'Maret', '03'), 'April', '04'), 'Mei', '05'), 'Juni', '06'), 'Juli', '07'), 'Agustus', '08'), 'September', '09'), 'Oktober', '10'), 'November', '11'), 'Desember', '12')),
-          '%d %m %Y'
-        )
-      )";
+      // Filter "Dari/Sampai" -> tanggal dari kolom TANGGALBAYAR (bukan `waktu`),
+      // pakai ekspresi bersama $tanggalBayarDateExpr yang didefinisikan di atas.
+      $tanggal_bayar_filter_sql = $tanggalBayarDateExpr;
       if (!$is_idpel_search && $start !== '' && $end !== '') {
         $where[] = "$tanggal_bayar_filter_sql BETWEEN '" . mysqli_real_escape_string($conn, $start) . "' AND '" . mysqli_real_escape_string($conn, $end) . "'";
       }
@@ -842,7 +1005,7 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
           <div class="col-md-12 mb-4">
             <div class="card shadow-sm border-start border-4" style="border-color: #ff9800 !important;">
               <div class="card-body p-3">
-                <!-- Header Row: Badge and Timestamp -->
+                <!-- Header Row: Badge -->
                 <div class="d-flex justify-content-between align-items-start mb-3">
                   <div>
                     <?php if ($data['STATUS'] === 'PENAGIHAN') { ?>
@@ -851,7 +1014,6 @@ document.getElementById('resetFilterBtn').addEventListener('click', function() {
                     <span class="badge bg-warning text-dark me-2">TRANSAKSI</span>
                     <span class="badge <?php echo $status_badge_class; ?> text-white"><?php echo $status_badge_label; ?></span>
                   </div>
-                  <small class="text-muted"><?php echo date('Y-m-d H:i:s', strtotime($data['TANGGALBAYAR'])); ?></small>
                 </div>
 
                 <!-- Row 1: Tanggal Bayar/Jatuh Tempo, Pengunaan, IDPEL, Nama -->

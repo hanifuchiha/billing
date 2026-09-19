@@ -1,0 +1,218 @@
+RINGKASAN PERUBAHAN - 18 September 2026
+crm/billing - server: quenbytekniksejahtera.com, grasinet (103.68.215.106), broadbandairlink.com
+==============================================================================
+
+1. PAYMENT GATEWAY: HAPUS PILIHAN "DEFAULT AUTH MODE" (SELALU MULTI MODE)
+------------------------------------------------------------------------
+Semua 8 gateway (Duitku, Midtrans, Xendit, iPaymu, Doku, Faspay, Dompetx,
+Tripay) tidak lagi menampilkan dropdown pilihan auth mode di paymentset.php.
+Nilai selalu di-hardcode 'MULTI MODE' (Tripay: kolom api_hotspot='YES').
+Dropdown "Server Area" (isinya cuma 1 opsi = username sendiri) juga diganti
+hidden input, tidak ditampilkan lagi sebagai pilihan.
+
+Diverifikasi: semua callback pembayaran membaca AUTHMODE dari MODE milik
+pelanggan sendiri (bukan dari kolom gateway), dan semua cabang aktivasi
+sudah menangani MULTI MODE dengan benar -- perubahan ini tidak menyebabkan
+error di callback manapun. Tes simpan pengaturan (24 kombinasi gateway x
+server) semua berhasil.
+
+File yang diubah (ketiga server, identik):
+- paymentset.php
+- proses/addduitku.php, addmidtrans.php, addxendit.php, addipaymu.php,
+  addoku.php, addfaspay.php, adddompetx.php, addtripay.php
+- api/payment_setting_mobile.php (sekalian perbaiki bug lama: query
+  save_tripay salah pakai kolom default_auth_mode yang tidak ada di tabel
+  tripay, seharusnya api_hotspot)
+
+
+2. LIVE CHAT: PERBAIKAN FILTER PENCARIAN PELANGGAN
+---------------------------------------------------
+crm/chat/index.php: binding filter pencarian diubah ke event delegation
+($(document).on(...) bukan $('#searchInput').on(...)) supaya tidak
+bergantung pada timing DOM. Ditambahkan indikator debug on-page
+(#searchDebug) yang menunjukkan status filter tanpa perlu buka DevTools.
+(quenby)
+
+
+3. BUG UTAMA: JATUH TEMPO SALAH UNTUK PELANGGAN FIXED DUE DATE
+-----------------------------------------------------------------
+Gejala: pelanggan sudah bayar (bahkan >1 transaksi BERHASIL sekaligus,
+mis. kompensasi manual admin untuk 2 bulan berbeda) tapi status tetap
+tampil EXPIRED. Ditemukan pertama kali di pelanggan Erna Sri Wulandari
+(airlink), jatuh tempo salah tetap di 10 September padahal sudah lunas
+sampai September (seharusnya 10 Oktober).
+
+Akar masalah: fungsi tagihanHitungJatuhTempoBerikutnya()/tagihanHitungStatus()
+untuk tipe tempo Fixed Due Date (mengikuti_tanggal_tempo) hanya melihat
+TANGGAL transaksi BERHASIL yang PALING TERAKHIR, tidak menghitung berapa
+banyak transaksi baru yang ada -- beda dengan mode Monthversary yang sudah
+diperbaiki 2026-09-13 pakai checkpoint. Bug ini ada di SEMUA server
+(quenby, grasinet, airlink), bukan cuma airlink.
+
+Perbaikan: Fixed Due Date sekarang ikut memakai checkpoint permanen yang
+sama dengan Monthversary (tagihanGetOrAdvanceMonthversaryDueDate() --
+fungsi generik, hitung JUMLAH transaksi baru, bukan cocokkan label
+PENGUNAAN yang terbukti tidak konsisten/berisiko -- lihat catatan
+DEPRECATED di kode).
+
+File yang diubah (ketiga server):
+- notifbot/notifphp/tagihan_status_lib.php (2 fungsi)
+- proses/update_tanggal_monthversary.php (checkpoint ikut direset saat
+  admin ubah jatuh tempo manual -- sebelumnya Fixed Due Date sengaja
+  dikecualikan dari reset ini)
+- notifbot/notifphp/cek_tagihan_harian.php, _FIBERQ.php (cron isolir
+  sungguhan)
+- notifbot/notifphp/cek_tagihan_harian_grasinet.php (khusus grasinet)
+- notifbot/notifphp/cek_tagihan_harian_airlink.php (khusus airlink --
+  DITEMUKAN JUGA bug lebih lama: cabang Monthversary di file ini masih
+  pakai fungsi paling primitif getFirstDueDateFixed(), bug "loncat 2
+  bulan" yang sudah diperbaiki di server lain 2026-09-12/13 tapi tidak
+  pernah sampai ke file khusus-airlink ini -- ikut diperbaiki)
+
+Backfill checkpoint (data existing, divalidasi via dry-run + pengaman
+anti-regresi sebelum dijalankan sungguhan):
+- quenby   : 93 pelanggan diproses, 2 dikoreksi
+- grasinet : 7 diproses, 4 dikoreksi
+- airlink  : 573 diproses, 18 dikoreksi (termasuk Erna -> 10 Oktober 2026)
+0 regresi (tidak ada yang jatuh temponya jadi mundur) di ketiganya.
+
+Sinkronisasi tambahan khusus airlink (jauh tertinggal dari quenby):
+- cek-sesi.php disamakan penuh (122 baris migrasi skema otomatis yang
+  sebelumnya tidak ada di airlink, termasuk kolom MV_NEXT_DUE_CACHE dkk)
+- tagihan_status_lib.php disamakan penuh (seluruh sistem checkpoint
+  Monthversary Fix #4 sebelumnya tidak ada sama sekali di airlink)
+
+
+4. LABEL UI: "Pengunaan/PENGUNAAN" -> "PERIODE"
+--------------------------------------------------
+Airlink ketinggalan 2 titik label (quenby & grasinet sudah benar):
+- customertransation.php (modal "Overview Customer data" / Riwayat
+  Transaksi Pelanggan)
+- riwayatTransaction.php
+Nilai data tetap dari kolom PENGUNAAN (tidak diubah), cuma label tampilan
+yang disamakan.
+
+
+5. SINKRONISASI getdata/api_hanif* KE QUENBY & GRASINET
+------------------------------------------------------------
+Airlink punya versi lebih matang untuk sinkronisasi ke sistem Keuangan:
+- Transaksi 'kompensasi_free' dikecualikan dari sinkronisasi pendapatan
+- Baseline SYNC_TRANSACTION_START_ID supaya histori lama tidak ikut
+  ter-backfill massal saat pertama kali jalan
+- Pemetaan bank lebih akurat (pakai data mapping asli dari API Keuangan,
+  bukan tebak kata kunci)
+- Tracking status sync per-pelanggan (kolom KEUANGAN_SYNC_STATUS/ERROR)
+Fitur-fitur ini dibawa ke quenby DAN grasinet (getdata/api_hanif_cron_
+pelanggan.php, api_hanif_cron_transaksi.php), dengan URL endpoint Keuangan
+masing-masing TETAP dipertahankan (quenby & grasinet share endpoint
+"sistem-manajemen-keuangan" yang sama -- keduanya TIDAK ditimpa URL
+airlink yang endpoint-nya terpisah "/airlink/").
+
+Catatan: quenby & grasinet kini identik byte-per-byte untuk kedua file ini
+(dikonfirmasi via diff).
+
+Ditemukan & diperbaiki sekalian:
+- 2 kolom (KEUANGAN_SYNC_STATUS, KEUANGAN_SYNC_ERROR) dipakai di query
+  UPDATE tapi TIDAK punya self-heal ensureColumnExists() -- akan
+  menyebabkan error "Unknown column" di server manapun yang belum punya
+  kolom itu secara manual. Ditambahkan self-heal-nya (di quenby, grasinet,
+  DAN airlink). Kolom langsung dibuat (bukan menunggu cron jalan) di
+  quenby & grasinet -- di grasinet SEMUA 10 kolom KEUANGAN_* memang belum
+  ada sama sekali sebelumnya (belum pernah pakai versi cron ini), semua
+  berhasil dibuat.
+- File baseline getdata/keuangan_transaction_start_id.txt dibuat:
+  - quenby   : isi 91465 (MAX id transaksi saat migrasi dijalankan)
+  - grasinet : isi 234406 (MAX id transaksi saat migrasi dijalankan)
+  Supaya histori transaksi lama tidak ikut ter-backfill massal saat cron
+  pertama kali jalan di kedua server ini.
+- SATU baris di getdata/api_hanif.php TIDAK disamakan dengan airlink,
+  malah SEBALIKNYA: airlink diperbaiki mengikuti pola quenby (grasinet
+  sudah otomatis aman -- filenya sudah identik dengan quenby sejak awal,
+  tidak perlu diubah). Query dropdown Server untuk akun ASSISTANT di
+  airlink pakai "WHERE AREA IN (...)" -- pola ini berisiko BOCOR DATA
+  lintas-brand
+  kalau 2 server beda tenant kebetulan punya nama AREA yang sama (bug
+  class yang sama seperti sudah diperbaiki di file lain sebelumnya).
+  Diganti ke "WHERE id IN (...)" (aman, id = primary key unik) di airlink.
+
+
+6. PORTAL PELANGGAN (broadband/) - SINKRONISASI AIRLINK KE QUENBY (2026-09-19)
+-------------------------------------------------------------------------------
+Seluruh isi folder broadband/ dibandingkan quenby vs airlink -- HANYA
+portal_bayar.php yang berbeda (file lain sudah identik). 2 perbedaan
+ditemukan, arahnya BEDA:
+- Quenby punya logging error yang lebih baik untuk INSERT baris
+  PERMINTAAN KODE Xendit (kalau prepare/execute gagal, dicatat ke
+  notifbot/data/xendit_callback_errors_*.json -- sebelumnya gagal SENYAP
+  TOTAL tanpa jejak apapun). Airlink belum punya ini -> dibawa ke airlink.
+- Airlink set METODE_BAYAR='tripay' saat insert baris PERMINTAAN KODE
+  Tripay; quenby tidak set sama sekali. Ini PENTING karena sinkronisasi
+  Keuangan (poin 5 di atas) butuh METODE_BAYAR utk memisahkan fee
+  customer dari harga pokok. Dibawa ke quenby.
+Quenby dijadikan sumber tunggal (setelah kedua perbaikan digabung), lalu
+di-copy byte-exact ke airlink -- kedua file sekarang identik.
+
+
+7. Transaction.php - RESET CHECKPOINT SAAT HAPUS TRANSAKSI (2026-09-18/19)
+-----------------------------------------------------------------------------
+Tombol Delete per-baris transaksi di menu Transaksi Billing DIKONFIRMASI
+sudah bisa menghapus baris status PERMINTAAN KODE di ketiga server (tidak
+ada pembatasan berdasarkan status, hanya disembunyikan untuk role
+ASSISTANT).
+
+Ditemukan & diperbaiki sekalian:
+- quenby & grasinet: reset checkpoint MV_NEXT_DUE_CACHE saat hapus
+  transaksi BERHASIL sebelumnya cuma berlaku utk Monthversary & Rolling
+  -- ditambahkan Fixed Due Date (yang baru 2026-09-18 ikut pakai
+  checkpoint yang sama, lihat poin 3).
+- airlink: SELURUH blok reset checkpoint ini TIDAK ADA sama sekali
+  (bukan cuma soal Fixed Due Date -- Monthversary & Rolling pun belum
+  pernah direset di sini sejak fix 2026-09-14 dibuat di server lain).
+  Blok lengkap (baca IDPEL+STATUS sebelum hapus, reset checkpoint utk
+  ketiga tipe tempo) ditambahkan ke file ini.
+
+
+8. FITUR BARU: "BUAT TAGIHAN SEKARANG" DI PORTAL PELANGGAN (2026-09-19)
+----------------------------------------------------------------------------
+Sebelumnya kalau belum ada tagihan aktif utk periode berjalan, portal
+pelanggan (broadband/portal_bayar.php) cuma menampilkan teks statis "Belum
+ada tagihan baru.." tanpa ada cara bagi pelanggan utk memicu pembuatannya
+sendiri.
+
+Ditambahkan file baru broadband/proses_buat_tagihan_sendiri.php + tombol
+"Buat Tagihan Sekarang" di titik itu. Mekanismenya SAMA PERSIS dengan
+"Manual Generate Invoice" milik admin di menu Transaksi Billing (insert
+baris STATUS='PENAGIHAN', pengecekan anti-duplikat per periode), bedanya:
+- Cuma utk 1 pelanggan yang sedang login (bukan generate massal).
+- Periode DIHITUNG OTOMATIS oleh sistem lewat variabel yang sudah ada di
+  cek_sesi.php ($isFixedDueDateTampilFokus, $periodeBerjalanTampilFokus /
+  $bulanAktualTampilFokus, $adaPenagihanTampil -- logika TIPE_TEMPO-aware
+  yang SAMA PERSIS dgn yang menentukan status SHOW/HIDE tagihan). TIDAK
+  ADA input periode dari pelanggan sama sekali -- supaya tidak bisa
+  disalahgunakan (pilih periode jauh ke depan / bikin tagihan dobel).
+- Paket gratis/Rp0 TIDAK menampilkan tombol ini (diminta -- paket seperti
+  itu memang tidak perlu ditagih).
+- Ada pengecekan ulang LANGSUNG ke database sesaat sebelum insert
+  (proteksi race condition kalau tombol diklik dobel/2 tab bersamaan).
+
+Ditemukan & diperbaiki sekalian saat pengembangan: cek_sesi.php (yang
+di-include endpoint ini utk resolve data pelanggan) SELALU mencetak tag
+<link>/<script> Bootstrap mentah di baris paling atas -- kalau tidak
+dibuang pakai output buffering (ob_start/ob_end_clean) sebelum mengirim
+response JSON, teks itu nempel di depan JSON dan bikin parsing gagal di
+browser.
+
+Diuji end-to-end dengan pelanggan uji sintetis (dibuat & dihapus lagi,
+bukan data pelanggan asli): berhasil membuat tagihan dengan periode &
+nominal yang benar, tombol paket gratis ditolak dengan benar, klik dobel
+ditolak dengan benar (anti-duplikat). Diterapkan identik di ketiga server.
+
+
+CATATAN UMUM
+-------------
+- Semua file yang diubah sudah dicek `php -l` (tidak ada syntax error).
+- Semua perubahan skema database sudah divalidasi lewat query nyata
+  sebelum dan sesudah perubahan.
+- 26 file yang diminta diperiksa terpisah (Transaction.php,
+  broadband/portal_bayar.php, callback_tripay_airlink.php, dkk) semua
+  lolos php -l, tidak ada error.

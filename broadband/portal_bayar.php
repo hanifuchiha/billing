@@ -313,7 +313,18 @@ if (!function_exists('portalBayarPayDetailJson')) {
         .payment-info p {
             margin-bottom: 8px;
             display: flex;
+            flex-wrap: wrap;
             justify-content: space-between;
+            gap: 4px 10px;
+            /* Nilai spt Kode Bayar QRIS bisa berupa satu string panjang tanpa
+               spasi (200+ karakter) -- tanpa ini teksnya meluber keluar
+               kartu/halaman drpd melipat ke baris berikutnya. */
+            overflow-wrap: anywhere;
+            word-break: break-word;
+        }
+
+        .payment-info p > strong:first-child {
+            flex-shrink: 0;
         }
 
         .payment-info strong {
@@ -545,6 +556,75 @@ if (!function_exists('portalBayarPayDetailJson')) {
             background-color: #fff3e0;
             color: #ef6c00;
             border: 1px solid #ff9800;
+        }
+
+        /* ===================================================================
+           SUCCESS POPUP - Shown after payment proof upload succeeds
+           =================================================================== */
+        .success-popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2000;
+            padding: 20px;
+        }
+
+        .success-popup-card {
+            background: #fff;
+            border-radius: 16px;
+            padding: 30px 25px;
+            max-width: 320px;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            animation: popupIn 0.25s ease-out;
+        }
+
+        .success-popup-check {
+            width: 70px;
+            height: 70px;
+            margin: 0 auto 18px auto;
+            border-radius: 50%;
+            background-color: #4caf50;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 38px;
+        }
+
+        .success-popup-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #2e7d32;
+            margin-bottom: 8px;
+        }
+
+        .success-popup-text {
+            font-size: 14px;
+            color: #555;
+            margin-bottom: 22px;
+        }
+
+        .success-popup-button {
+            background-color: var(--dark-green);
+            color: #fff;
+            border: none;
+            padding: 10px 30px;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        @keyframes popupIn {
+            0% { transform: scale(0.85); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
         }
 
         /* ===================================================================
@@ -831,46 +911,51 @@ if (!function_exists('portalBayarPayDetailJson')) {
             $isFixedDueDatePenagihanFokus = !in_array($tipeTempoPenagihanFokus, ['monthversary', 'mengikuti_tanggal_bayar'], true);
 
             if ($isFixedDueDatePenagihanFokus) {
-                $todayTsPenagihanFokus = strtotime(date('Y-m-d'));
-                $dueMonthTsPenagihanFokus = ((int) date('j', $todayTsPenagihanFokus) <= (int) ($jatuh_tempo ?? 25))
-                    ? $todayTsPenagihanFokus
-                    : strtotime('+1 month', $todayTsPenagihanFokus);
-
-                // SEBELUM Awal Tutup Buku: paksa mode 'berjalan' (tampilkan tagihan
-                // bulan aktual/menunggak SEKARANG), TERLEPAS dari setting Periode
-                // Tercatat -- supaya label tagihan tidak "loncat" ke periode
-                // berikutnya lebih awal dari waktunya (mis. baru tanggal 9 tapi
-                // sudah nampil "September" krn Periode Tercatat=berikutnya). Begitu
-                // masuk/lewat Awal Tutup Buku, baru ikut Periode Tercatat asli.
-                $tglSkgTutupBukuFokus = (int) date('j', $todayTsPenagihanFokus);
-                $modePeriodeFokus = ($tglSkgTutupBukuFokus < (int) ($tanggal_awal_tutup_buku ?? 0))
-                    ? 'berjalan'
-                    : (string) ($periode_tercatat ?? 'berjalan');
-
-                $periodeBerjalanFokus = tagihanResolvePeriodeTercatat(
-                    (int) date('n', $dueMonthTsPenagihanFokus),
-                    (int) date('Y', $dueMonthTsPenagihanFokus),
-                    $modePeriodeFokus
-                );
-                $stmtPenagihan = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND UPPER(STATUS) = 'PENAGIHAN' AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER(?)) ORDER BY id DESC LIMIT 1");
-                $stmtPenagihan->bind_param("ss", $merchantRef, $periodeBerjalanFokus);
+                // FIX: SEBELUMNYA hitung label "periode berjalan" via 2 langkah
+                // penambahan bulan yang SALING TUMPANG TINDIH -- (1) kalau hari ini
+                // sudah lewat jatuh_tempo_hari, maju 1 bulan (niatnya: geser ke
+                // siklus due-date berikutnya), LALU (2) tagihanResolvePeriodeTercatat()
+                // dgn mode 'berikutnya' MENAMBAH 1 BULAN LAGI (krn PENGUNAAN =
+                // bulan due date + 1) -- jadi total maju 2 BULAN dari siklus yg
+                // BARU SAJA lewat jatuh tempo-nya, lalu dicocokkan PERSIS ke label
+                // itu. Akibatnya invoice yg BENERAN sedang jatuh tempo/baru lewat
+                // (mis. jatuh tempo 28 Agustus, PENGUNAAN "September") tidak pernah
+                // ketemu -- yg tampil malah invoice SIKLUS SETELAHNYA yang belum
+                // jatuh tempo sama sekali (PENGUNAAN "Oktober").
+                //
+                // Sekarang disamakan dgn pola Rolling/Monthversary di bawah: ambil
+                // baris PENAGIHAN dgn jatuh tempo (TANGGALBAYAR) PALING AWAL, tanpa
+                // menebak/mencocokkan label PENGUNAAN sama sekali -- otomatis benar
+                // baik utk yang sudah lewat jatuh tempo (menunggak) maupun yang baru
+                // terbit (sudah digenerate lebih awal tapi belum jatuh tempo).
+                $stmtPenagihan = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND UPPER(STATUS) = 'PENAGIHAN' ORDER BY $trxDateExprPenagihan ASC, id ASC LIMIT 1");
+                $stmtPenagihan->bind_param("s", $merchantRef);
             } else {
-                // Rolling/Monthversary: label PENGUNAAN = bulan/tahun tanggal jatuh
-                // tempo ITU SENDIRI, tanpa offset (lihat invoice_generator_rolling_
-                // monthversary.php). SEBELUMNYA ambil baris PENAGIHAN PALING BARU
-                // tanpa syarat -- tapi kalau cron sudah generate invoice bulan depan
-                // lebih awal (mis. hari ini masih Agustus tapi invoice September
-                // sudah ada krn "hari sebelum" jatuh tempo), baris September itu ikut
-                // dianggap aktif padahal belum waktunya. Sekarang cocokkan ke BULAN
-                // AKTUAL (kalender hari ini) dulu -- prinsipnya SAMA dgn Fixed Due
-                // Date: jangan tampilkan tagihan masa depan sebelum waktunya.
-                $bulanAktualPenagihanFokus = tagihanResolvePeriodeTercatat(
-                    (int) date('n'),
-                    (int) date('Y'),
-                    'berjalan'
-                );
-                $stmtPenagihan = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND UPPER(STATUS) = 'PENAGIHAN' AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER(?)) ORDER BY $trxDateExprPenagihan DESC, id DESC LIMIT 1");
-                $stmtPenagihan->bind_param("ss", $merchantRef, $bulanAktualPenagihanFokus);
+                // Rolling/Monthversary: TIDAK ada kalender penagihan bersama -- siklus
+                // jatuh tempo per-pelanggan sendiri (lihat invoice_generator_rolling_
+                // monthversary.php). SEBELUMNYA portal ikut membatasi tampil pakai
+                // window "terbit H- [X] hari sebelum jatuh tempo" (days_before_due dari
+                // setting Invoice Generator) -- TAPI ini salah utk invoice yang dibuat
+                // MANUAL (tombol "Buat Invoice"/generate manual admin): baris PENAGIHAN
+                // sudah eksplisit dibuat sekarang, tapi tetap disembunyikan dari portal
+                // sampai H- tercapai krn masih ikut dicek ulang di sini -- pelanggan
+                // JADI TIDAK BISA BAYAR tagihan yang sebenarnya sudah valid & sengaja
+                // diterbitkan. days_before_due itu tanggung jawab Invoice Generator SAAT
+                // MEMBUAT baris PENAGIHAN (kapan baris itu digenerate), bukan tanggung
+                // jawab portal SAAT MENAMPILKAN baris yang sudah ada -- begitu baris
+                // PENAGIHAN ada di database (otomatis maupun manual), itu tagihan yang
+                // sah utk periode berjalan & harus langsung tampil, tanpa syarat window
+                // hari apapun lagi di sisi portal.
+                // Ambil baris PENAGIHAN dgn jatuh tempo PALING BARU/dekat hari ini (bukan
+                // paling lama) -- utk pelanggan yang kebetulan punya BEBERAPA invoice
+                // PENAGIHAN menumpuk sekaligus (mis. invoice lama yg telat dibayar +
+                // invoice baru yg sudah dibuat belakangan), yang paling relevan/aktual
+                // utk dibayar SEKARANG adalah yang jatuh temponya paling dekat dgn hari
+                // ini -- invoice lama yg sudah lewat TETAP ADA di riwayat & tetap bisa
+                // dibayar (tidak dihapus), cuma tidak jadi fokus utama yang ditampilkan
+                // portal.
+                $stmtPenagihan = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND UPPER(STATUS) = 'PENAGIHAN' ORDER BY $trxDateExprPenagihan DESC, id DESC LIMIT 1");
+                $stmtPenagihan->bind_param("s", $merchantRef);
             }
             $stmtPenagihan->execute();
             $resultPenagihan = $stmtPenagihan->get_result();
@@ -937,6 +1022,22 @@ if (!function_exists('portalBayarPayDetailJson')) {
             $periode_tagihan = $penagihanRow['PENGUNAAN'];
             $periode = $penagihanRow['PENGUNAAN'];
             $paketHarga = $penagihanRow['HARGA'];
+
+            // FIX: $periode di sini dipakai sbg PENGUNAAN transaksi BARU yang
+            // dibuat begitu pelanggan benar2 bayar (PERMINTAAN KODE/BERHASIL,
+            // lihat INSERT INTO transaksi di bawah utk tiap gateway). Utk
+            // Rolling/Monthversary, aturan PENGUNAAN = bulan/tahun SAAT
+            // pelanggan bayar (bukan bulan jatuh tempo invoice-nya) -- kalau
+            // dibiarkan mewarisi PENGUNAAN invoice PENAGIHAN (berbasis jatuh
+            // tempo, bisa beda bulan krn terbit H- sebelum jatuh tempo, atau
+            // pelanggan bayar telat/cepat lintas bulan), transaksi BERHASIL
+            // yang baru ini akan SALAH LABEL lagi persis seperti riwayat lama
+            // yang baru saja diperbaiki (fix_pengunaan_rolling_monthversary.php).
+            // Fixed Due Date TIDAK diubah -- PENGUNAAN di sana memang label
+            // kalender bersama (Periode Tercatat), bukan tanggal bayar aktual.
+            if (!$isFixedDueDatePenagihanFokus) {
+                $periode = tagihanResolvePeriodeTercatat((int)date('n'), (int)date('Y'), 'berjalan');
+            }
 
             // ===================================================================
             // TOGGLE "Prorate Saat Telat" (Payment Setting -> Konfigurasi Fixed
@@ -1021,15 +1122,30 @@ if (!function_exists('portalBayarPayDetailJson')) {
         // ===================================================================
         $has_paid_periode = false;
         $paidTransaction = null;
-        $stmtPaid = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER(?)) AND UPPER(STATUS) IN ('LUNAS', 'SUKSES', 'SUCCESS', 'BERHASIL', 'PAID', 'SELESAI', 'SETTLEMENT') ORDER BY id DESC LIMIT 1");
-        $stmtPaid->bind_param("ss", $merchantRef, $periode_tagihan);
-        $stmtPaid->execute();
-        $resultPaid = $stmtPaid->get_result();
-        if ($rowPaid = $resultPaid->fetch_assoc()) {
-            $has_paid_periode = true;
-            $paidTransaction = $rowPaid;
+        // FIX: Rolling/Monthversary DENGAN baris PENAGIHAN aktif yang barusan
+        // ditemukan (berdasarkan jatuh tempo, lihat blok di atas) TIDAK boleh
+        // dicek "sudah lunas?" lewat match teks PENGUNAAN -- riwayat lama bisa
+        // saja tersimpan dgn PENGUNAAN yang tidak presisi ke jatuh tempo
+        // aslinya (mis. transaksi BERHASIL berlabel "Agustus 2026" padahal
+        // jatuh tempo yg benar2 dipenuhinya bulan lain). Kalau dicocokkan ke
+        // teks, baris lama itu bikin sistem mengira periode SEKARANG (yang
+        // PENGUNAAN barunya kebetulan sama persis) sudah lunas, padahal baris
+        // PENAGIHAN yang ditemukan di atas MASIH berstatus PENAGIHAN (belum
+        // dibayar) -- pelanggan jadi disuguhi halaman "sudah bayar" alih-alih
+        // form bayar utk tagihan yang sebenarnya masih aktif. Utk Fixed Due
+        // Date, cocokkan ke PENGUNAAN tetap aman (satu kalender bersama).
+        $lewatiCekLunasPenggunaan = !$isFixedDueDatePenagihanFokus && $has_penagihan_periode;
+        if (!$lewatiCekLunasPenggunaan) {
+            $stmtPaid = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER(?)) AND UPPER(STATUS) IN ('LUNAS', 'SUKSES', 'SUCCESS', 'BERHASIL', 'PAID', 'SELESAI', 'SETTLEMENT') ORDER BY id DESC LIMIT 1");
+            $stmtPaid->bind_param("ss", $merchantRef, $periode_tagihan);
+            $stmtPaid->execute();
+            $resultPaid = $stmtPaid->get_result();
+            if ($rowPaid = $resultPaid->fetch_assoc()) {
+                $has_paid_periode = true;
+                $paidTransaction = $rowPaid;
+            }
+            $stmtPaid->close();
         }
-        $stmtPaid->close();
 
         // ===================================================================
         // EXISTING TRANSACTION PROCESSING
@@ -1144,6 +1260,70 @@ if (!function_exists('portalBayarPayDetailJson')) {
 
                 // Parse Tripay response data
                 $data = json_decode($response, true)['data'];
+
+                // ===================================================================
+                // VALIDASI: transaksi PENDING lama ini nominalnya masih sesuai
+                // tagihan+fee channel yg BENAR saat ini?
+                // Purpose: Baris `transaksi` PERMINTAAN KODE lokal bisa saja dibuat
+                // sebelum ada perubahan tagihan (diskon/biaya tambahan) ATAU sebelum
+                // bugfix perhitungan admin fee channel Tripay (lihat
+                // channel_customer_fee_computed di logs/tripay_fee_debug.log). Tripay
+                // create-transaction bersifat idempotent thd merchant_ref, jadi kalau
+                // kita cuma nge-fetch detail transaksi LAMA ini terus-terusan (blok di
+                // atas), nominal yg SALAH itu akan tampil SELAMANYA ke pelanggan --
+                // tidak pernah terkoreksi walau logika hitung fee sudah diperbaiki,
+                // krn kode di bawah ini tidak pernah membuat transaksi baru selama
+                // baris PERMINTAAN KODE lokal masih ada. Di sini kita hitung ulang
+                // nominal yg SEHARUSNYA (base tagihan terkini + fee channel yg sama
+                // persis dari $payment_channels), dan kalau beda DAN statusnya masih
+                // UNPAID (belum dibayar, aman dibuang), hapus baris lokal + transaksi
+                // Tripay-nya otomatis dianggap basi, lalu reload halaman supaya jatuh
+                // ke form pilih metode bayar dan membuat transaksi BARU dgn nominal
+                // yg benar (merchant_ref sekarang unik per percobaan, lihat blok
+                // "Proses Tripay Payment" di bawah).
+                $tripayDetailMethod = (string)($data['payment_method'] ?? '');
+                $tripayExpectedFee = 0.0;
+                // Guard: $totalTagihan cuma diisi kalau ada baris PENAGIHAN periode
+                // berjalan (lihat $has_penagihan_periode di atas) -- di luar kondisi
+                // itu jangan validasi sama sekali (biarkan tampil apa adanya spt
+                // sebelumnya) drpd salah bandingkan ke 0/undefined & keliru menghapus
+                // transaksi pending yang sebenarnya masih valid.
+                if ($has_penagihan_periode && isset($totalTagihan) && $totalTagihan > 0
+                    && $tripayDetailMethod !== '' && !empty($payment_channels) && is_array($payment_channels)) {
+                    foreach ($payment_channels as $channelRowCheck) {
+                        if (($channelRowCheck['code'] ?? '') !== $tripayDetailMethod) {
+                            continue;
+                        }
+                        $ccff = (float)($channelRowCheck['fee_customer']['flat'] ?? 0);
+                        $ccfp = (float)($channelRowCheck['fee_customer']['percent'] ?? 0);
+                        $ccmin = (float)($channelRowCheck['minimum_fee'] ?? 0);
+                        $ccmax = (float)($channelRowCheck['maximum_fee'] ?? 0);
+                        $tripayExpectedFee = $ccff + ((float)$totalTagihan * ($ccfp / 100));
+                        if ($tripayExpectedFee > 0 && $ccmin > 0 && $tripayExpectedFee < $ccmin) {
+                            $tripayExpectedFee = $ccmin;
+                        }
+                        if ($tripayExpectedFee > 0 && $ccmax > 0 && $tripayExpectedFee > $ccmax) {
+                            $tripayExpectedFee = $ccmax;
+                        }
+                        break;
+                    }
+                    $tripayExpectedAmount = (int)round(max(0, (float)$totalTagihan + max(0, $tripayExpectedFee)));
+                    $tripayIsStillUnpaid = strtoupper((string)($data['status'] ?? '')) === 'UNPAID';
+
+                    if ($tripayIsStillUnpaid && (int)($data['amount'] ?? 0) !== $tripayExpectedAmount) {
+                        $stmtStaleDelete = $conn->prepare("DELETE FROM `transaksi` WHERE `BUKTI` = ?");
+                        $stmtStaleDelete->bind_param("s", $reference);
+                        $stmtStaleDelete->execute();
+                        $stmtStaleDelete->close();
+
+                        // JS redirect (bukan header()) krn cek_sesi.php sudah echo HTML
+                        // (<link>/<script> CDN) sebelum titik ini -- header() tidak akan
+                        // berfungsi lagi (headers already sent).
+                        echo "<script>window.location.href = 'portal_bayar.php?cari=" . rawurlencode($merchantRef) . "';</script>";
+                        exit;
+                    }
+                }
+
                 $namapembayaran = $data['payment_name'];
                 $kodebayar = $data['pay_code'];
                 $statusbayar = $data['status'];
@@ -1240,7 +1420,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
             
             <div class="payment-actions">
                 <?php if (!empty($data['checkout_url']) && $data['checkout_url'] !== '#'): ?>
-                <a href="<?php echo $data['checkout_url']; ?>" class="payment-button btn-success btn-checkout-highlight" target="_blank">CHECKOUT DISINI</a>
+                <a href="<?php echo $data['checkout_url']; ?>" class="payment-button btn-success btn-checkout-highlight" target="_blank">LANJUTKAN BAYAR<br><small style="font-weight:normal;">klik ini</small></a>
                 <?php endif; ?>
                 <a href="portal_bayar.php?cari=<?= $merchantRef; ?>&ref=<?= $reference; ?>&action=hapus" class="payment-button btn-danger">Batalkan</a>
             </div>
@@ -1407,7 +1587,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
                         $instructions = [[
                             'title' => 'Instruksi Pembayaran Duitku',
                             'steps' => [
-                                'Klik tombol "CHECKOUT DISINI" untuk melanjutkan pembayaran',
+                                'Klik tombol "LANJUTKAN BAYAR" untuk melanjutkan pembayaran',
                                 'Pilih metode pembayaran yang telah Anda tentukan',
                                 'Ikuti instruksi pembayaran yang muncul',
                                 'Pembayaran akan diverifikasi otomatis'
@@ -1531,7 +1711,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
                         $instructions = [[
                             'title' => 'Instruksi Pembayaran iPaymu',
                             'steps' => [
-                                'Klik tombol "CHECKOUT DISINI" untuk melanjutkan ke halaman pembayaran iPaymu',
+                                'Klik tombol "LANJUTKAN BAYAR" untuk melanjutkan ke halaman pembayaran iPaymu',
                                 'Pilih metode pembayaran yang tersedia (VA/QRIS/E-Wallet)',
                                 'Ikuti instruksi pembayaran yang muncul',
                                 'Pembayaran akan diverifikasi otomatis'
@@ -1634,7 +1814,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
                         $instructions = [[
                             'title' => 'Instruksi Pembayaran DOKU',
                             'steps' => [
-                                'Klik tombol "CHECKOUT DISINI" untuk melanjutkan ke halaman pembayaran DOKU',
+                                'Klik tombol "LANJUTKAN BAYAR" untuk melanjutkan ke halaman pembayaran DOKU',
                                 'Pilih metode pembayaran yang tersedia',
                                 'Ikuti instruksi pembayaran yang muncul',
                                 'Pembayaran akan diverifikasi otomatis'
@@ -1738,7 +1918,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
                         ]] : [[
                             'title' => 'Instruksi Pembayaran Faspay',
                             'steps' => [
-                                'Klik tombol "CHECKOUT DISINI" untuk melanjutkan ke halaman pembayaran Faspay',
+                                'Klik tombol "LANJUTKAN BAYAR" untuk melanjutkan ke halaman pembayaran Faspay',
                                 'Selesaikan pembayaran sesuai metode (e-wallet/QRIS/retail) yang dipilih',
                                 'Pembayaran akan diverifikasi otomatis'
                             ]
@@ -1856,10 +2036,23 @@ if (!function_exists('portalBayarPayDetailJson')) {
                             $idpembayar = $merchantRef;
                             $refpembayar = $reference;
                             $exp = !empty($dxData['expiresAt']) ? strtotime($dxData['expiresAt']) : strtotime('+24 hours');
-                            $cekout = '';
-                            $payurl = '';
+                            // DompetX kasih halaman checkout terhosting sendiri (paymentUrl) --
+                            // sebelumnya di-hardcode kosong jadi tombol "CHECKOUT DISINI"/"Lanjut
+                            // Bayar" tidak pernah muncul utk DompetX (baik VA maupun QRIS),
+                            // padahal field-nya SELALU ada di response (lihat logs/dompetx_error.log).
+                            $cekout = $dxData['paymentUrl'] ?? '';
+                            $payurl = $cekout;
                             $barcode = $dompetx_qr_image;
-                            $harusbayar = $totalTagihan;
+                            // PENTING: nominal yg HARUS ditagih ke pelanggan = `totalAmount` dari
+                            // DompetX (amount + fee + additionalFee mereka), BUKAN $totalTagihan
+                            // (base tanpa fee). Response asli DompetX konfirmasi
+                            // "isFeeIncluded":false -- yaitu fee TIDAK termasuk dlm `amount` yg kita
+                            // kirim & pelanggan WAJIB transfer sejumlah `totalAmount` (lebih besar
+                            // dari `amount`), bukan sekadar `amount` spt yg selama ini ditampilkan.
+                            // Kalau pelanggan transfer sesuai $totalTagihan (nominal lama yg
+                            // ditampilkan, KURANG dari yg sebenarnya harus dibayar), pembayaran
+                            // bisa gagal ke-verifikasi otomatis krn nominal tidak cocok.
+                            $harusbayar = $dxData['totalAmount'] ?? $totalTagihan;
                             $cekpaidtripay = $statusbayar;
 
                             // Instruksi beda antara VA (kodebayar = nomor VA, dibayar via
@@ -1919,7 +2112,9 @@ if (!function_exists('portalBayarPayDetailJson')) {
                             $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
                                       VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'DOMPETX', ?)";
                             $stmt = $conn->prepare($query);
-                            $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $totalTagihan, $reference, $pemilik, $dompetx_pay_detail);
+                            // HARGA = $harusbayar (totalAmount aktual dr DompetX, sudah termasuk
+                            // fee), BUKAN $totalTagihan (base) -- lihat catatan di atas.
+                            $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $harusbayar, $reference, $pemilik, $dompetx_pay_detail);
                             $stmt->execute();
                             $stmt->close();
                         } else {
@@ -2054,7 +2249,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
                             $instructions = [[
                                 'title' => 'Instruksi Pembayaran Midtrans',
                                 'steps' => [
-                                    'Klik tombol "CHECKOUT DISINI" untuk melanjutkan ke halaman pembayaran Midtrans',
+                                    'Klik tombol "LANJUTKAN BAYAR" untuk melanjutkan ke halaman pembayaran Midtrans',
                                     'Pilih metode pembayaran yang tersedia (VA/QRIS/E-Wallet/Kartu Kredit)',
                                     'Ikuti instruksi pembayaran yang muncul',
                                     'Pembayaran akan diverifikasi otomatis',
@@ -2223,7 +2418,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                 $instructions = [[
                                     'title' => 'Instruksi Pembayaran Xendit',
                                     'steps' => [
-                                        'Klik tombol "CHECKOUT DISINI" untuk melanjutkan ke halaman pembayaran Xendit',
+                                        'Klik tombol "LANJUTKAN BAYAR" untuk melanjutkan ke halaman pembayaran Xendit',
                                         'Pilih metode pembayaran yang tersedia (E-Wallet/Kartu Kredit/Retail/dll)',
                                         'Ikuti instruksi pembayaran yang muncul',
                                         'Pembayaran akan diverifikasi otomatis',
@@ -2259,25 +2454,129 @@ if (!function_exists('portalBayarPayDetailJson')) {
                             $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL)
                                       VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'XENDIT', ?)";
                             $stmt = $conn->prepare($query);
-                            $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $xendit_amount, $reference, $pemilik, $xendit_pay_detail);
-                            $stmt->execute();
-                            $stmt->close();
+                            // FIX: baris PERMINTAAN KODE ini SATU-SATUNYA jejak lokal yang dicari
+                            // callback_xendit*.php lewat BUKTI ($reference) begitu Xendit bayar --
+                            // kalau prepare()/execute() gagal (mis. duplicate BUKTI, kolom berubah)
+                            // SEBELUMNYA gagal TOTAL SENYAP: pelanggan tetap bisa bayar ke Xendit
+                            // (uang masuk beneran) tapi baris ini tidak pernah ada, jadi callback
+                            // selalu "Tidak ditemukan transaksi PERMINTAAN KODE dengan BUKTI ini"
+                            // tanpa ada satupun log yang menjelaskan kenapa. Log ke file yang sama
+                            // gayanya dgn xendit_log_reject() di callback, supaya kejadian
+                            // berikutnya kelihatan alasan DB-nya (bukan cuma "tidak ditemukan").
+                            if (!$stmt || !$stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $xendit_amount, $reference, $pemilik, $xendit_pay_detail) || !$stmt->execute()) {
+                                $xendit_insert_error = $stmt ? $stmt->error : $conn->error;
+                                $xendit_insert_log_file = __DIR__ . "/../notifbot/data/xendit_callback_errors_$useraccount.json";
+                                $xendit_insert_log = file_exists($xendit_insert_log_file) ? json_decode(file_get_contents($xendit_insert_log_file), true) : [];
+                                if (!is_array($xendit_insert_log)) $xendit_insert_log = [];
+                                $xendit_insert_log[] = [
+                                    'waktu' => date('Y-m-d H:i:s'),
+                                    'reason' => 'GAGAL INSERT baris PERMINTAAN KODE (invoice Xendit SUDAH dibuat, uang bisa tetap masuk tapi tidak akan ketemu saat callback)',
+                                    'invoiceref' => $reference,
+                                    'idpel' => $merchantRef,
+                                    'db_error' => $xendit_insert_error,
+                                ];
+                                if (count($xendit_insert_log) > 500) $xendit_insert_log = array_slice($xendit_insert_log, -500);
+                                @file_put_contents($xendit_insert_log_file, json_encode($xendit_insert_log, JSON_PRETTY_PRINT));
+                            }
+                            if ($stmt) $stmt->close();
                         }
                     }
                 }
                 // Proses Tripay Payment (existing code)
                 elseif (isset($_POST['method'])) {
                     $method = $_POST['method'];
-                    // Kirim tagihan pokok saja. Tripay akan menambahkan fee_customer
-                    // sesuai kanal pembayaran. Menambahkan fee di sini menyebabkan
-                    // biaya admin dikenakan dua kali (oleh billing dan oleh Tripay).
-                    $tripayAmount = (int)round(max(0, (float)$totalTagihan));
 
-                    $signature = hash_hmac('sha256', $merchantCode . $merchantRef . $tripayAmount, $privateKey);
+                    // PENTING -- JANGAN tambahkan fee_customer channel ke `amount` di
+                    // sini. Tripay `/transaction/create` (closed payment) menghitung
+                    // & menambahkan fee_customer channel yg dipilih SECARA OTOMATIS di
+                    // sisi mereka berdasarkan `amount` yg kita kirim -- `data.amount`
+                    // pada response SUDAH termasuk fee itu. Kalau kita ikut
+                    // menambahkan fee_customer sendiri SEBELUM kirim (spt kode lama di
+                    // sini), Tripay menambahkannya LAGI di atas nilai yg sudah
+                    // fee-inclusive itu -> pelanggan kena tagih fee channel DUA KALI.
+                    // Ini kebukti dari logs/tripay_fee_debug.log: kita kirim 115.500
+                    // (110.000 base + fee kita 5.500) tapi data.amount yg balik dari
+                    // Tripay 121.000 (115.500 + fee Tripay 5.500 lagi) -- SELISIHNYA
+                    // PERSIS sama dgn fee yg sudah kita tambahkan sendiri.
+                    // `amount` yg dikirim = base tagihan SAJA; fee utk PREVIEW/validasi
+                    // (channelCustomerFee di bawah) tetap dihitung -- dipakai utk log
+                    // pembanding & validasi transaksi stale, BUKAN utk dijumlah ke
+                    // `amount` yg dikirim.
+                    $tripayAmount = (int)round((float)$totalTagihan);
+                    $channelFeeCustomerFlat = 0.0;
+                    $channelFeeCustomerPercent = 0.0;
+                    $channelMinimumFee = 0.0;
+                    $channelMaximumFee = 0.0;
+
+                    if (!empty($payment_channels) && is_array($payment_channels)) {
+                        foreach ($payment_channels as $channelRow) {
+                            if (($channelRow['code'] ?? '') !== $method) {
+                                continue;
+                            }
+                            $channelFeeCustomerFlat = (float)($channelRow['fee_customer']['flat'] ?? 0);
+                            $channelFeeCustomerPercent = (float)($channelRow['fee_customer']['percent'] ?? 0);
+                            $channelMinimumFee = (float)($channelRow['minimum_fee'] ?? 0);
+                            $channelMaximumFee = (float)($channelRow['maximum_fee'] ?? 0);
+                            break;
+                        }
+                    }
+
+                    $channelCustomerFee = $channelFeeCustomerFlat + ((float)$totalTagihan * ($channelFeeCustomerPercent / 100));
+                    if ($channelCustomerFee > 0 && $channelMinimumFee > 0 && $channelCustomerFee < $channelMinimumFee) {
+                        $channelCustomerFee = $channelMinimumFee;
+                    }
+                    if ($channelCustomerFee > 0 && $channelMaximumFee > 0 && $channelCustomerFee > $channelMaximumFee) {
+                        $channelCustomerFee = $channelMaximumFee;
+                    }
+                    $tripayExpectedTotalAfterFee = (int)round(max(0, (float)$tripayAmount + max(0, $channelCustomerFee)));
+
+                    // Log breakdown perhitungan nominal Tripay -- supaya kalau nominal
+                    // yg tercipta di Tripay beda dari yg ditampilkan ke pelanggan
+                    // sebelum klik BAYAR SEKARANG (harusnya SAMA, base + admin fee
+                    // channel yg sama), ada bukti angka pasti utk investigasi (bukan
+                    // cuma tebak2an) tanpa perlu reproduksi ulang. `tripay_amount_sent`
+                    // = yg kita kirim (base saja); `expected_total_after_tripay_fee` =
+                    // prediksi `data.amount` yg SEHARUSNYA balik dari Tripay setelah
+                    // mereka tambahkan fee_customer channel ini otomatis.
+                    @file_put_contents(
+                        __DIR__ . '/../logs/tripay_fee_debug.log',
+                        json_encode([
+                            'time' => date('Y-m-d H:i:s'),
+                            'idpel' => $merchantRef ?? null,
+                            'method' => $method,
+                            'total_tagihan_base' => $totalTagihan,
+                            'channel_fee_customer_flat' => $channelFeeCustomerFlat,
+                            'channel_fee_customer_percent' => $channelFeeCustomerPercent,
+                            'channel_minimum_fee' => $channelMinimumFee,
+                            'channel_maximum_fee' => $channelMaximumFee,
+                            'channel_customer_fee_computed' => $channelCustomerFee,
+                            'tripay_amount_sent' => $tripayAmount,
+                            'expected_total_after_tripay_fee' => $tripayExpectedTotalAfterFee,
+                        ], JSON_UNESCAPED_UNICODE) . "\n",
+                        FILE_APPEND | LOCK_EX
+                    );
+
+                    // PENTING: merchant_ref yg dikirim ke Tripay HARUS unik per percobaan
+                    // (bukan $merchantRef/IDPEL polos). API create Tripay bersifat
+                    // idempotent thd merchant_ref -- kalau merchant_ref yg sama masih
+                    // berstatus UNPAID & belum expired di sisi Tripay, mereka
+                    // mengembalikan transaksi LAMA itu lagi (nominal & VA lama),
+                    // MENGABAIKAN `amount` yg baru kita kirim. Krn $merchantRef selama
+                    // ini cuma IDPEL polos (sama di setiap percobaan bulan yg sama),
+                    // percobaan bayar berikutnya bisa "nyangkut" ke transaksi lama yg
+                    // nominalnya sudah tidak sesuai tagihan terkini (mis. sebelum ada
+                    // perubahan diskon/biaya tambahan). Pola `time()` ini SAMA dgn yg
+                    // sudah dipakai gateway lain di file ini (Duitku/DompetX/Midtrans/
+                    // Xendit, lihat $order_id/$xendit_external_id). Match transaksi lokal
+                    // TETAP pakai `reference` Tripay (kolom BUKTI, lihat callback_tripay.php)
+                    // -- BUKAN merchant_ref -- jadi aman diubah tanpa merusak callback.
+                    $tripayMerchantRef = $merchantRef . '-' . time();
+
+                    $signature = hash_hmac('sha256', $merchantCode . $tripayMerchantRef . $tripayAmount, $privateKey);
 
                     $data = [
                         'method'         => $method,
-                        'merchant_ref'   => $merchantRef,
+                        'merchant_ref'   => $tripayMerchantRef,
                         'amount'         => $tripayAmount,
                         'customer_name'  => $pelanggan['NAMA'],
                         'customer_email' => $email,
@@ -2364,10 +2663,21 @@ if (!function_exists('portalBayarPayDetailJson')) {
                         // PENTING: PENGUNAAN (periode) WAJIB disimpan di sini juga,
                         // dengan alasan yang sama seperti pada blok Duitku di atas.
                         $tripay_pay_detail = portalBayarPayDetailJson($cekout, $kodebayar, $barcode, $payurl);
+                        // FIX (2026-09-19): METODE_BAYAR='tripay' WAJIB diisi di sini -- dipakai
+                        // getdata/api_hanif_cron_pelanggan.php (sinkronisasi Keuangan) utk
+                        // memisahkan HARGA (yg utk Tripay sudah termasuk fee_customer channel)
+                        // dari harga_gross saat sync, supaya fee itu tidak ikut tercatat sbg
+                        // pendapatan layanan. Tanpa ini baris tetap ke-insert (kolom nullable)
+                        // tapi sinkronisasi Keuangan salah hitung pendapatan utk transaksi Tripay.
                         $query = "INSERT INTO transaksi (TANGGALBAYAR, PENGUNAAN, IDPEL, NAMA, PAKET, HARGA, STATUS, BUKTI, PEMILIK, CEK, PAY_DETAIL, METODE_BAYAR)
                                   VALUES (?, ?, ?, ?, ?, ?, 'PERMINTAAN KODE', ?, ?, 'PERMINTAAN', ?, 'tripay')";
                         $stmt = $conn->prepare($query);
-                        $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $tripayAmount, $reference, $pemilik, $tripay_pay_detail);
+                        // HARGA = $harusbayar (data.amount AKTUAL dari Tripay, sudah termasuk
+                        // fee_customer channel yg mereka tambahkan otomatis) -- BUKAN
+                        // $tripayAmount (nilai base yg kita KIRIM sebelum fee Tripay
+                        // ditambahkan), supaya baris lokal konsisten dgn nominal yg
+                        // sungguh harus dibayar pelanggan di VA.
+                        $stmt->bind_param("sssssssss", $ptanggal, $periode_tagihan, $merchantRef, $nama, $namapaket, $harusbayar, $reference, $pemilik, $tripay_pay_detail);
                         $stmt->execute();
                         $stmt->close();
                     } else {
@@ -2540,7 +2850,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
             
             <div class="payment-actions">
                 <?php if (!empty($cekout) && $cekout !== '#'): ?>
-                <a href="<?php echo $cekout; ?>" class="payment-button btn-success btn-checkout-highlight" target="_blank">CHECKOUT DISINI</a>
+                <a href="<?php echo $cekout; ?>" class="payment-button btn-success btn-checkout-highlight" target="_blank">LANJUTKAN BAYAR<br><small style="font-weight:normal;">klik ini</small></a>
                 <?php endif; ?>
                 <a href="portal_baru.php?cari=<?= $merchantRef; ?>&ref=<?= $reference; ?>&action=hapus" class="payment-button btn-danger">Batalkan</a>
             </div>
@@ -2667,10 +2977,12 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                     <td>Rp<?= number_format($detail['harga'], 2, ',', '.'); ?></td>
                                 </tr>
                             <?php } ?>
+                            <?php if ($ppn > 0): ?>
                             <tr>
                                 <td><strong>Pajak (<?php echo $pajak ?>%)</strong></td>
                                 <td>Rp<?= number_format($ppn, 2, ',', '.'); ?></td>
                             </tr>
+                            <?php endif; ?>
                             <tr class="tripay-admin-fee-row" style="display:none;">
                                 <td><strong>Admin Fee <span class="tripay-admin-fee-note" style="font-size:11px;color:#888;"></span></strong></td>
                                 <td><span class="tripay-admin-fee-value">Rp0</span></td>
@@ -2736,10 +3048,12 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                     <td>Rp<?= number_format($detail['harga'], 2, ',', '.'); ?></td>
                                 </tr>
                             <?php } ?>
+                            <?php if ($ppn > 0): ?>
                             <tr>
                                 <td><strong>Pajak (<?php echo $pajak ?>%)</strong></td>
                                 <td>Rp<?= number_format($ppn, 2, ',', '.'); ?></td>
                             </tr>
+                            <?php endif; ?>
                             <tr class="bill-total" style="background-color: #e7f3ff; border-top: 3px solid #2196F3;">
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">TOTAL BAYAR</strong></td>
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">Rp<?= number_format($totalTagihan, 2, ',', '.'); ?></strong></td>
@@ -2829,10 +3143,12 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                     <td>Rp<?= number_format($detail['harga'], 2, ',', '.'); ?></td>
                                 </tr>
                             <?php } ?>
+                            <?php if ($ppn > 0): ?>
                             <tr>
                                 <td><strong>Pajak (<?php echo $pajak ?>%)</strong></td>
                                 <td>Rp<?= number_format($ppn, 2, ',', '.'); ?></td>
                             </tr>
+                            <?php endif; ?>
                             <tr class="bill-total" style="background-color: #e7f3ff; border-top: 3px solid #2196F3;">
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">TOTAL BAYAR</strong></td>
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">Rp<?= number_format($totalTagihan, 2, ',', '.'); ?></strong></td>
@@ -2889,10 +3205,12 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                     <td>Rp<?= number_format($detail['harga'], 2, ',', '.'); ?></td>
                                 </tr>
                             <?php } ?>
+                            <?php if ($ppn > 0): ?>
                             <tr>
                                 <td><strong>Pajak (<?php echo $pajak ?>%)</strong></td>
                                 <td>Rp<?= number_format($ppn, 2, ',', '.'); ?></td>
                             </tr>
+                            <?php endif; ?>
                             <tr class="bill-total" style="background-color: #e7f3ff; border-top: 3px solid #2196F3;">
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">TOTAL BAYAR</strong></td>
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">Rp<?= number_format($totalTagihan, 2, ',', '.'); ?></strong></td>
@@ -2961,10 +3279,12 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                     <td>Rp<?= number_format($detail['harga'], 2, ',', '.'); ?></td>
                                 </tr>
                             <?php } ?>
+                            <?php if ($ppn > 0): ?>
                             <tr>
                                 <td><strong>Pajak (<?php echo $pajak ?>%)</strong></td>
                                 <td>Rp<?= number_format($ppn, 2, ',', '.'); ?></td>
                             </tr>
+                            <?php endif; ?>
                             <tr class="bill-total" style="background-color: #e7f3ff; border-top: 3px solid #2196F3;">
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">TOTAL BAYAR</strong></td>
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">Rp<?= number_format($totalTagihan, 2, ',', '.'); ?></strong></td>
@@ -3023,10 +3343,12 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                     <td>Rp<?= number_format($detail['harga'], 2, ',', '.'); ?></td>
                                 </tr>
                             <?php } ?>
+                            <?php if ($ppn > 0): ?>
                             <tr>
                                 <td><strong>Pajak (<?php echo $pajak ?>%)</strong></td>
                                 <td>Rp<?= number_format($ppn, 2, ',', '.'); ?></td>
                             </tr>
+                            <?php endif; ?>
                             <tr class="bill-total" style="background-color: #e7f3ff; border-top: 3px solid #2196F3;">
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">TOTAL BAYAR</strong></td>
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">Rp<?= number_format($totalTagihan, 2, ',', '.'); ?></strong></td>
@@ -3085,10 +3407,12 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                     <td>Rp<?= number_format($detail['harga'], 2, ',', '.'); ?></td>
                                 </tr>
                             <?php } ?>
+                            <?php if ($ppn > 0): ?>
                             <tr>
                                 <td><strong>Pajak (<?php echo $pajak ?>%)</strong></td>
                                 <td>Rp<?= number_format($ppn, 2, ',', '.'); ?></td>
                             </tr>
+                            <?php endif; ?>
                             <tr class="bill-total" style="background-color: #e7f3ff; border-top: 3px solid #2196F3;">
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">TOTAL BAYAR</strong></td>
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">Rp<?= number_format($totalTagihan, 2, ',', '.'); ?></strong></td>
@@ -3165,10 +3489,12 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                     <td>Rp<?= number_format($detail['harga'], 2, ',', '.'); ?></td>
                                 </tr>
                             <?php } ?>
+                            <?php if ($ppn > 0): ?>
                             <tr>
                                 <td><strong>Pajak (<?php echo $pajak ?>%)</strong></td>
                                 <td>Rp<?= number_format($ppn, 2, ',', '.'); ?></td>
                             </tr>
+                            <?php endif; ?>
                             <tr class="bill-total" style="background-color: #e7f3ff; border-top: 3px solid #2196F3;">
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">TOTAL BAYAR</strong></td>
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">Rp<?= number_format($totalTagihan, 2, ',', '.'); ?></strong></td>
@@ -3254,10 +3580,12 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                     <td>Rp<?= number_format($detail['harga'], 2, ',', '.'); ?></td>
                                 </tr>
                             <?php } ?>
+                            <?php if ($ppn > 0): ?>
                             <tr>
                                 <td><strong>Pajak (<?php echo $pajak ?>%)</strong></td>
                                 <td>Rp<?= number_format($ppn, 2, ',', '.'); ?></td>
                             </tr>
+                            <?php endif; ?>
                           
                             <tr class="bill-total" style="background-color: #e7f3ff; border-top: 3px solid #2196F3;">
                                 <td><strong style="color: #1976D2; font-size: 1.1em;">TOTAL BAYAR</strong></td>
@@ -3294,7 +3622,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                 }
                             } else {
                                 // Jika tidak ada data untuk server spesifik, coba tanpa filter server
-                             echo   $sql_fallback = "SELECT `id`, `nama_bank`, `nama_pemilik_bank`, `rekening_bank`, `pemilik`
+                                $sql_fallback = "SELECT `id`, `nama_bank`, `nama_pemilik_bank`, `rekening_bank`, `pemilik`
                                                FROM `manualbank`
                                                WHERE `server` = '".mysqli_real_escape_string($conn, $username)."'";
                                 $result_fallback = mysqli_query($conn, $sql_fallback);
@@ -3327,6 +3655,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
                     $tanggal2 = formatTanggalIndo($tanggal2); 
                     $message = '';
                     $uploadedFile = '';
+                    $uploadSuccess = false;
 
                     if (isset($_FILES['bukti']) && $_FILES['bukti']['error'] === UPLOAD_ERR_OK) {
                         $nama       = $pelanggan['NAMA'] ?? '';
@@ -3349,7 +3678,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
                         ");
 
                         if (!$insert) {
-                            $message = "? Gagal membuat transaksi! Error: " . mysqli_error($conn);
+                            $message = "Gagal membuat transaksi! Error: " . mysqli_error($conn);
                         } else {
                             $id = mysqli_insert_id($conn);
                             $uploadDir = __DIR__ . "/../../../dokumen/buktibon/";
@@ -3360,7 +3689,7 @@ if (!function_exists('portalBayarPayDetailJson')) {
                             $allowed = ['jpg','jpeg','png'];
 
                             if (!in_array($ext, $allowed)) {
-                                $message = "? File tidak diizinkan. Hanya: " . implode(', ', $allowed);
+                                $message = "File tidak diizinkan. Hanya: " . implode(', ', $allowed);
                             } else {
                                 $filename   = $id . '.' . $ext;
                                 $targetFile = $uploadDir . $filename;
@@ -3370,9 +3699,9 @@ if (!function_exists('portalBayarPayDetailJson')) {
                                     mysqli_query($conn, "UPDATE transaksi SET BUKTI='$bukti' WHERE id=$id");
 
                                     $uploadedFile = $uploadUrl . $filename;
-                                    $message = "? Transaksi berhasil dibuat dan file bukti diupload!";
+                                    $uploadSuccess = true;
                                 } else {
-                                    $message = "? Gagal mengupload file bukti!";
+                                    $message = "Gagal mengupload file bukti!";
                                 }
                             }
                         }
@@ -3381,9 +3710,9 @@ if (!function_exists('portalBayarPayDetailJson')) {
 
                     <div class="upload-form">
                         <div class="manual-payment-header">Upload Bukti Pembayaran</div>
-                        
-                        <?php if ($message): ?>
-                            <div class="alert <?= strpos($message, '?') !== false ? 'alert-error' : 'alert-success'; ?>">
+
+                        <?php if ($message && !$uploadSuccess): ?>
+                            <div class="alert alert-error">
                                 <?= htmlspecialchars($message) ?>
                             </div>
                         <?php endif; ?>
@@ -3404,6 +3733,19 @@ if (!function_exists('portalBayarPayDetailJson')) {
                             </div>
                         <?php endif; ?>
                     </div>
+
+                    <?php if ($uploadSuccess): ?>
+                        <div class="success-popup-overlay" id="uploadSuccessPopup">
+                            <div class="success-popup-card">
+                                <div class="success-popup-check">
+                                    <i class="bi bi-check-lg"></i>
+                                </div>
+                                <div class="success-popup-title">Bukti Pembayaran Terkirim</div>
+                                <div class="success-popup-text">Mohon tunggu respon dari admin. Terima kasih.</div>
+                                <button type="button" class="success-popup-button" onclick="document.getElementById('uploadSuccessPopup').style.display='none';">OK</button>
+                            </div>
+                        </div>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
         <?php else: ?>
@@ -3440,15 +3782,20 @@ if (!function_exists('portalBayarPayDetailJson')) {
                     // ===================================================================
                     $has_confirm_periode = false;
                     $confirmTransaction = null;
-                    $stmtConfirm = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER(?)) AND UPPER(STATUS) = 'KONFIRMASI' ORDER BY id DESC LIMIT 1");
-                    $stmtConfirm->bind_param("ss", $merchantRef, $periode_tagihan);
-                    $stmtConfirm->execute();
-                    $resultConfirm = $stmtConfirm->get_result();
-                    if ($rowConfirm = $resultConfirm->fetch_assoc()) {
-                        $has_confirm_periode = true;
-                        $confirmTransaction = $rowConfirm;
+                    // Rolling/Monthversary dgn PENAGIHAN aktif: sama seperti cek "sudah
+                    // lunas" di atas, jangan cocokkan ke teks PENGUNAAN (riwayat lama
+                    // bisa berlabel tidak presisi) -- lihat $lewatiCekLunasPenggunaan.
+                    if (!$lewatiCekLunasPenggunaan) {
+                        $stmtConfirm = $conn->prepare("SELECT * FROM transaksi WHERE IDPEL = ? AND TRIM(UPPER(PENGUNAAN)) = TRIM(UPPER(?)) AND UPPER(STATUS) = 'KONFIRMASI' ORDER BY id DESC LIMIT 1");
+                        $stmtConfirm->bind_param("ss", $merchantRef, $periode_tagihan);
+                        $stmtConfirm->execute();
+                        $resultConfirm = $stmtConfirm->get_result();
+                        if ($rowConfirm = $resultConfirm->fetch_assoc()) {
+                            $has_confirm_periode = true;
+                            $confirmTransaction = $rowConfirm;
+                        }
+                        $stmtConfirm->close();
                     }
-                    $stmtConfirm->close();
                     ?>
                     <?php if ($has_confirm_periode && $confirmTransaction): ?>
                         <div class="payment-details">
@@ -3471,6 +3818,45 @@ if (!function_exists('portalBayarPayDetailJson')) {
                         <div class="bill-details">
                             <div class="bill-details-header">Detail Tagihan Anda</div>
                             <p>Belum ada tagihan baru..</p>
+                            <?php
+                            // FIX (2026-09-19): tombol "Buat Tagihan Sekarang" -- pelanggan bisa
+                            // memicu sendiri pembuatan baris PENAGIHAN periode berjalan (mekanisme
+                            // sama dgn "Manual Generate Invoice" admin, periode dihitung OTOMATIS
+                            // oleh sistem lewat proses_buat_tagihan_sendiri.php, TIDAK ADA input
+                            // periode dari pelanggan). Disembunyikan utk paket gratis/Rp0 (diminta,
+                            // paket seperti ini memang tidak perlu ditagih).
+                            if ((float)($paketHarga ?? 0) > 0) { ?>
+                            <button type="button" id="btnBuatTagihanSendiri" class="btn btn-primary btn-sm mt-2" onclick="buatTagihanSendiri()">
+                                <i class="bi bi-receipt"></i> Buat Tagihan Sekarang
+                            </button>
+                            <script>
+                            function buatTagihanSendiri() {
+                                var btn = document.getElementById('btnBuatTagihanSendiri');
+                                btn.disabled = true;
+                                btn.innerHTML = 'Memproses...';
+                                fetch('proses_buat_tagihan_sendiri.php?cari=<?= urlencode($cari ?? $idpel) ?>', {
+                                    method: 'POST',
+                                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                                    body: 'idpel=<?= urlencode($idpel) ?>'
+                                })
+                                .then(function(res) { return res.json(); })
+                                .then(function(data) {
+                                    if (data.success) {
+                                        window.location.reload();
+                                    } else {
+                                        alert(data.message || 'Gagal membuat tagihan.');
+                                        btn.disabled = false;
+                                        btn.innerHTML = '<i class="bi bi-receipt"></i> Buat Tagihan Sekarang';
+                                    }
+                                })
+                                .catch(function() {
+                                    alert('Terjadi kesalahan, silakan coba lagi.');
+                                    btn.disabled = false;
+                                    btn.innerHTML = '<i class="bi bi-receipt"></i> Buat Tagihan Sekarang';
+                                });
+                            }
+                            </script>
+                            <?php } ?>
                         </div>
                     <?php endif; ?>
                 <?php endif; ?>
