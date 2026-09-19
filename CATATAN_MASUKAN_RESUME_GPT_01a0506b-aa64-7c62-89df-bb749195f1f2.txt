@@ -1003,3 +1003,20 @@ VERIFIKASI KONEKSI DATABASE DAN ROUTEROS - 19 SEPTEMBER 2026
    logika self-heal tersimpan pada commit 765a57f. Pelanggan yang belum memiliki
    checkpoint akan memakai fallback dan dapat di-backfill saat memenuhi kondisi
    transaksi yang dipersyaratkan oleh helper.
+
+PENYELARASAN REMINDER DAN INVOICE H-2 - 19 SEPTEMBER 2026
+=========================================================
+1. Konfigurasi reminder Airlink sebelumnya memakai hari_sebelum=9, sedangkan
+   generator invoice Rolling/Monthversary memakai days_before_due=2. Kondisi
+   tersebut dapat menjadwalkan reminder tujuh hari sebelum invoice tersedia.
+2. hari_sebelum Airlink diubah menjadi 2 melalui reminderSettingsSave(), sehingga
+   sumber utama tabel reminder_settings dan mirror reminder-airlink.json berubah
+   bersama-sama tanpa mengubah field konfigurasi lainnya.
+3. Reminder dan pembuatan invoice pelanggan monthversary sekarang sama-sama
+   dijadwalkan H-2 dari tanggal jatuh tempo masing-masing. Filter sudah bayar dan
+   deduplikasi notifikasi tetap aktif.
+4. Untuk Siti Robiyah dengan jatuh tempo 24 September 2026, invoice dan reminder
+   dijadwalkan pada 22 September 2026. Grace period tetap dua hari, sehingga
+   pelanggan baru layak diisolir mulai 26 September jika belum membayar.
+5. Perubahan konfigurasi tidak menjalankan cron dan tidak mengirim WhatsApp pada
+   saat penyimpanan; pengiriman tetap dilakukan oleh jadwal reminder normal.
