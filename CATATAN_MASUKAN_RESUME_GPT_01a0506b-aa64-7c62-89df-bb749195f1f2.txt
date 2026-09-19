@@ -972,3 +972,34 @@ PERBAIKAN ISOLIR KOMPENSASI FREE DAN FREERADIUS - 18 SEPTEMBER 2026
 8. Cadangan file FreeRADIUS sebelum koreksi Erna tersedia sebagai
    /etc/freeradius/3.0/users.backup-erna-20260918 dan
    /etc/freeradius/3.0/mods-config/files/authorize.backup-erna-20260918.
+
+VERIFIKASI KONEKSI DATABASE DAN ROUTEROS - 19 SEPTEMBER 2026
+============================================================
+1. Audit pada pelanggan Siti Robiyah membuktikan koneksi database aplikasi
+   melalui koneksidb.php berjalan normal dan memakai akun MySQL
+   airlink@localhost pada database Mybillingq.
+2. Potongan diagnostik yang memakai new mysqli dengan akun root merupakan
+   perintah sementara dan tidak ditemukan tersimpan dalam source produksi,
+   history terminal, ataupun file sementara. Tidak ada koneksi aplikasi yang
+   perlu diubah atau dikembalikan.
+3. Query pelanggan dan relasi server berhasil. Data paket pelanggan ditemukan
+   dan kolom kredensial router terisi tanpa menampilkan password dalam log.
+4. Login RouterOS menggunakan kolom MIK80 gagal karena pada server terkait
+   kolom tersebut berisi nilai penanda/port lama "80", bukan username, dan
+   tidak ada user RouterOS dengan nama tersebut.
+5. Login RouterOS menggunakan kolom PEMILIK sebagai username dan PASSWORD
+   sebagai password berhasil. Identity router dapat dibaca melalui operasi
+   read-only; tidak ada konfigurasi pelanggan atau router yang diubah.
+6. Pola koneksi yang benar adalah IP + PEMILIK + PASSWORD. Query diagnostik
+   yang memerlukan login RouterOS harus mengambil s.PEMILIK, bukan s.MIK80.
+7. Pemeriksaan akhir: database normal, data pelanggan ditemukan, RouterOS dapat
+   diakses dengan kredensial yang benar, dan layanan FreeRADIUS berstatus aktif.
+8. Siti Robiyah termasuk pelanggan monthversary yang telah memperoleh checkpoint
+   hasil perbaikan self-heal: MV_NEXT_DUE_CACHE=2026-09-24 dan
+   MV_LAST_PROCESSED_PAYMENT=2026-08-01. Profil PPP secret saat audit tetap
+   AirHome - 177k, tidak disabled, dan pelanggan sedang online.
+9. Audit agregat menemukan 133 pelanggan bertipe monthversary; 114 di antaranya
+   telah memiliki MV_NEXT_DUE_CACHE serta MV_LAST_PROCESSED_PAYMENT. Perbaikan
+   logika self-heal tersimpan pada commit 765a57f. Pelanggan yang belum memiliki
+   checkpoint akan memakai fallback dan dapat di-backfill saat memenuhi kondisi
+   transaksi yang dipersyaratkan oleh helper.
