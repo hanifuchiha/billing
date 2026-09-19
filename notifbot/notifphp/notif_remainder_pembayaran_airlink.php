@@ -1060,14 +1060,20 @@ while ($dataServerRolling = mysqli_fetch_array($queryServerRolling)) {
             continue;
         }
 
-        // H-berapa hari lagi jatuh tempo pelanggan ini -- pakai "hari_sebelum" yang
-        // sama dgn setting Fixed Due Date (satu-satunya field itu di Payment Setting).
+        // Reminder utama mengikuti "hari_sebelum" (Airlink: H-9). Reminder kedua
+        // dikirim H-2 bila pelanggan masih belum lunas. Jenis notifikasi dibedakan
+        // agar masing-masing tahap hanya terkirim sekali per periode.
         $triggerDateRolling = date('Y-m-d', strtotime("-{$hari_sebelum} days", strtotime($dueDateRolling)));
-        echo "[DEBUG ROLLING] $IDPEL jatuh tempo $dueDateRolling | jendela mulai $triggerDateRolling | hari ini $cektanggal<br>";
-        $todayRollingTs = strtotime($cektanggal);
-        $triggerRollingTs = strtotime($triggerDateRolling);
-        $dueRollingTs = strtotime($dueDateRolling);
-        if ($todayRollingTs < $triggerRollingTs || $todayRollingTs > $dueRollingTs) {
+        $followUpDaysRolling = 2;
+        $followUpDateRolling = date('Y-m-d', strtotime("-{$followUpDaysRolling} days", strtotime($dueDateRolling)));
+        $reminderStageRolling = null;
+        if ($cektanggal === $triggerDateRolling) {
+            $reminderStageRolling = 'h' . (int) $hari_sebelum;
+        } elseif ((int) $hari_sebelum !== $followUpDaysRolling && $cektanggal === $followUpDateRolling) {
+            $reminderStageRolling = 'h' . $followUpDaysRolling;
+        }
+        echo "[DEBUG ROLLING] $IDPEL jatuh tempo $dueDateRolling | reminder utama $triggerDateRolling | reminder kedua $followUpDateRolling | hari ini $cektanggal<br>";
+        if ($reminderStageRolling === null) {
             continue;
         }
 
@@ -1119,8 +1125,8 @@ while ($dataServerRolling = mysqli_fetch_array($queryServerRolling)) {
 
         $periodeRolling = tagihanBulanTahunIndo($dueDateRolling, 0);
         $jenisNotifRolling = $TIPE_TEMPO_NORM === 'monthversary'
-            ? 'payment_reminder_monthversary'
-            : 'payment_reminder_rolling';
+            ? 'payment_reminder_monthversary_' . $reminderStageRolling
+            : 'payment_reminder_rolling_' . $reminderStageRolling;
         $notifLogRolling = waNotifQueueAndClaim($conn, [
             'pemilik' => $pemilik,
             'idpel' => $IDPEL,

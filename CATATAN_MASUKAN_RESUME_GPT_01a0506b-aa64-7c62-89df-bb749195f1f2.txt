@@ -1020,3 +1020,27 @@ PENYELARASAN REMINDER DAN INVOICE H-2 - 19 SEPTEMBER 2026
    pelanggan baru layak diisolir mulai 26 September jika belum membayar.
 5. Perubahan konfigurasi tidak menjalankan cron dan tidak mengirim WhatsApp pada
    saat penyimpanan; pengiriman tetap dilakukan oleh jadwal reminder normal.
+
+PENINGKATAN INVOICE H-9 DAN REMINDER DUA TAHAP - 19 SEPTEMBER 2026
+=================================================================
+1. Konfigurasi H-2 tunggal di atas kemudian ditingkatkan: invoice pelanggan
+   Rolling/Monthversary kini mulai dibuat H-9 agar pelanggan memperoleh waktu
+   pembayaran yang lebih panjang dan reminder tidak mendahului invoice.
+2. Reminder utama Airlink dikembalikan ke H-9. Script reminder menambahkan tahap
+   kedua H-2 yang hanya diproses apabila pelanggan masih belum lunas.
+3. Deduplikasi memakai jenis berbeda per tahap, yaitu akhiran _h9 dan _h2 pada
+   payment_reminder_monthversary/payment_reminder_rolling. Dengan demikian setiap
+   tahap maksimal terkirim sekali untuk pelanggan dan periode yang sama.
+4. Sebelum kedua tahap mengantrekan WhatsApp, status pembayaran tetap dihitung
+   ulang. Pelanggan yang sudah membayar dilewati dan tidak menerima reminder H-2.
+5. Jadwal tetap berurutan: generator invoice pukul 07.00 WIB dan reminder pukul
+   07.15 WIB. Grace period isolir tidak berubah, tetap dua hari setelah jatuh
+   tempo untuk pelanggan prabayar.
+6. Untuk Siti Robiyah, jadwal ideal adalah invoice/reminder awal 15 September,
+   reminder kedua 22 September, jatuh tempo 24 September, dan isolir paling awal
+   26 September jika belum lunas. Karena perubahan dibuat setelah H-9 terlewati,
+   generator akan membuat invoice pada cron berikutnya melalui jendela catch-up,
+   sedangkan reminder H-2 tetap dijadwalkan 22 September.
+7. Konfigurasi invoice_generator-airlink.json merupakan runtime config produksi
+   yang diabaikan Git. Nilai days_before_due=9 diverifikasi langsung di produksi;
+   perubahan kode, mirror reminder, dan catatan disimpan dalam repository Git.
