@@ -1466,21 +1466,26 @@ if (!function_exists('tagihanFallbackPeriodeLabel')) {
         $isFixedDueDate = ($TIPE_TEMPO_RAW !== 'mengikuti_tanggal_bayar' && $TIPE_TEMPO_RAW !== 'monthversary');
 
         if ($isFixedDueDate) {
-            // PENTING: Fixed Due Date WAJIB forward-looking (hari ini vs jatuh_tempo_hari),
-            // BUKAN lewat tagihanHitungJatuhTempoBerikutnya()/tagihanGetFirstDueDateFixedByUsagePeriod()
-            // -- fungsi itu backward-looking (based on histori PEMBAYARAN TERAKHIR yang lunas)
-            // utk pelanggan prabayar, jadi bisa "tertinggal" 1 bulan dari siklus kalender yang
-            // sedang berjalan kalau pelanggan bayar cepat/di awal siklus (mis. dueDate histori
-            // masih Juli walau hari ini sudah masuk siklus Agustus). Sama persis pelajaran &
-            // rumus yang sudah dipakai notif_remainder_pembayaran*.php (lihat catatan
-            // tagihanResolvePeriodeTercatat() di atas) -- "hari ini <= jatuh_tempo_hari" berarti
-            // masih siklus bulan berjalan, kalau sudah lewat berarti sudah masuk siklus bulan
-            // berikutnya. TIDAK butuh histori pembayaran sama sekali.
+            // FIX (2026-09-20): gunakan jatuh tempo AKTUAL/checkpoint, bukan
+            // sekadar kalender hari ini. Rumus lama langsung meloncat ke bulan
+            // depan setelah tanggal jatuh tempo sehingga pelanggan yang sedang
+            // melunasi tunggakan September pada 20 September tercatat sebagai
+            // Oktober. Checkpoint sekarang adalah sumber kebenaran siklus yang
+            // belum dibayar dan tetap aman untuk pembayaran cepat maupun telat.
             $mode = (string) ($ctx['periode_tercatat_mode'] ?? 'berjalan');
-            $jatuhTempoHari = (int) ($ctx['jatuh_tempo_hari'] ?? 25);
-            if ($jatuhTempoHari < 1 || $jatuhTempoHari > 28) {
-                $jatuhTempoHari = 25;
+            $dueDate = tagihanHitungJatuhTempoBerikutnya($conn, $pel, $ctx);
+            if ($dueDate !== '' && strtotime($dueDate) !== false) {
+                return tagihanResolvePeriodeTercatat(
+                    (int) date('n', strtotime($dueDate)),
+                    (int) date('Y', strtotime($dueDate)),
+                    $mode
+                );
             }
+
+            // Jaring pengaman untuk data sangat lama yang belum mempunyai
+            // tanggal pasang/checkpoint valid.
+            $jatuhTempoHari = (int) ($ctx['jatuh_tempo_hari'] ?? 25);
+            if ($jatuhTempoHari < 1 || $jatuhTempoHari > 28) $jatuhTempoHari = 25;
             $todayTs = strtotime(date('Y-m-d'));
             $dueMonthTs = ((int) date('j', $todayTs) <= $jatuhTempoHari)
                 ? $todayTs
