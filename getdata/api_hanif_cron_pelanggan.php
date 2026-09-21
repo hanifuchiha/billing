@@ -863,9 +863,16 @@ function syncTransaksiForCustomer(
             && (float)($t['harga_gross'] ?? 0) > 0) {
             $jumlahBayar = (float)$t['harga_gross'];
         }
-        $keterangan = (string)($t['CEK'] ?? '') !== ''
+        $keteranganDasar = (string)($t['CEK'] ?? '') !== ''
             ? (string)$t['CEK']
             : ('Sync otomatis dari CRM - ' . (string)($t['BUKTI'] ?? ''));
+        $siteKeterangan = trim((string)($row['AREA'] ?? ($customerPayload['site_name'] ?? '')));
+        $namaKeterangan = trim((string)($row['NAMA'] ?? ($t['NAMA'] ?? '')));
+        $keterangan = $keteranganDasar
+            . ' | IDPEL: ' . $idpel
+            . ' | Nama: ' . ($namaKeterangan !== '' ? $namaKeterangan : '-')
+            . ' | Site: ' . ($siteKeterangan !== '' ? $siteKeterangan : '-')
+            . ' | Metode: ' . ($metodeBayarRaw !== '' ? $metodeBayarRaw : '-');
 
         // Kompensasi gratis bukan penerimaan kas/bank dan tidak boleh dicatat
         // sebagai pendapatan di Keuangan, sekalipun mapping bank tersedia.
