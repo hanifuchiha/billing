@@ -267,38 +267,15 @@ while ($server = $serverRes->fetch_assoc()) {
         $periodeNormalized = mb_strtoupper(trim($periode), 'UTF-8');
         $isRegenerated = false;
 
-        // FIX: "sudah lunas siklus ini atau belum" TIDAK boleh dicek lewat match
-        // label PENGUNAAN -- riwayat lama bisa saja tersimpan dgn PENGUNAAN yang
-        // tidak presisi ke jatuh tempo aslinya (mis. transaksi BERHASIL berlabel
-        // "Agustus 2026" padahal jatuh tempo yg benar2 dipenuhinya 22 Juli). Kalau
-        // dicocokkan ke teks PENGUNAAN, baris lama begitu bikin sistem mengira
-        // siklus SEKARANG (yg PENGUNAAN barunya kebetulan sama) sudah lunas --
-        // invoice baru TIDAK PERNAH digenerate & pelanggan tidak bisa bayar sama
-        // sekali walau statusnya EXPIRED. Pakai tagihanHitungStatus() (fungsi
-        // kanonik yg sama dipakai cek_tagihan_harian.php utk keputusan isolir) --
-        // acuannya jatuh tempo & tanggal bayar ASLI, bukan teks PENGUNAAN.
-        $statusCtx = [
-            'hari_ini' => $today,
-            'jatuh_tempo_hari' => 25,
-            'lastPaymentMap' => $lastPaymentMap,
-            'lastPaidUsageMap' => $lastPaidUsageMap,
-            'prabayar_grace_period' => 0,
-            'monthversary_follow_last_payment' => $monthversaryFollowLastPayment,
-        ];
-        $statusResult = tagihanHitungStatus($conn, $pel, $statusCtx);
-        if (!empty($statusResult['sudah_bayar'])) {
-            // Siklus kanonik sudah lunas: bersihkan sisa PENAGIHAN lama yang
-            // sebelumnya tertinggal karena alur langsung skip di titik ini.
-            $paidCleanupStmt = $conn->prepare("DELETE FROM transaksi WHERE IDPEL = ? AND PEMILIK = ? AND TRIM(UPPER(COALESCE(STATUS, ''))) = 'PENAGIHAN'");
-            $paidCleanupStmt->bind_param('ss', $idpel, $serverPemilik);
-            $paidCleanupStmt->execute();
-            $paidCleanupStmt->close();
-            $totalSkipped++;
-            continue;
-        }
+        // Jangan memakai tagihanHitungStatus() untuk memutuskan penerbitan invoice.
+        // Fungsi itu menjawab status isolir per hari ini, sehingga sebelum jatuh
+        // tempo hasilnya memang "sudah_bayar/aman" walaupun invoice siklus berikutnya
+        // belum pernah diterbitkan. Akibatnya generator H-N baru bekerja tepat pada
+        // hari jatuh tempo. $dueDate di atas sudah merupakan siklus BELUM dibayar:
+        // checkpoint/reference otomatis maju setelah transaksi BERHASIL masuk.
 
-        // Sudah dipastikan BELUM lunas di atas -- di sini cuma bersihkan sisa
-        // baris PENAGIHAN LAMA milik pelanggan ini, APAPUN label PENGUNAAN-nya,
+        // $dueDate menunjuk siklus berikutnya yang belum ditutup pembayaran. Di
+        // sini bersihkan sisa baris PENAGIHAN LAMA, APAPUN label PENGUNAAN-nya,
         // supaya tidak ada 2 baris PENAGIHAN nyangkut sekaligus. TIDAK dicocokkan
         // ke PENGUNAAN sama sekali -- PERMINTAAN KODE/KONFIRMASI yang sedang
         // berjalan tetap dibiarkan (bukti pembayaran belum diverifikasi).
