@@ -1053,3 +1053,30 @@ PENINGKATAN INVOICE H-9 DAN REMINDER DUA TAHAP - 19 SEPTEMBER 2026
    20 September 2026 sekitar 07.00 WIB dan reminder H-2 pada 22 September sekitar
    07.15 WIB jika belum membayar. Siklus berikutnya kembali berjalan normal:
    invoice dan reminder awal H-9, kemudian reminder kedua H-2 bila belum lunas.
+
+PERBAIKAN GENERATOR INVOICE SEBELUM JATUH TEMPO - 22 SEPTEMBER 2026
+==================================================================
+1. Ditemukan generator Rolling/Monthversary memanggil tagihanHitungStatus()
+   sebelum membuat invoice. Fungsi tersebut adalah fungsi status isolir per hari
+   ini, sehingga sebelum jatuh tempo hasilnya memang aman/sudah_bayar meskipun
+   invoice untuk siklus berikutnya belum pernah dibuat.
+2. Dampaknya, invoice yang seharusnya dibuat H-9 tertahan sampai hari jatuh tempo.
+   Reminder H-9/H-2 tidak menemukan invoice dan akhirnya tidak dapat dikirim.
+3. Pemeriksaan status isolir tersebut dihapus dari generator. Generator sekarang
+   memakai jatuh tempo berikutnya yang dihitung dari checkpoint/reference
+   pembayaran sebagai siklus yang perlu diterbitkan invoice-nya.
+4. Perubahan diterapkan pada template serta salinan Airlink dan FIBERQ, kemudian
+   dipasang ke source produksi. Ketiga file lulus pemeriksaan sintaks PHP.
+5. Verifikasi produksi pada 22 September menghasilkan invoice untuk jatuh tempo
+   hingga 28 September, membuktikan invoice sudah dibuat sebelum tanggal jatuh
+   tempo dan tidak lagi menunggu pelanggan berstatus menunggak.
+6. Invoice Nia Sumartini periode September 2026 tersedia dengan jatuh tempo
+   22 September 2026. Notifikasi Nia tidak dikirim ulang karena sudah ditangani.
+7. Riwayat WhatsApp tetap disimpan pada tabel whatsapp_notification_log dengan
+   status pending, sending, sent, failed, atau skipped. Deduplikasi mencegah
+   notifikasi berstatus sent dikirim dua kali; failed dapat dicoba ulang selama
+   masih berada dalam jendela reminder.
+8. Error INVALID_WA_CLI tetap berarti sesi perangkat WhatsApp tidak terhubung dan
+   harus dipulihkan pada gateway/bot. Perbaikan generator menjamin invoice sudah
+   tersedia, tetapi keberhasilan pengiriman tetap memerlukan bot yang online.
+9. Perubahan generator tersimpan pada commit 46c99c9.
