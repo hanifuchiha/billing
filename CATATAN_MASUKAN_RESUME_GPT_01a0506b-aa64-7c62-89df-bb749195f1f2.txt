@@ -1126,3 +1126,12 @@ WORKER RETRY WHATSAPP OTOMATIS - 22 SEPTEMBER 2026
    alasan legacy_before_retry_worker.
 9. Verifikasi dry-run, pemeriksaan sintaks PHP, lock, status cron, klasifikasi
    invoice lunas, dan pembatasan percobaan telah dijalankan di produksi.
+10. Pada validasi live pertama sebelum cutoff backlog ditambahkan, satu baris
+    failed historis milik Nia Sumartini (notification id 3461) masih memiliki
+    invoice PENAGIHAN aktif sehingga sempat diklaim dan berhasil dikirim ulang
+    satu kali. Pengiriman ini bukan bagian dari kebutuhan retry Nia.
+11. Setelah kejadian tersebut, worker langsung diberi batas aktivasi
+    WA_RETRY_ACTIVATED_AT=2026-09-22 11:29:00. Seluruh failed yang dibuat sebelum
+    waktu tersebut tidak lagi dikirim dan ditutup sebagai skipped dengan alasan
+    legacy_before_retry_worker. Verifikasi setelah perubahan menghasilkan nol
+    pekerjaan historis yang eligible.
