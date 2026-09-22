@@ -1080,3 +1080,23 @@ PERBAIKAN GENERATOR INVOICE SEBELUM JATUH TEMPO - 22 SEPTEMBER 2026
    harus dipulihkan pada gateway/bot. Perbaikan generator menjamin invoice sudah
    tersedia, tetapi keberhasilan pengiriman tetap memerlukan bot yang online.
 9. Perubahan generator tersimpan pada commit 46c99c9.
+
+STATUS FAILED DAN BATAS RETRY WHATSAPP - 22 SEPTEMBER 2026
+=========================================================
+1. Status pengiriman gagal disimpan sebagai failed pada tabel
+   whatsapp_notification_log beserta HTTP code, respons gateway, dan jumlah
+   percobaan.
+2. Helper antrean mengizinkan baris pending, failed, dan skipped diklaim ulang.
+   Baris sending yang macet lebih dari 15 menit juga dapat diklaim ulang.
+3. Belum tersedia worker retry WhatsApp khusus yang mengambil seluruh status
+   failed secara mandiri berdasarkan jadwal backoff.
+4. Fixed Due Date dapat mencoba ulang ketika cron berikutnya masih memproses
+   pelanggan dalam jendela reminder yang berlaku.
+5. Rolling/Monthversary hanya dipicu tepat pada tanggal tahap H-9 dan H-2.
+   Kegagalan H-9 tidak otomatis dicoba ulang pada H-8/H-7; tahap H-2 tetap
+   dijalankan sebagai notifikasi terpisah dengan dedupe key berbeda.
+6. Status sent tetap tidak dapat diklaim ulang sehingga pesan yang telah berhasil
+   tidak dikirim dua kali.
+7. Pengembangan lanjutan yang direkomendasikan adalah worker retry khusus dengan
+   backoff, misalnya 5, 15, dan 30 menit lalu beberapa jam, serta batas maksimal
+   percobaan agar kegagalan gateway tidak menunggu tahap reminder berikutnya.
