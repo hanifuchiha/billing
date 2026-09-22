@@ -1100,3 +1100,29 @@ STATUS FAILED DAN BATAS RETRY WHATSAPP - 22 SEPTEMBER 2026
 7. Pengembangan lanjutan yang direkomendasikan adalah worker retry khusus dengan
    backoff, misalnya 5, 15, dan 30 menit lalu beberapa jam, serta batas maksimal
    percobaan agar kegagalan gateway tidak menunggu tahap reminder berikutnya.
+
+WORKER RETRY WHATSAPP OTOMATIS - 22 SEPTEMBER 2026
+=================================================
+1. Rekomendasi worker retry di atas telah diterapkan melalui
+   notifbot/notifphp/cron_retry_whatsapp_notifications.php.
+2. Worker berjalan setiap lima menit melalui
+   /etc/cron.d/billing-whatsapp-notification-retry dan memakai lock non-blocking
+   agar dua proses tidak mengirim pekerjaan yang sama secara bersamaan.
+3. Backoff retry adalah 5, 15, 30, lalu 120 menit dengan maksimal lima percobaan
+   total, termasuk pengiriman awal.
+4. Worker hanya memproses jenis payment_reminder*. Sebelum mengirim, worker
+   memastikan invoice IDPEL dan periode tersebut masih berstatus PENAGIHAN.
+   Jika sudah lunas atau invoice tidak aktif, log diubah menjadi skipped.
+5. Klaim pekerjaan dilakukan atomik dari failed menjadi sending. Hasil sukses
+   menjadi sent dan hasil gagal kembali menjadi failed dengan attempts, HTTP
+   code, serta respons gateway terbaru.
+6. Error permanen INVALID_JID langsung menjadi skipped karena nomor tidak
+   terdaftar di WhatsApp dan tidak akan berhasil walaupun dicoba berulang kali.
+7. Worker dapat memakai bot alternatif milik akun yang sama pada percobaan
+   berikutnya. Password bot tidak ditulis ke output atau log.
+8. Untuk mencegah pengiriman massal arsip kegagalan lama saat aktivasi pertama,
+   retry otomatis hanya berlaku untuk pekerjaan yang dibuat mulai
+   22 September 2026 pukul 11:29 WIB. Backlog sebelumnya ditandai skipped dengan
+   alasan legacy_before_retry_worker.
+9. Verifikasi dry-run, pemeriksaan sintaks PHP, lock, status cron, klasifikasi
+   invoice lunas, dan pembatasan percobaan telah dijalankan di produksi.
