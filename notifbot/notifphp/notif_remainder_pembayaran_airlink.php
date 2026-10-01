@@ -1071,6 +1071,13 @@ while ($dataServerRolling = mysqli_fetch_array($queryServerRolling)) {
             $reminderStageRolling = 'h' . (int) $hari_sebelum;
         } elseif ((int) $hari_sebelum !== $followUpDaysRolling && $cektanggal === $followUpDateRolling) {
             $reminderStageRolling = 'h' . $followUpDaysRolling;
+        } elseif ($cektanggal > $followUpDateRolling && $cektanggal <= $dueDateRolling) {
+            // Catch-up otomatis: bila H-2 terlewat karena cron/gateway atau data
+            // jatuh tempo baru tersedia, kirim satu tahap terbaru sampai hari JT.
+            $reminderStageRolling = 'h' . $followUpDaysRolling;
+        } elseif ($cektanggal > $triggerDateRolling && $cektanggal < $followUpDateRolling) {
+            // Catch-up H-utama, tetapi jangan kirim tahap lama setelah masuk H-2.
+            $reminderStageRolling = 'h' . (int) $hari_sebelum;
         }
         echo "[DEBUG ROLLING] $IDPEL jatuh tempo $dueDateRolling | reminder utama $triggerDateRolling | reminder kedua $followUpDateRolling | hari ini $cektanggal<br>";
         if ($reminderStageRolling === null) {

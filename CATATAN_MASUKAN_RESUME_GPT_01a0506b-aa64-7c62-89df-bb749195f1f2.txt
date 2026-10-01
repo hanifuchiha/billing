@@ -1135,3 +1135,33 @@ WORKER RETRY WHATSAPP OTOMATIS - 22 SEPTEMBER 2026
     waktu tersebut tidak lagi dikirim dan ditutup sebagai skipped dengan alasan
     legacy_before_retry_worker. Verifikasi setelah perubahan menghasilkan nol
     pekerjaan historis yang eligible.
+
+MONITOR NOTIFIKASI WHATSAPP DAN CATCH-UP REMINDER - 1 OKTOBER 2026
+=================================================================
+1. Dibuat menu Administrator Panel "Monitor Notifikasi WA" pada
+   /crm/billing/wa_notification_monitor.php, khusus akun ADMIN non-demo.
+2. Halaman memakai tabel whatsapp_notification_log yang sudah ada. Status yang
+   ditampilkan: sent, failed, pending/belum dikirim, belum waktunya, dan skipped.
+3. Ditampilkan pelanggan, IDPEL, nomor WA, tipe tempo, jenis reminder, periode,
+   tanggal jatuh tempo, jadwal H-9/H-2, waktu kirim aktual, jumlah percobaan,
+   respons gateway, serta tombol Kirim Sekarang/Kirim Ulang.
+4. Filter tersedia untuk akun Billing, status, tipe Fixed/Rolling/Monthversary,
+   nama, IDPEL, dan nomor WhatsApp.
+5. Periode adalah bulan tagihan; JT adalah jatuh tempo; Jadwal adalah waktu
+   reminder. Contoh JT 10 Oktober: H-9 tanggal 1 Oktober 07:15 dan H-2 tanggal
+   8 Oktober 07:15.
+6. Pending hanya dihitung jika invoice masih PENAGIHAN. Nomor invalid, nomor
+   dummy/duplikat yang sudah menerima pesan hari itu, serta H-9 lama ketika H-2
+   sudah sent tidak lagi dihitung pending. Belum waktunya dipisahkan tersendiri.
+7. Reminder Rolling/Monthversary diperbaiki dengan catch-up otomatis satu tahap
+   terbaru: H-9 dikejar sebelum window H-2; H-2 dikejar sampai hari JT; setelah
+   lewat JT tidak dikirim otomatis dan harus ditinjau admin.
+8. Cron Airlink aktif setiap hari pukul 07:15. Pengiriman otomatis hanya jika
+   tagihan masih PENAGIHAN, belum lunas, nomor valid, dan tahap/periode belum sent.
+9. Aceng Rahmat (137901203C36.0202.02.06@airlink.co.id), Monthversary Oktober,
+   JT 4 Oktober: H-9 sent 1 Oktober pukul 10:55:48 dan H-2 dijadwalkan otomatis
+   2 Oktober pukul 07:15 jika belum lunas.
+10. Hermayani (14120060631.0104.04@airlink.co.id), Fixed Due Date Oktober,
+    tagihan Rp181.000 JT 10 Oktober: reminder sent 1 Oktober pukul 07:33:03.
+    Pelanggan ini sebenarnya tahunan sampai 24 Agustus 2027; disarankan memakai
+    siklus tahunan dan field Aktif Sampai agar tagihan/reminder bulanan dilewati.

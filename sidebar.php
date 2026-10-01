@@ -3284,10 +3284,18 @@ if(is_array($akses_menu) && in_array('Vpn_Connection', $akses_menu)){
 
 
 
-    <?php if ($AKSES == "ADMIN") { ?>
+    <?php if ($AKSES == "ADMIN" && empty($_SESSION['IS_DEMO'])) { ?>
 
        <li class="nav-item mt-3">
         <h6 class="ps-4 ms-2 text-uppercase text-xs font-weight-bolder opacity-6">ADMINISTRATOR PANEL</h6>
+      </li>
+      <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='wa_notification_monitor.php') echo 'active'; ?>" href="../billing/wa_notification_monitor.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fab fa-whatsapp text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Monitor Notifikasi WA</span>
+        </a>
       </li>
       <li class="nav-item">
         <a class="nav-link <?php if($current_file=='livechatadmin.php') echo 'active'; ?>" href="../billing/livechatadmin.php">
