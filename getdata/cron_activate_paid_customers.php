@@ -18,6 +18,11 @@ if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) {
 
 require_once __DIR__ . '/../koneksidb.php';
 require_once __DIR__ . '/../payment_activation_helper.php';
+require_once __DIR__ . '/../payment_period_normalizer.php';
+
+$periodNormalization = normalizeSuccessfulPaymentPeriods($conn, 'airlink', 120);
+paymentActivationLog('NORMALISASI PERIODE: diperiksa=' . $periodNormalization['checked']
+    . ' diperbaiki=' . $periodNormalization['changed'] . ' gagal=' . $periodNormalization['failed']);
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     paymentActivationLog('FATAL cron: koneksi database tidak tersedia');

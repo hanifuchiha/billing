@@ -3298,6 +3298,14 @@ if(is_array($akses_menu) && in_array('Vpn_Connection', $akses_menu)){
         </a>
       </li>
       <li class="nav-item">
+        <a class="nav-link <?php if($current_file=='isolir_monitor.php') echo 'active'; ?>" href="../billing/isolir_monitor.php">
+          <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
+            <i class="fas fa-user-shield text-dark"></i>
+          </div>
+          <span class="nav-link-text ms-1">Monitor Pelanggan Isolir</span>
+        </a>
+      </li>
+      <li class="nav-item">
         <a class="nav-link <?php if($current_file=='livechatadmin.php') echo 'active'; ?>" href="../billing/livechatadmin.php">
           <div class="icon icon-shape icon-sm shadow border-radius-md bg-white text-center me-2 d-flex align-items-center justify-content-center">
             <i class="fas fa-comments text-dark"></i>
