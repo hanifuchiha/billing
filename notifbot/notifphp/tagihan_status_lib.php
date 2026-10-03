@@ -1059,16 +1059,12 @@ if (!function_exists('tagihanHitungStatus')) {
             $referenceDate = $waktu_terakhir_bayar ? substr((string) $waktu_terakhir_bayar, 0, 10) : $TANGGALPASANG;
 
             // Toggle "Monthversary ikut tanggal bayar terakhir" (Payment Setting).
-            // Kalau ON: ASIMETRIS mirip Rolling Due Date -- anchor CUMA ikut geser
-            // kalau pembayaran terakhir TELAT dari anchor yang berlaku (mis. anchor
-            // tgl 10, dibayar tgl 14 -> siklus berikutnya jadi tgl 14). Bayar
-            // CEPAT/PAS (mis. anchor tgl 10, dibayar tgl 8) TIDAK menggeser anchor,
-            // tetap tgl 10 -- supaya pelanggan tidak "dihukum" krn bayar cepat.
+            // Kalau ON: hari jatuh tempo siklus berikutnya mengikuti persis hari
+            // pembayaran BERHASIL terakhir, baik pelanggan membayar lebih awal
+            // maupun lebih lambat dari anchor sebelumnya.
             if (!empty($ctx['monthversary_follow_last_payment']) && $waktu_terakhir_bayar) {
                 $lastPaymentDay = (int) date('j', strtotime($referenceDate));
-                if ($lastPaymentDay > $anchorDay) {
-                    $anchorDay = $lastPaymentDay;
-                }
+                if ($lastPaymentDay > 0) $anchorDay = $lastPaymentDay;
             }
 
             if ($TIPE_BAYAR === 'prabayar' && empty($waktu_terakhir_bayar)) {
@@ -1322,12 +1318,11 @@ if (!function_exists('tagihanHitungJatuhTempoBerikutnya')) {
         if ($TIPE_TEMPO === 'monthversary') {
             $anchorDate = $TANGGAL_MONTHVERSARY !== '' ? $TANGGAL_MONTHVERSARY : $TANGGALPASANG;
             $anchorDay = (int) date('j', strtotime($anchorDate));
-            // Asimetris mirip Rolling Due Date -- lihat penjelasan di tagihanHitungStatus().
+            // Ikuti persis hari pembayaran berhasil terakhir; lihat aturan yang
+            // sama di tagihanHitungStatus().
             if (!empty($ctx['monthversary_follow_last_payment']) && $waktu_terakhir_bayar) {
                 $lastPaymentDay = (int) date('j', strtotime($referenceDate));
-                if ($lastPaymentDay > $anchorDay) {
-                    $anchorDay = $lastPaymentDay;
-                }
+                if ($lastPaymentDay > 0) $anchorDay = $lastPaymentDay;
             }
             // FIX #4 (2026-09-13): pakai checkpoint permanen (lihat
             // tagihanGetOrAdvanceMonthversaryDueDate() -- pengganti 2 percobaan

@@ -1756,18 +1756,11 @@ while ($server = mysqli_fetch_array($query_server)) {
             // berikutnya jatuh tempo jadi tgl 14, bukan tetap tgl 10). Kolom
             // TANGGAL_MONTHVERSARY yang sudah dikunci di atas TIDAK diubah --
             // ini cuma override utk perhitungan due date siklus berjalan.
-            // FIX: SEBELUMNYA overwrite $anchorDay TANPA SYARAT arah, jadi
-            // bayar CEPAT (mis. anchor tgl 10, dibayar tgl 8) ikut memundurkan
-            // anchor ke tgl 8 -- bertentangan dgn aturan bisnis "tidak dihukum
-            // krn bayar cepat" yang SUDAH benar diterapkan di tagihanHitung
-            // JatuhTempoBerikutnya()/tagihanHitungStatus() (tagihan_status_lib.php,
-            // dipakai tables.php/dashboard). Sekarang ASIMETRIS sama persis dgn
-            // lib itu: anchor cuma MAJU kalau bayar TELAT, tidak pernah mundur.
+            // Aturan Airlink: hari jatuh tempo berikutnya mengikuti persis hari
+            // pembayaran BERHASIL terakhir, baik dibayar lebih awal maupun telat.
             if ($monthversary_follow_last_payment && $waktu_terakhir_bayar) {
                 $lastPaymentDay = (int) date('j', strtotime($referenceDate));
-                if ($lastPaymentDay > $anchorDay) {
-                    $anchorDay = $lastPaymentDay;
-                }
+                if ($lastPaymentDay > 0) $anchorDay = $lastPaymentDay;
             }
 
             if ($TIPE_BAYAR === 'prabayar' && empty($waktu_terakhir_bayar)) {

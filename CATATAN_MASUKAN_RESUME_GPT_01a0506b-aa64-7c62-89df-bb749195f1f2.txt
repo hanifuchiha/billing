@@ -1136,6 +1136,33 @@ WORKER RETRY WHATSAPP OTOMATIS - 22 SEPTEMBER 2026
     legacy_before_retry_worker. Verifikasi setelah perubahan menghasilkan nol
     pekerjaan historis yang eligible.
 
+MONTHVERSARY MENGIKUTI PEMBAYARAN TERAKHIR - 3 OKTOBER 2026
+===========================================================
+1. Pengaturan Airlink `monthversary_setting-airlink.json` diaktifkan dengan
+   `follow_last_payment=true`.
+2. Hari jatuh tempo Monthversary sekarang mengikuti persis hari transaksi
+   BERHASIL terakhir, baik pembayaran lebih awal maupun terlambat.
+3. Audit mencakup 133 pelanggan Monthversary: 10 pelanggan FREE/FASUM
+   dikecualikan, 123 pelanggan berbayar diperiksa, 114 memiliki histori bayar,
+   dan 9 pelanggan tanpa histori bayar tidak dipaksakan berubah.
+4. Sebanyak 68 checkpoint jatuh tempo diselaraskan. Bulan siklus yang sudah
+   maju karena pembayaran beberapa periode tetap dipertahankan; checkpoint yang
+   tertinggal dimajukan minimal ke bulan setelah pembayaran terakhir.
+5. Sebanyak 10 invoice yang terbit terlalu dini sudah dibackup lalu dihapus agar
+   generator membuat ulang pada H-2. Satu invoice dalam jendela aktif diperbarui.
+6. Backup database disimpan pada tabel pelanggan_monthversary_backup_20261003
+   dan transaksi_monthversary_backup_20261003. Backup file produksi disimpan di
+   backups/monthversary_follow_last_payment_20261003/.
+7. Paket FREE/FASUM tetap dilewati proses tagihan dan isolir. Pemeriksaan saat
+   migrasi menemukan 10 pelanggan FREE/FASUM Monthversary dan tidak ada yang
+   berprofil EXPIRED.
+8. Cron cek_tagihan_harian_airlink.php tetap berjalan setiap 20 menit. Pelanggan
+   yang belum jatuh tempo dipulihkan dari EXPIRED; pelanggan yang melewati jatuh
+   tempo beserta masa tenggang diisolir.
+9. Kasus Hadidjah diperbaiki dari jatuh tempo 1 Oktober menjadi 6 Oktober 2026,
+   profil dipulihkan ke AirHome - 188k, dan sesi aktif mendapat IP normal
+   10.100.254.164.
+
 MONITOR NOTIFIKASI WHATSAPP DAN CATCH-UP REMINDER - 1 OKTOBER 2026
 =================================================================
 1. Dibuat menu Administrator Panel "Monitor Notifikasi WA" pada
