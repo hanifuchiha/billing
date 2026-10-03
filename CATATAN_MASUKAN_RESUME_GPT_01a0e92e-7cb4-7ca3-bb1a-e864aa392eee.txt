@@ -1,0 +1,25 @@
+CATATAN PERUBAHAN SESI 01a0e92e-7cb4-7ca3-bb1a-e864aa392eee
+Tanggal: 2026-10-03
+
+Perubahan kode:
+- Manual Active dengan metode kompensasi_free tidak lagi mengirim notifikasi WhatsApp.
+- Notifikasi dilewati untuk pelanggan dan owner.
+- Transaksi, aktivasi layanan, dan pencatatan riwayat tetap berjalan.
+- Log menuliskan: NOTIF WA DILEWATI: metode kompensasi_free.
+
+Perubahan data Zaenal Aripin (IDPEL 14120060566.0104.05@airlink.co.id):
+- Tanggal pemasangan Billing dikoreksi dari 10 Agustus 2026 menjadi 26 Agustus 2026.
+- Kompensasi free dipindahkan dari Oktober ke September 2026.
+- Oktober 2026 dikembalikan menjadi PENAGIHAN Rp128.000.
+- Checkpoint jatuh tempo berikutnya dikembalikan menjadi 10 Oktober 2026.
+- Catatan pelanggan menjelaskan koreksi tanggal pemasangan dan kompensasi September.
+
+Backup database:
+- transaksi_reperiode_backup_20261003
+- pelanggan_due_reperiode_backup_20261003
+- pelanggan_tanggalpasang_backup_20261003_0951
+
+Validasi:
+- Sintaks proses/activecustomer.php valid melalui php -l.
+- Profil Zaenal Aripin tetap AirHome - 128k.
+- September BERHASIL kompensasi_free Rp0 dan Oktober PENAGIHAN Rp128.000.

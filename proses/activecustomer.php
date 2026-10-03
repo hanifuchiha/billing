@@ -815,19 +815,26 @@ $conn->query($sql_hapus_penagihan);
     $botname = htmlspecialchars($botname);
     $passwordbot = htmlspecialchars($passwordbot);
 
-    // ---- Kirim notifikasi ke pelanggan (di-skip otomatis jika bot tidak tersedia) ----
-    $kirimPelanggan = kirimWA($botAvailable, $waapi, $botname, $passwordbot, $phone, $message, $sender);
-
-    if (!$kirimPelanggan['sent']) {
-        $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] NOTIF PELANGGAN DILEWATI/GAGAL: " . $kirimPelanggan['error'];
+    // Kompensasi gratis adalah koreksi/benefit internal dan tidak boleh memicu
+    // notifikasi pembayaran WhatsApp, baik ke pelanggan maupun owner.
+    if ($is_kompensasi_free) {
+        $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] NOTIF WA DILEWATI: metode kompensasi_free";
         file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
     } else {
-        $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] Berhasil kirim notifikasi WhatsApp ke pelanggan $nowa";
-        file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
+        // ---- Kirim notifikasi ke pelanggan (di-skip otomatis jika bot tidak tersedia) ----
+        $kirimPelanggan = kirimWA($botAvailable, $waapi, $botname, $passwordbot, $phone, $message, $sender);
+
+        if (!$kirimPelanggan['sent']) {
+            $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] NOTIF PELANGGAN DILEWATI/GAGAL: " . $kirimPelanggan['error'];
+            file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
+        } else {
+            $history[] = "[ " . (!empty($asistant_name) ? $asistant_name : $ceknama) . " - " . date('Y-m-d H:i:s') . " ] Berhasil kirim notifikasi WhatsApp ke pelanggan $nowa";
+            file_put_contents($history_file, json_encode($history, JSON_PRETTY_PRINT));
+        }
     }
 
     // ---- Kirim notifikasi ke owner (di-skip otomatis jika bot tidak tersedia atau penerima kosong) ----
-    if (!empty($penerima_manual_active)) {
+    if (!$is_kompensasi_free && !empty($penerima_manual_active)) {
         $owner_mode_label = $only_activate_without_transaksi ? "[ONLY AKTIFKAN] " : "";
         $owner_manual_message = "?? *" . $owner_mode_label . "AKTIVITAS MANUAL ACTIVE TERDETEKSI*\n\n"
             . "?? *ID Pelanggan*   : $idpel\n"
